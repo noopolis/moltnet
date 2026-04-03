@@ -48,6 +48,15 @@ func (c *MoltnetClient) StreamEvents(
 	config bridgeconfig.Config,
 	handle func(event protocol.Event) error,
 ) error {
+	return c.StreamEventsReady(ctx, config, nil, handle)
+}
+
+func (c *MoltnetClient) StreamEventsReady(
+	ctx context.Context,
+	config bridgeconfig.Config,
+	onReady func(),
+	handle func(event protocol.Event) error,
+) error {
 	connection, response, err := c.connect(ctx, config)
 	if err != nil {
 		if response != nil {
@@ -72,6 +81,16 @@ func (c *MoltnetClient) StreamEvents(
 	if err := c.expectReady(connection, readTimeout); err != nil {
 		return err
 	}
+	if onReady != nil {
+		onReady()
+	}
+
+	var writeMu sync.Mutex
+	write := func(frame protocol.AttachmentFrame) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		return c.writeFrame(connection, frame)
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -83,43 +102,47 @@ func (c *MoltnetClient) StreamEvents(
 	}()
 	defer close(done)
 
+	frames := c.streamFrames(ctx, connection, readTimeout, write)
 	for {
-		frame, err := c.readFrame(connection, readTimeout)
-		if err != nil {
-			if ctx.Err() != nil {
+		select {
+		case <-ctx.Done():
+			return nil
+		case result, ok := <-frames:
+			if !ok {
 				return nil
 			}
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				return nil
-			}
-			return err
-		}
 
-		switch frame.Op {
-		case protocol.AttachmentOpEvent:
-			if frame.Event == nil {
-				return fmt.Errorf("attachment event frame is missing event payload")
+			if result.err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				if websocket.IsCloseError(result.err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+					return nil
+				}
+				return result.err
 			}
-			if err := handle(*frame.Event); err != nil {
-				return err
+
+			switch result.frame.Op {
+			case protocol.AttachmentOpEvent:
+				if result.frame.Event == nil {
+					return fmt.Errorf("attachment event frame is missing event payload")
+				}
+				if err := handle(*result.frame.Event); err != nil {
+					return err
+				}
+				if err := write(protocol.AttachmentFrame{
+					Op:      protocol.AttachmentOpAck,
+					Version: protocol.AttachmentProtocolV1,
+					Cursor:  result.frame.Cursor,
+				}); err != nil {
+					return err
+				}
+				c.setCursor(result.frame.Cursor)
+			case protocol.AttachmentOpError:
+				return fmt.Errorf("attachment gateway error: %s", strings.TrimSpace(result.frame.Error))
+			default:
+				return fmt.Errorf("unexpected attachment frame op %q", result.frame.Op)
 			}
-			if err := c.writeFrame(connection, protocol.AttachmentFrame{
-				Op:      protocol.AttachmentOpAck,
-				Version: protocol.AttachmentProtocolV1,
-				Cursor:  frame.Cursor,
-			}); err != nil {
-				return err
-			}
-			c.setCursor(frame.Cursor)
-		case protocol.AttachmentOpPing:
-			if err := c.writeFrame(connection, protocol.AttachmentFrame{
-				Op:      protocol.AttachmentOpPong,
-				Version: protocol.AttachmentProtocolV1,
-			}); err != nil {
-				return err
-			}
-		case protocol.AttachmentOpError:
-			return fmt.Errorf("attachment gateway error: %s", strings.TrimSpace(frame.Error))
 		}
 	}
 }

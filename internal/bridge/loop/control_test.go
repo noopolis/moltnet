@@ -115,6 +115,10 @@ func TestRunControlLoop(t *testing.T) {
 		}
 		controlBodies = append(controlBodies, string(body))
 		response.Header().Set("Content-Type", "application/json")
+		if strings.Contains(string(body), `"from":"Moltnet Bootstrap"`) {
+			_, _ = response.Write([]byte(`{"from":"researcher","message":""}`))
+			return
+		}
 		_, _ = response.Write([]byte(`{"from":"researcher","message":"@reviewer done"}`))
 	}))
 	defer controlServer.Close()
@@ -137,11 +141,28 @@ func TestRunControlLoop(t *testing.T) {
 		t.Fatalf("RunControlLoop() error = %v", err)
 	}
 
-	if len(controlBodies) != 1 || !strings.Contains(controlBodies[0], "\"to\":\"researcher\"") {
+	if len(controlBodies) != 2 {
 		t.Fatalf("unexpected control requests %#v", controlBodies)
 	}
-	if !strings.Contains(controlBodies[0], "\"context_id\":\"moltnet:local:room:research\"") {
-		t.Fatalf("expected stable room context id, got %#v", controlBodies)
+
+	var sawBootstrap bool
+	var sawInbound bool
+	for _, body := range controlBodies {
+		if !strings.Contains(body, "\"to\":\"researcher\"") {
+			t.Fatalf("unexpected control target in %#v", controlBodies)
+		}
+		if !strings.Contains(body, "\"context_id\":\"moltnet:local:room:research\"") {
+			t.Fatalf("expected stable room context id, got %#v", controlBodies)
+		}
+		if strings.Contains(body, "\"from\":\"Moltnet Bootstrap\"") {
+			sawBootstrap = true
+		}
+		if strings.Contains(body, "\"from\":\"Writer\"") {
+			sawInbound = true
+		}
+	}
+	if !sawBootstrap || !sawInbound {
+		t.Fatalf("expected bootstrap and inbound control requests, got %#v", controlBodies)
 	}
 	if len(published) != 1 || len(published[0].Mentions) != 1 || published[0].Mentions[0] != "reviewer" {
 		t.Fatalf("unexpected published messages %#v", published)
@@ -396,5 +417,29 @@ func TestSendControlMessageIncludesRuntimeAuthToken(t *testing.T) {
 	}
 	if authorization != "Bearer runtime-secret" {
 		t.Fatalf("unexpected authorization header %q", authorization)
+	}
+}
+
+func TestBuildBootstrapControlMessage(t *testing.T) {
+	t.Parallel()
+
+	message := buildBootstrapControlMessage(bridgeconfig.Config{
+		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
+	}, protocol.Target{
+		Kind:   protocol.TargetKindRoom,
+		RoomID: "research",
+	})
+
+	if !strings.Contains(message, "Moltnet bootstrap delivery.") {
+		t.Fatalf("expected bootstrap preamble, got %q", message)
+	}
+	if !strings.Contains(message, "execute that startup action now") {
+		t.Fatalf("expected explicit startup instruction, got %q", message)
+	}
+	if !strings.Contains(message, `"kind":"bootstrap"`) {
+		t.Fatalf("expected bootstrap payload marker, got %q", message)
+	}
+	if !strings.Contains(message, `"conversation":"moltnet:local:room:research"`) {
+		t.Fatalf("expected stable bootstrap conversation id, got %q", message)
 	}
 }

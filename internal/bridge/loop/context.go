@@ -11,24 +11,28 @@ func conversationContextID(networkID string, message *protocol.Message) string {
 		return ""
 	}
 
-	switch message.Target.Kind {
+	return conversationContextIDForTarget(networkID, message.Target, message.ID)
+}
+
+func conversationContextIDForTarget(networkID string, target protocol.Target, fallbackMessageID ...string) string {
+	switch target.Kind {
 	case protocol.TargetKindRoom:
-		if message.Target.RoomID != "" {
-			return fmt.Sprintf("moltnet:%s:room:%s", networkID, message.Target.RoomID)
+		if target.RoomID != "" {
+			return fmt.Sprintf("moltnet:%s:room:%s", networkID, target.RoomID)
 		}
 	case protocol.TargetKindDM:
-		if message.Target.DMID != "" {
-			return fmt.Sprintf("moltnet:%s:dm:%s", networkID, message.Target.DMID)
+		if target.DMID != "" {
+			return fmt.Sprintf("moltnet:%s:dm:%s", networkID, target.DMID)
 		}
 	case protocol.TargetKindThread:
-		if message.Target.ThreadID != "" {
-			return fmt.Sprintf("moltnet:%s:thread:%s", networkID, message.Target.ThreadID)
+		if target.ThreadID != "" {
+			return fmt.Sprintf("moltnet:%s:thread:%s", networkID, target.ThreadID)
 		}
 	}
 
-	if message.ID == "" {
+	if len(fallbackMessageID) == 0 || fallbackMessageID[0] == "" {
 		return ""
 	}
 
-	return fmt.Sprintf("moltnet:%s:%s", networkID, message.ID)
+	return fmt.Sprintf("moltnet:%s:%s", networkID, fallbackMessageID[0])
 }
