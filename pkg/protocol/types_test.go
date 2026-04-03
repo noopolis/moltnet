@@ -17,12 +17,12 @@ func TestValidateTarget(t *testing.T) {
 		},
 		{
 			name:   "thread ok",
-			target: Target{Kind: TargetKindThread, ThreadID: "thr_1"},
+			target: Target{Kind: TargetKindThread, ThreadID: "thr_1", RoomID: "research", ParentMessageID: "msg_1"},
 			ok:     true,
 		},
 		{
 			name:   "dm ok",
-			target: Target{Kind: TargetKindDM, DMID: "dm_1", ParticipantIDs: []string{"orchestrator", "researcher"}},
+			target: Target{Kind: TargetKindDM, DMID: "dm_1", ParticipantIDs: []string{"orchestrator", "molt://remote/agents/researcher"}},
 			ok:     true,
 		},
 		{
@@ -32,6 +32,14 @@ func TestValidateTarget(t *testing.T) {
 		{
 			name:   "thread missing id",
 			target: Target{Kind: TargetKindThread},
+		},
+		{
+			name:   "thread missing room",
+			target: Target{Kind: TargetKindThread, ThreadID: "thr_1"},
+		},
+		{
+			name:   "thread invalid id",
+			target: Target{Kind: TargetKindThread, ThreadID: "bad thread", RoomID: "research"},
 		},
 		{
 			name:   "dm missing id",
@@ -44,6 +52,10 @@ func TestValidateTarget(t *testing.T) {
 		{
 			name:   "dm too few participants",
 			target: Target{Kind: TargetKindDM, DMID: "dm_1", ParticipantIDs: []string{"orchestrator"}},
+		},
+		{
+			name:   "dm invalid participant",
+			target: Target{Kind: TargetKindDM, DMID: "dm_1", ParticipantIDs: []string{"orchestrator", "bad\nparticipant"}},
 		},
 		{
 			name:   "unsupported kind",
@@ -71,7 +83,7 @@ func TestValidateTarget(t *testing.T) {
 func TestUniqueParticipantIDs(t *testing.T) {
 	t.Parallel()
 
-	participants := uniqueParticipantIDs([]string{" writer ", "researcher", "writer", "", "researcher"})
+	participants := UniqueTrimmedStrings([]string{" writer ", "researcher", "writer", "", "researcher"})
 	if len(participants) != 2 || participants[0] != "writer" || participants[1] != "researcher" {
 		t.Fatalf("unexpected participants %#v", participants)
 	}

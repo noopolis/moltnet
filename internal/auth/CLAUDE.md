@@ -1,6 +1,6 @@
 # Auth Guide
 
-This package should handle auth and trust-boundary enforcement.
+This package handles auth and trust-boundary enforcement.
 
 ## Responsibilities
 

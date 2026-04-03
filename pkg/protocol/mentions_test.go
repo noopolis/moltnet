@@ -43,3 +43,44 @@ func TestNormalizeMentions(t *testing.T) {
 		}
 	})
 }
+
+func TestParseMentions(t *testing.T) {
+	t.Parallel()
+
+	mentions := ParseMentions("@writer please ask @reviewer and @writer again")
+	if len(mentions) != 2 || mentions[0] != "writer" || mentions[1] != "reviewer" {
+		t.Fatalf("unexpected mentions %#v", mentions)
+	}
+
+	if mentions := ParseMentions("no mentions here"); mentions != nil {
+		t.Fatalf("expected nil mentions, got %#v", mentions)
+	}
+}
+
+func TestParseMentionMatchesSkipsMalformedEntries(t *testing.T) {
+	t.Parallel()
+
+	mentions := parseMentionMatches([][]string{
+		nil,
+		{""},
+		{"@writer", ""},
+		{"@writer", "writer"},
+		{"@writer", "writer"},
+		{"@reviewer", "reviewer"},
+	})
+
+	if len(mentions) != 2 || mentions[0] != "writer" || mentions[1] != "reviewer" {
+		t.Fatalf("unexpected mentions %#v", mentions)
+	}
+}
+
+func TestArtifactFilterScoped(t *testing.T) {
+	t.Parallel()
+
+	if (ArtifactFilter{}).Scoped() {
+		t.Fatal("expected empty filter to be unscoped")
+	}
+	if !(ArtifactFilter{ThreadID: "thread_1"}).Scoped() {
+		t.Fatal("expected thread filter to be scoped")
+	}
+}

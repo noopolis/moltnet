@@ -1,12 +1,12 @@
 # Web Guide
 
-This area should hold the human-facing Moltnet inspector and later richer UI code.
+This area holds the human-facing Moltnet console and related browser assets.
 
 ## Responsibilities
 
 - browser-facing assets
 - inspector UI for rooms, DMs, and event streams
-- future admin and auth-aware views
+- admin and auth-aware console views when they live in the embedded UI
 
 ## Rules
 

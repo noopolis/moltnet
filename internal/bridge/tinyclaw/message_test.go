@@ -3,6 +3,7 @@ package tinyclaw
 import (
 	"testing"
 
+	bridgeutil "github.com/noopolis/moltnet/internal/bridge"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -20,8 +21,8 @@ func newTestBridge() *bridge {
 		channel:   "moltnet",
 		agentName: "Researcher",
 		roomBindings: map[string]bridgeconfig.RoomBinding{
-			"research": {ID: "research", Read: bridgeconfig.ReadMentions},
-			"ops":      {ID: "ops", Read: bridgeconfig.ReadAll},
+			"research": {ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto},
+			"ops":      {ID: "ops", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyAuto},
 		},
 	}
 }
@@ -33,13 +34,13 @@ func TestShouldHandle(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		event moltnetEvent
+		event protocol.Event
 		want  bool
 	}{
-		{name: "missing message", event: moltnetEvent{Type: protocol.EventTypeMessageCreated}, want: false},
+		{name: "missing message", event: protocol.Event{Type: protocol.EventTypeMessageCreated}, want: false},
 		{
 			name: "self message",
-			event: moltnetEvent{
+			event: protocol.Event{
 				Type: protocol.EventTypeMessageCreated,
 				Message: &protocol.Message{
 					NetworkID: "local",
@@ -51,7 +52,7 @@ func TestShouldHandle(t *testing.T) {
 		},
 		{
 			name: "mentioned room",
-			event: moltnetEvent{
+			event: protocol.Event{
 				Type: protocol.EventTypeMessageCreated,
 				Message: &protocol.Message{
 					NetworkID: "local",
@@ -64,7 +65,7 @@ func TestShouldHandle(t *testing.T) {
 		},
 		{
 			name: "all room",
-			event: moltnetEvent{
+			event: protocol.Event{
 				Type: protocol.EventTypeMessageCreated,
 				Message: &protocol.Message{
 					NetworkID: "local",
@@ -76,7 +77,7 @@ func TestShouldHandle(t *testing.T) {
 		},
 		{
 			name: "dm enabled",
-			event: moltnetEvent{
+			event: protocol.Event{
 				Type: protocol.EventTypeMessageCreated,
 				Message: &protocol.Message{
 					NetworkID: "local",
@@ -88,7 +89,7 @@ func TestShouldHandle(t *testing.T) {
 		},
 		{
 			name: "wrong network",
-			event: moltnetEvent{
+			event: protocol.Event{
 				Type: protocol.EventTypeMessageCreated,
 				Message: &protocol.Message{
 					NetworkID: "other",
@@ -100,7 +101,7 @@ func TestShouldHandle(t *testing.T) {
 		},
 		{
 			name: "missing mention in mention-only room",
-			event: moltnetEvent{
+			event: protocol.Event{
 				Type: protocol.EventTypeMessageCreated,
 				Message: &protocol.Message{
 					NetworkID: "local",
@@ -111,13 +112,25 @@ func TestShouldHandle(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "unsupported target",
-			event: moltnetEvent{
+			name: "thread room",
+			event: protocol.Event{
 				Type: protocol.EventTypeMessageCreated,
 				Message: &protocol.Message{
 					NetworkID: "local",
 					From:      protocol.Actor{ID: "writer"},
-					Target:    protocol.Target{Kind: protocol.TargetKindThread, ThreadID: "thr_1"},
+					Target:    protocol.Target{Kind: protocol.TargetKindThread, RoomID: "ops", ThreadID: "thr_1"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "unsupported target",
+			event: protocol.Event{
+				Type: protocol.EventTypeMessageCreated,
+				Message: &protocol.Message{
+					NetworkID: "local",
+					From:      protocol.Actor{ID: "writer"},
+					Target:    protocol.Target{Kind: "weird"},
 				},
 			},
 			want: false,
@@ -139,7 +152,7 @@ func TestToTinyClawMessage(t *testing.T) {
 	t.Parallel()
 
 	bridge := newTestBridge()
-	message, err := bridge.toTinyClawMessage(moltnetEvent{
+	message, err := bridge.toTinyClawMessage(protocol.Event{
 		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			ID:        "msg_1",
@@ -167,11 +180,11 @@ func TestToTinyClawMessage(t *testing.T) {
 		t.Fatalf("unexpected rendered message %q", message.Message)
 	}
 
-	if _, err := bridge.toTinyClawMessage(moltnetEvent{}); err == nil {
+	if _, err := bridge.toTinyClawMessage(protocol.Event{}); err == nil {
 		t.Fatal("expected empty event error")
 	}
 
-	_, err = bridge.toTinyClawMessage(moltnetEvent{
+	_, err = bridge.toTinyClawMessage(protocol.Event{
 		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			Target: protocol.Target{Kind: "weird"},
@@ -182,7 +195,7 @@ func TestToTinyClawMessage(t *testing.T) {
 		t.Fatal("expected unsupported target error")
 	}
 
-	_, err = bridge.toTinyClawMessage(moltnetEvent{
+	_, err = bridge.toTinyClawMessage(protocol.Event{
 		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
@@ -199,12 +212,16 @@ func TestToMoltnetMessageAndHelpers(t *testing.T) {
 	bridge := newTestBridge()
 
 	request, err := bridge.toMoltnetMessage(tinyclawPendingResponse{
+		ID:       pendingResponseID("7"),
 		SenderID: "dm:dm_1",
 		Message:  "done",
 		Files:    []string{"report.md"},
 	})
 	if err != nil {
 		t.Fatalf("toMoltnetMessage() error = %v", err)
+	}
+	if request.ID != "tinyclaw:researcher:7" {
+		t.Fatalf("unexpected request id %q", request.ID)
 	}
 	if request.Target.Kind != protocol.TargetKindDM || request.Target.DMID != "dm_1" {
 		t.Fatalf("unexpected target %#v", request.Target)
@@ -220,42 +237,48 @@ func TestToMoltnetMessageAndHelpers(t *testing.T) {
 		t.Fatal("expected empty response error")
 	}
 
-	if !shouldRead(bridgeconfig.ReadMentions, []string{"Researcher"}, bridge.config.Agent) {
+	if !bridgeutil.ShouldRead(bridgeconfig.ReadMentions, protocol.Target{Kind: protocol.TargetKindRoom}, []string{"Researcher"}, bridge.config.Agent) {
 		t.Fatal("expected mention read")
 	}
-	if shouldRead(bridgeconfig.ReadThreadOnly, nil, bridge.config.Agent) {
+	if bridgeutil.ShouldRead(bridgeconfig.ReadThreadOnly, protocol.Target{Kind: protocol.TargetKindRoom}, nil, bridge.config.Agent) {
 		t.Fatal("did not expect thread_only read")
 	}
-	if !shouldReadDirect(bridgeconfig.ReadMentions) {
+	if !bridgeutil.ShouldRead(bridgeconfig.ReadThreadOnly, protocol.Target{Kind: protocol.TargetKindThread}, nil, bridge.config.Agent) {
+		t.Fatal("expected thread_only to read threads")
+	}
+	if !bridgeutil.ShouldReadDirect(bridgeconfig.ReadMentions) {
 		t.Fatal("expected direct mentions read")
 	}
-	if shouldReadDirect(bridgeconfig.ReadThreadOnly) {
+	if bridgeutil.ShouldReadDirect(bridgeconfig.ReadThreadOnly) {
 		t.Fatal("did not expect direct thread_only read")
 	}
 
-	if actor := displayActor(protocol.Actor{ID: "writer", Name: "Writer"}); actor != "Writer" {
+	if actor := bridgeutil.SenderName(protocol.Actor{ID: "writer", Name: "Writer"}); actor != "Writer" {
 		t.Fatalf("unexpected actor %q", actor)
 	}
-	if actor := displayActor(protocol.Actor{ID: "writer"}); actor != "writer" {
+	if actor := bridgeutil.SenderName(protocol.Actor{ID: "writer"}); actor != "writer" {
 		t.Fatalf("unexpected actor %q", actor)
 	}
 
-	if got := targetPrefix(protocol.Target{Kind: protocol.TargetKindThread, ThreadID: "thr_1"}, "Writer"); got == "" {
+	if got := bridgeutil.TargetPrefix(protocol.Target{Kind: protocol.TargetKindThread, ThreadID: "thr_1"}, "Writer"); got == "" {
 		t.Fatal("expected thread prefix")
 	}
-	if got := targetPrefix(protocol.Target{Kind: "weird"}, "Writer"); got != "Writer" {
+	if got := bridgeutil.TargetPrefix(protocol.Target{Kind: "weird"}, "Writer"); got != "Writer" {
 		t.Fatalf("unexpected default prefix %q", got)
 	}
 
-	if text, ok := renderDataPart(map[string]any{"files": []any{"a.txt", "b.txt"}}); !ok || text == "" {
+	if text, ok := bridgeutil.RenderDataPart(map[string]any{"files": []any{"a.txt", "b.txt"}}); !ok || text == "" {
 		t.Fatal("expected rendered files payload")
 	}
-	if _, ok := renderDataPart(map[string]any{"ignored": true}); ok {
+	if _, ok := bridgeutil.RenderDataPart(map[string]any{"ignored": true}); ok {
 		t.Fatal("did not expect render for unrelated data")
 	}
 
-	if key, err := encodeTarget(protocol.Target{Kind: protocol.TargetKindThread, ThreadID: "thr_1"}); err != nil || key != "thread:thr_1" {
+	if key, err := encodeTarget(protocol.Target{Kind: protocol.TargetKindThread, RoomID: "research", ThreadID: "thr_1", ParentMessageID: "msg_parent"}); err != nil || key != "thread:research:thr_1:msg_parent" {
 		t.Fatalf("unexpected encoded target %q err=%v", key, err)
+	}
+	if _, err := encodeTarget(protocol.Target{Kind: protocol.TargetKindThread, ThreadID: "thr_1"}); err == nil {
+		t.Fatal("expected missing thread room error")
 	}
 	if _, err := encodeTarget(protocol.Target{Kind: "weird"}); err == nil {
 		t.Fatal("expected unsupported target error")
@@ -269,15 +292,18 @@ func TestToMoltnetMessageAndHelpers(t *testing.T) {
 	if _, err := decodeTarget("weird:value"); err == nil {
 		t.Fatal("expected invalid target kind error")
 	}
+	if decoded, err := decodeTarget("thread:research:thr_1:msg_parent"); err != nil || decoded.RoomID != "research" || decoded.ThreadID != "thr_1" || decoded.ParentMessageID != "msg_parent" {
+		t.Fatalf("unexpected thread decode %#v err=%v", decoded, err)
+	}
 
-	if rendered := renderInboundText(&protocol.Message{
+	if rendered := bridgeutil.RenderInboundText(&protocol.Message{
 		From:   protocol.Actor{ID: "writer"},
 		Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "dm_1"},
 		Parts:  []protocol.Part{{Kind: "text", Text: "hi"}},
 	}); rendered == "" {
 		t.Fatal("expected rendered inbound text")
 	}
-	if rendered := renderInboundText(nil); rendered != "" {
+	if rendered := bridgeutil.RenderInboundText(nil); rendered != "" {
 		t.Fatalf("expected empty render, got %q", rendered)
 	}
 }

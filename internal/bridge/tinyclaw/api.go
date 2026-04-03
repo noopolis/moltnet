@@ -5,18 +5,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/noopolis/moltnet/internal/observability"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
+
+const tinyclawRequestTimeout = 15 * time.Second
+const maxTinyclawResponseBytes = 1 << 20
 
 type apiClient struct {
 	httpClient  *http.Client
 	inboundURL  string
 	outboundURL string
 	ackURL      string
+	token       string
 }
 
 type tinyclawMessageRequest struct {
@@ -29,7 +37,7 @@ type tinyclawMessageRequest struct {
 }
 
 type tinyclawPendingResponse struct {
-	ID       int               `json:"id"`
+	ID       pendingResponseID `json:"id"`
 	Sender   string            `json:"sender"`
 	SenderID string            `json:"senderId"`
 	Message  string            `json:"message"`
@@ -37,12 +45,42 @@ type tinyclawPendingResponse struct {
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
+type pendingResponseID string
+
+func (p *pendingResponseID) UnmarshalJSON(data []byte) error {
+	var stringValue string
+	if err := json.Unmarshal(data, &stringValue); err == nil {
+		return p.set(strings.TrimSpace(stringValue))
+	}
+
+	var numberValue int64
+	if err := json.Unmarshal(data, &numberValue); err == nil {
+		return p.set(strconv.FormatInt(numberValue, 10))
+	}
+
+	return fmt.Errorf("unsupported pending response id %s", strings.TrimSpace(string(data)))
+}
+
+func (p pendingResponseID) String() string {
+	return strings.TrimSpace(string(p))
+}
+
+func (p *pendingResponseID) set(value string) error {
+	trimmed := strings.TrimSpace(value)
+	if err := protocol.ValidateMessageID(trimmed); err != nil {
+		return fmt.Errorf("invalid pending response id: %w", err)
+	}
+	*p = pendingResponseID(trimmed)
+	return nil
+}
+
 func newAPIClient(config bridgeconfig.Config) *apiClient {
 	return &apiClient{
-		httpClient:  &http.Client{},
+		httpClient:  &http.Client{Timeout: tinyclawRequestTimeout},
 		inboundURL:  config.Runtime.InboundURL,
 		outboundURL: config.Runtime.OutboundURL,
 		ackURL:      strings.TrimRight(config.Runtime.AckURL, "/"),
+		token:       config.Runtime.Token,
 	}
 }
 
@@ -55,6 +93,7 @@ func (c *apiClient) pendingResponses(ctx context.Context) ([]tinyclawPendingResp
 	if err != nil {
 		return nil, fmt.Errorf("build tinyclaw pending request: %w", err)
 	}
+	c.authorize(request)
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
@@ -67,15 +106,18 @@ func (c *apiClient) pendingResponses(ctx context.Context) ([]tinyclawPendingResp
 	}
 
 	var payload []tinyclawPendingResponse
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxTinyclawResponseBytes)).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decode tinyclaw pending responses: %w", err)
 	}
 
 	return payload, nil
 }
 
-func (c *apiClient) ackResponse(ctx context.Context, id int) error {
-	url := c.ackURL + "/" + strconv.Itoa(id) + "/ack"
+func (c *apiClient) ackResponse(ctx context.Context, id pendingResponseID) error {
+	if err := protocol.ValidateMessageID(id.String()); err != nil {
+		return fmt.Errorf("invalid pending response id: %w", err)
+	}
+	url := c.ackURL + "/" + id.String() + "/ack"
 	return c.postJSON(ctx, url, map[string]any{}, nil)
 }
 
@@ -91,10 +133,11 @@ func (c *apiClient) postJSON(ctx context.Context, url string, body any, out any)
 	}
 
 	request.Header.Set("Content-Type", "application/json")
+	c.authorize(request)
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return fmt.Errorf("request tinyclaw: %w", err)
+		return fmt.Errorf("request tinyclaw %s: %w", observability.RedactURL(url), err)
 	}
 	defer response.Body.Close()
 
@@ -106,9 +149,15 @@ func (c *apiClient) postJSON(ctx context.Context, url string, body any, out any)
 		return nil
 	}
 
-	if err := json.NewDecoder(response.Body).Decode(out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxTinyclawResponseBytes)).Decode(out); err != nil {
 		return fmt.Errorf("decode tinyclaw response: %w", err)
 	}
 
 	return nil
+}
+
+func (c *apiClient) authorize(request *http.Request) {
+	if token := strings.TrimSpace(c.token); token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
 }

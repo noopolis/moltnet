@@ -1,6 +1,6 @@
 # Store Guide
 
-This package should own persistence interfaces and implementations.
+This package owns persistence interfaces and implementations.
 
 ## Responsibilities
 
@@ -16,8 +16,10 @@ This package should own persistence interfaces and implementations.
 - Start with SQLite-friendly abstractions.
 - Keep hosted-store upgrades possible without changing the protocol layer.
 
-## Future Backends
+## Backends
 
-- SQLite first
-- Postgres later
+- memory for tests and ephemeral local runs
+- JSON snapshot storage as a compatibility path
+- SQLite as the local default
+- Postgres for shared or hosted deployments
 - object storage integration for large artifacts later

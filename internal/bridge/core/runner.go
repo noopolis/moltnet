@@ -3,11 +3,11 @@ package core
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/noopolis/moltnet/internal/bridge/openclaw"
 	"github.com/noopolis/moltnet/internal/bridge/picoclaw"
 	"github.com/noopolis/moltnet/internal/bridge/tinyclaw"
+	"github.com/noopolis/moltnet/internal/observability"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 )
 
@@ -34,13 +34,14 @@ func New(config bridgeconfig.Config) (*Runner, error) {
 }
 
 func (r *Runner) Run(ctx context.Context) error {
-	log.Printf(
-		"moltnet-bridge starting runtime=%s agent=%s network=%s moltnet=%s",
-		r.adapter.Name(),
-		r.config.Agent.ID,
-		r.config.Moltnet.NetworkID,
-		r.config.Moltnet.BaseURL,
-	)
+	observability.Logger(
+		ctx,
+		"bridge.core",
+		"runtime", r.adapter.Name(),
+		"agent_id", r.config.Agent.ID,
+		"network_id", r.config.Moltnet.NetworkID,
+		"moltnet_url", observability.RedactURL(r.config.Moltnet.BaseURL),
+	).Info("moltnet-bridge starting")
 
 	return r.adapter.Run(ctx, r.config)
 }

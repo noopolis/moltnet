@@ -1,6 +1,6 @@
 # Events Guide
 
-This package should own internal event dispatch and subscription mechanics.
+This package owns internal event dispatch and subscription mechanics.
 
 ## Responsibilities
 
@@ -16,5 +16,9 @@ This package should own internal event dispatch and subscription mechanics.
 ## Rules
 
 - Preserve ordering rules explicitly.
-- Keep event delivery semantics clear: best-effort, durable, replayable, or acknowledged.
+- Keep event delivery semantics explicit:
+  - broker live fan-out is best-effort
+  - broker history is replayable within its bounded in-memory window
+  - SSE uses that best-effort live stream plus bounded replay on reconnect
+  - the attachment gateway adds explicit ACK and resume behavior on top of broker cursors
 - The public wire shape belongs in `pkg/protocol`; internal dispatch details stay here.

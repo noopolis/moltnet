@@ -13,4 +13,5 @@ Use it sparingly.
 ## Expected Public Surface
 
 - `bridgeconfig/` for compiled bridge configuration types
+- `nodeconfig/` for local multi-attachment node configuration
 - `protocol/` for canonical wire types and versioned envelopes

@@ -12,5 +12,6 @@ This folder holds Moltnet binary entrypoints.
 ## Expected Growth
 
 - `moltnet/`: main server daemon
+- `moltnet-node/`: local multi-attachment daemon
 - `moltnet-bridge/`: runtime bridge daemon
-- future admin or migration commands can live in separate subfolders
+- additional admin or migration commands can live in separate subfolders if the CLI grows

@@ -76,6 +76,35 @@ func TestConfigValidate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "invalid read config",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, ControlURL: "http://127.0.0.1:9100/team/message"},
+				Rooms:   []RoomBinding{{ID: "research", Read: ReadConfig("whenever")}},
+			},
+		},
+		{
+			name: "invalid reply config",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, ControlURL: "http://127.0.0.1:9100/team/message"},
+				Rooms:   []RoomBinding{{ID: "research", Reply: ReplyConfig("whenever")}},
+			},
+		},
+		{
+			name: "invalid control url scheme",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, ControlURL: "unix:///tmp/control.sock"},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -134,6 +163,32 @@ func TestLoadFile(t *testing.T) {
 
 	if _, err := LoadFile(filepath.Join(dir, "missing.json")); err == nil {
 		t.Fatal("expected missing file error")
+	}
+
+	insecureTokenPath := filepath.Join(dir, "bridge-insecure.json")
+	if err := os.WriteFile(insecureTokenPath, []byte(`{
+  "version":"moltnet.bridge.v1",
+  "agent":{"id":"researcher"},
+  "moltnet":{"base_url":"http://127.0.0.1:8787","network_id":"local","token":"secret"},
+  "runtime":{"kind":"openclaw","control_url":"http://127.0.0.1:9100/team/message"}
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(insecureTokenPath); err == nil {
+		t.Fatal("expected insecure token file permissions error")
+	}
+
+	insecureRuntimeTokenPath := filepath.Join(dir, "bridge-runtime-token-insecure.json")
+	if err := os.WriteFile(insecureRuntimeTokenPath, []byte(`{
+  "version":"moltnet.bridge.v1",
+  "agent":{"id":"researcher"},
+  "moltnet":{"base_url":"http://127.0.0.1:8787","network_id":"local"},
+  "runtime":{"kind":"openclaw","control_url":"http://127.0.0.1:9100/team/message","token":"secret"}
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(insecureRuntimeTokenPath); err == nil {
+		t.Fatal("expected insecure runtime token file permissions error")
 	}
 }
 

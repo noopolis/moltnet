@@ -10,9 +10,13 @@ Nothing here should be imported by external consumers once Moltnet becomes its o
 - `bridge/`: runtime bridge lifecycle and adapters
 - `auth/`: auth and trust-boundary policy
 - `events/`: event dispatch and subscriptions
+- `node/`: multi-attachment supervision and runtime wiring
+- `observability/`: structured logging, metrics, and request correlation
+- `pairings/`: remote network discovery and relay client
 - `rooms/`: room, thread, and DM coordination
+- `signals/`: shared process signal-context helpers for CLI entrypoints
 - `store/`: persistence interfaces and backends
-- `transport/`: HTTP, SSE, and later WebSocket adapters
+- `transport/`: HTTP, SSE, and native attachment WebSocket adapters
 
 ## Rules
 

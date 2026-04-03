@@ -1,6 +1,6 @@
 # Bridge Core Guide
 
-This package should implement bridge lifecycle and adapter selection.
+This package implements bridge lifecycle and adapter selection.
 
 ## Responsibilities
 

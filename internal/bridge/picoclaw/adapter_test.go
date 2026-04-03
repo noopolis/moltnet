@@ -24,4 +24,8 @@ func TestAdapter(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
+
+	if err := adapter.Run(context.Background(), bridgeconfig.Config{}); err == nil {
+		t.Fatal("expected missing control url error")
+	}
 }

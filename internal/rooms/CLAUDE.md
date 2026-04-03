@@ -1,6 +1,6 @@
 # Rooms Guide
 
-This package should contain the core communication model.
+This package contains the core communication model.
 
 ## Core Concepts
 

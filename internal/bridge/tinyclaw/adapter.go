@@ -4,18 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	bridgeutil "github.com/noopolis/moltnet/internal/bridge"
 	"github.com/noopolis/moltnet/internal/bridge/loop"
+	"github.com/noopolis/moltnet/internal/observability"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 const (
-	defaultChannelName = "moltnet"
-	pollInterval       = 1 * time.Second
-	reconnectDelay     = 2 * time.Second
+	defaultChannelName  = "moltnet"
+	pollInterval        = 1 * time.Second
+	maxResponsesPerPoll = 20
 )
 
 type Adapter struct{}
@@ -38,6 +40,8 @@ func (a *Adapter) Run(ctx context.Context, config bridgeconfig.Config) error {
 		return err
 	}
 
+	runCtx, cancel := context.WithCancel(ctx)
+
 	errorCh := make(chan error, 2)
 	var once sync.Once
 	report := func(err error) {
@@ -46,22 +50,38 @@ func (a *Adapter) Run(ctx context.Context, config bridgeconfig.Config) error {
 		}
 
 		once.Do(func() {
+			cancel()
 			errorCh <- err
 		})
 	}
 
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	go func() {
-		report(bridge.runInbound(ctx))
+		defer wg.Done()
+		report(bridge.runInbound(runCtx))
 	}()
 
 	go func() {
-		report(bridge.runOutbound(ctx))
+		defer wg.Done()
+		report(bridge.runOutbound(runCtx))
+	}()
+
+	waitCh := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(waitCh)
 	}()
 
 	select {
 	case <-ctx.Done():
+		cancel()
+		<-waitCh
 		return nil
 	case err := <-errorCh:
+		cancel()
+		<-waitCh
 		return err
 	}
 }
@@ -69,10 +89,12 @@ func (a *Adapter) Run(ctx context.Context, config bridgeconfig.Config) error {
 type bridge struct {
 	config       bridgeconfig.Config
 	channel      string
-	moltnet      *moltnetClient
+	moltnet      *loop.MoltnetClient
 	tinyclaw     *apiClient
 	roomBindings map[string]bridgeconfig.RoomBinding
 	agentName    string
+	pendingMu    sync.Mutex
+	pendingAcks  map[string]struct{}
 }
 
 func newBridge(config bridgeconfig.Config) (*bridge, error) {
@@ -106,20 +128,24 @@ func newBridge(config bridgeconfig.Config) (*bridge, error) {
 	return &bridge{
 		config:       config,
 		channel:      channel,
-		moltnet:      newMoltnetClient(config),
+		moltnet:      loop.NewMoltnetClient(config),
 		tinyclaw:     newAPIClient(config),
 		roomBindings: roomBindings,
 		agentName:    agentName,
+		pendingAcks:  make(map[string]struct{}),
 	}, nil
 }
 
 func (b *bridge) runInbound(ctx context.Context) error {
+	backoff := bridgeutil.NewBackoff(bridgeutil.DefaultReconnectBaseDelay, bridgeutil.DefaultReconnectMaxDelay)
+	attempt := 0
+
 	for {
 		if ctx.Err() != nil {
 			return nil
 		}
 
-		err := b.moltnet.streamEvents(ctx, func(event moltnetEvent) error {
+		err := b.moltnet.StreamEvents(ctx, b.config, func(event protocol.Event) error {
 			if !b.shouldHandle(event) {
 				return nil
 			}
@@ -134,13 +160,15 @@ func (b *bridge) runInbound(ctx context.Context) error {
 		if err == nil || errors.Is(err, context.Canceled) {
 			return err
 		}
+		attempt++
 
-		log.Printf("tinyclaw bridge inbound stream error: %v", err)
+		observability.Logger(ctx, "bridge.tinyclaw", "agent_id", b.config.Agent.ID, "error", err).
+			Warn("tinyclaw bridge inbound stream error")
 
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(reconnectDelay):
+		case <-time.After(backoff.Delay(attempt)):
 		}
 	}
 }
@@ -155,7 +183,8 @@ func (b *bridge) runOutbound(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			if err := b.flushResponses(ctx); err != nil {
-				log.Printf("tinyclaw bridge outbound poll error: %v", err)
+				observability.Logger(ctx, "bridge.tinyclaw", "agent_id", b.config.Agent.ID, "error", err).
+					Warn("tinyclaw bridge outbound poll error")
 			}
 		}
 	}
@@ -167,21 +196,64 @@ func (b *bridge) flushResponses(ctx context.Context) error {
 		return err
 	}
 
-	for _, response := range responses {
+	limit := len(responses)
+	if limit > maxResponsesPerPoll {
+		limit = maxResponsesPerPoll
+	}
+
+	for _, response := range responses[:limit] {
+		messageID := responseMessageID(b.config.Agent.ID, response.ID)
+		if b.isPending(messageID) {
+			if err := b.tinyclaw.ackResponse(ctx, response.ID); err != nil {
+				return err
+			}
+			b.clearPending(messageID)
+			continue
+		}
+		b.markPending(messageID)
+
 		request, err := b.toMoltnetMessage(response)
 		if err != nil {
-			log.Printf("tinyclaw bridge skip invalid response %d: %v", response.ID, err)
+			b.clearPending(messageID)
+			observability.Logger(
+				ctx,
+				"bridge.tinyclaw",
+				"agent_id", b.config.Agent.ID,
+				"response_id", response.ID.String(),
+				"error", err,
+			).Warn("tinyclaw bridge skip invalid response")
 			continue
 		}
 
-		if _, err := b.moltnet.sendMessage(ctx, request); err != nil {
+		if _, err := b.moltnet.SendMessage(ctx, request); err != nil {
+			b.clearPending(messageID)
 			return err
 		}
 
 		if err := b.tinyclaw.ackResponse(ctx, response.ID); err != nil {
 			return err
 		}
+		b.clearPending(messageID)
 	}
 
 	return nil
+}
+
+func (b *bridge) markPending(messageID string) {
+	b.pendingMu.Lock()
+	defer b.pendingMu.Unlock()
+	b.pendingAcks[messageID] = struct{}{}
+}
+
+func (b *bridge) isPending(messageID string) bool {
+	b.pendingMu.Lock()
+	defer b.pendingMu.Unlock()
+	_, ok := b.pendingAcks[messageID]
+	return ok
+}
+
+func (b *bridge) clearPending(messageID string) {
+	b.pendingMu.Lock()
+	defer b.pendingMu.Unlock()
+	delete(b.pendingAcks, messageID)
 }

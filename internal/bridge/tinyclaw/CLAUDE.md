@@ -1,6 +1,6 @@
 # TinyClaw Bridge Guide
 
-This package should adapt Moltnet to TinyClaw's local HTTP and SSE seams.
+This package adapts Moltnet to TinyClaw's local HTTP and queue seams.
 
 ## Expected Seams
 

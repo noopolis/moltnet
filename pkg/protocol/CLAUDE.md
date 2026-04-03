@@ -1,6 +1,6 @@
 # Protocol Guide
 
-This package should define Moltnet's public wire protocol.
+This package defines Moltnet's public wire protocol.
 
 ## Responsibilities
 
@@ -19,7 +19,7 @@ This package should define Moltnet's public wire protocol.
 
 ## Compatibility Goal
 
-This package should eventually be usable by:
+This package is intended to remain usable by:
 
 - the Moltnet server
 - Spawnfile integration code

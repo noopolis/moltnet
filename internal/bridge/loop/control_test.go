@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -19,12 +20,79 @@ func TestRunControlLoop(t *testing.T) {
 
 	var controlBodies []string
 	var published []protocol.SendMessageRequest
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	event := protocol.Event{
+		ID:        "evt_1",
+		Type:      protocol.EventTypeMessageCreated,
+		NetworkID: "local",
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Target:    protocol.Target{Kind: "room", RoomID: "research"},
+			From:      protocol.Actor{Type: "agent", ID: "writer", Name: "Writer"},
+			Mentions:  []string{"researcher"},
+			Parts:     []protocol.Part{{Kind: "text", Text: "hello @reviewer"}},
+			CreatedAt: time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC),
+		},
+		CreatedAt: time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC),
+	}
 	moltnetServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
-		case "/v1/events/stream":
-			response.Header().Set("Content-Type", "text/event-stream")
-			_, _ = response.Write([]byte("event: message.created\n"))
-			_, _ = response.Write([]byte("data: {\"id\":\"evt_1\",\"type\":\"message.created\",\"network_id\":\"local\",\"message\":{\"id\":\"msg_1\",\"network_id\":\"local\",\"target\":{\"kind\":\"room\",\"room_id\":\"research\"},\"from\":{\"type\":\"agent\",\"id\":\"writer\",\"name\":\"Writer\"},\"mentions\":[\"researcher\"],\"parts\":[{\"kind\":\"text\",\"text\":\"hello @reviewer\"}],\"created_at\":\"2026-03-30T12:00:00Z\"},\"created_at\":\"2026-03-30T12:00:00Z\"}\n\n"))
+		case "/v1/attach":
+			connection, err := upgrader.Upgrade(response, request, nil)
+			if err != nil {
+				t.Fatalf("upgrade websocket: %v", err)
+			}
+			defer connection.Close()
+
+			if err := connection.WriteJSON(protocol.AttachmentFrame{
+				Op:                  protocol.AttachmentOpHello,
+				Version:             protocol.AttachmentProtocolV1,
+				HeartbeatIntervalMS: 30000,
+			}); err != nil {
+				t.Fatalf("write hello: %v", err)
+			}
+
+			var identify protocol.AttachmentFrame
+			if err := connection.ReadJSON(&identify); err != nil {
+				t.Fatalf("read identify: %v", err)
+			}
+			if identify.Op != protocol.AttachmentOpIdentify || identify.Agent == nil || identify.Agent.ID != "researcher" {
+				t.Fatalf("unexpected identify %#v", identify)
+			}
+
+			if err := connection.WriteJSON(protocol.AttachmentFrame{
+				Op:        protocol.AttachmentOpReady,
+				Version:   protocol.AttachmentProtocolV1,
+				NetworkID: "local",
+				AgentID:   "researcher",
+			}); err != nil {
+				t.Fatalf("write ready: %v", err)
+			}
+
+			if err := connection.WriteJSON(protocol.AttachmentFrame{
+				Op:        protocol.AttachmentOpEvent,
+				Version:   protocol.AttachmentProtocolV1,
+				NetworkID: "local",
+				Cursor:    "evt_1",
+				Event:     &event,
+			}); err != nil {
+				t.Fatalf("write event: %v", err)
+			}
+
+			var ack protocol.AttachmentFrame
+			if err := connection.ReadJSON(&ack); err != nil {
+				t.Fatalf("read ack: %v", err)
+			}
+			if ack.Op != protocol.AttachmentOpAck || ack.Cursor != "evt_1" {
+				t.Fatalf("unexpected ack %#v", ack)
+			}
+
+			_ = connection.WriteControl(
+				websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "done"),
+				time.Now().Add(time.Second),
+			)
 		case "/v1/messages":
 			var payload protocol.SendMessageRequest
 			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
@@ -72,8 +140,113 @@ func TestRunControlLoop(t *testing.T) {
 	if len(controlBodies) != 1 || !strings.Contains(controlBodies[0], "\"to\":\"researcher\"") {
 		t.Fatalf("unexpected control requests %#v", controlBodies)
 	}
+	if !strings.Contains(controlBodies[0], "\"context_id\":\"moltnet:local:room:research\"") {
+		t.Fatalf("expected stable room context id, got %#v", controlBodies)
+	}
 	if len(published) != 1 || len(published[0].Mentions) != 1 || published[0].Mentions[0] != "reviewer" {
 		t.Fatalf("unexpected published messages %#v", published)
+	}
+}
+
+func TestRunControlLoopReconnectsAfterAttachFailure(t *testing.T) {
+	t.Parallel()
+
+	var attachRequests int
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	moltnetServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/attach":
+			attachRequests++
+			if attachRequests == 1 {
+				response.WriteHeader(http.StatusBadGateway)
+				return
+			}
+
+			connection, err := upgrader.Upgrade(response, request, nil)
+			if err != nil {
+				t.Fatalf("upgrade websocket: %v", err)
+			}
+			defer connection.Close()
+
+			if err := connection.WriteJSON(protocol.AttachmentFrame{
+				Op:                  protocol.AttachmentOpHello,
+				Version:             protocol.AttachmentProtocolV1,
+				HeartbeatIntervalMS: 30000,
+			}); err != nil {
+				t.Fatalf("write hello: %v", err)
+			}
+			var identify protocol.AttachmentFrame
+			if err := connection.ReadJSON(&identify); err != nil {
+				t.Fatalf("read identify: %v", err)
+			}
+			if err := connection.WriteJSON(protocol.AttachmentFrame{
+				Op:        protocol.AttachmentOpReady,
+				Version:   protocol.AttachmentProtocolV1,
+				NetworkID: "local",
+				AgentID:   "researcher",
+			}); err != nil {
+				t.Fatalf("write ready: %v", err)
+			}
+			if err := connection.WriteJSON(protocol.AttachmentFrame{
+				Op:        protocol.AttachmentOpEvent,
+				Version:   protocol.AttachmentProtocolV1,
+				NetworkID: "local",
+				Cursor:    "evt_1",
+				Event: &protocol.Event{
+					ID:        "evt_1",
+					Type:      protocol.EventTypeMessageCreated,
+					NetworkID: "local",
+					Message: &protocol.Message{
+						ID:        "msg_1",
+						NetworkID: "local",
+						Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+						From:      protocol.Actor{Type: "agent", ID: "writer"},
+						Mentions:  []string{"researcher"},
+						Parts:     []protocol.Part{{Kind: "text", Text: "hello"}},
+						CreatedAt: time.Now().UTC(),
+					},
+					CreatedAt: time.Now().UTC(),
+				},
+			}); err != nil {
+				t.Fatalf("write event: %v", err)
+			}
+
+			var ack protocol.AttachmentFrame
+			if err := connection.ReadJSON(&ack); err != nil {
+				t.Fatalf("read ack: %v", err)
+			}
+			_ = connection.WriteControl(
+				websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "done"),
+				time.Now().Add(time.Second),
+			)
+		case "/v1/messages":
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"message_id":"msg_2","event_id":"evt_2","accepted":true}`))
+		default:
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer moltnetServer.Close()
+
+	controlServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"from":"researcher","message":"done"}`))
+	}))
+	defer controlServer.Close()
+
+	config := bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "researcher"},
+		Moltnet: bridgeconfig.MoltnetConfig{BaseURL: moltnetServer.URL, NetworkID: "local"},
+		Runtime: bridgeconfig.RuntimeConfig{ControlURL: controlServer.URL},
+		Rooms:   []bridgeconfig.RoomBinding{{ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto}},
+	}
+
+	if err := RunControlLoop(context.Background(), config); err != nil {
+		t.Fatalf("RunControlLoop() error = %v", err)
+	}
+	if attachRequests < 2 {
+		t.Fatalf("expected reconnect after attach failure, got %d requests", attachRequests)
 	}
 }
 
@@ -99,7 +272,7 @@ func TestSendControlMessageErrors(t *testing.T) {
 	}))
 	defer controlServer.Close()
 
-	_, err := sendControlMessage(context.Background(), bridgeconfig.Config{
+	_, err := sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{
 		Agent: bridgeconfig.AgentConfig{ID: "researcher"},
 		Moltnet: bridgeconfig.MoltnetConfig{
 			NetworkID: "local",
@@ -117,75 +290,111 @@ func TestSendControlMessageErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "control url returned") {
 		t.Fatalf("expected control url error, got %v", err)
 	}
+
+	_, err = sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{}, protocol.Event{})
+	if err == nil || !strings.Contains(err.Error(), "event has no message") {
+		t.Fatalf("expected missing message error, got %v", err)
+	}
+
+	invalidResponseServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"from":`))
+	}))
+	defer invalidResponseServer.Close()
+
+	_, err = sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "researcher"},
+		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
+		Runtime: bridgeconfig.RuntimeConfig{ControlURL: invalidResponseServer.URL},
+	}, protocol.Event{
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+			From:      protocol.Actor{Type: "agent", ID: "writer"},
+			Parts:     []protocol.Part{{Kind: "text", Text: "hello"}},
+			CreatedAt: time.Now().UTC(),
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "decode control response") {
+		t.Fatalf("expected invalid response decode error, got %v", err)
+	}
 }
 
-func TestMoltnetClientStreamAndSendErrors(t *testing.T) {
+func TestSendControlMessageUsesStableDMContextID(t *testing.T) {
 	t.Parallel()
 
-	badStream := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") != "Bearer secret" {
-			t.Fatalf("expected auth header, got %q", request.Header.Get("Authorization"))
+	var requestBody string
+	controlServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		defer request.Body.Close()
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatalf("read control body: %v", err)
 		}
-		response.WriteHeader(http.StatusBadGateway)
-	}))
-	defer badStream.Close()
-
-	client := &moltnetClient{
-		baseURL: badStream.URL,
-		client:  &http.Client{},
-		token:   "secret",
-	}
-
-	if err := client.streamEvents(context.Background(), func(event protocol.Event) error { return nil }); err == nil || !strings.Contains(err.Error(), "moltnet stream returned") {
-		t.Fatalf("expected stream request error, got %v", err)
-	}
-
-	invalidStream := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		response.Header().Set("Content-Type", "text/event-stream")
-		_, _ = response.Write([]byte("event: message.created\n"))
-		_, _ = response.Write([]byte("data: {bad json}\n\n"))
-	}))
-	defer invalidStream.Close()
-
-	client.baseURL = invalidStream.URL
-	client.token = ""
-	if err := client.streamEvents(context.Background(), func(event protocol.Event) error { return nil }); err == nil || !strings.Contains(err.Error(), "decode moltnet event") {
-		t.Fatalf("expected stream decode error, got %v", err)
-	}
-
-	failingSend := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") != "Bearer secret" {
-			t.Fatalf("expected auth header on send, got %q", request.Header.Get("Authorization"))
-		}
-		response.WriteHeader(http.StatusBadGateway)
-	}))
-	defer failingSend.Close()
-
-	client.baseURL = failingSend.URL
-	client.token = "secret"
-	_, err := client.sendMessage(context.Background(), protocol.SendMessageRequest{
-		From:   protocol.Actor{Type: "agent", ID: "researcher"},
-		Parts:  []protocol.Part{{Kind: "text", Text: "hello"}},
-		Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
-	})
-	if err == nil || !strings.Contains(err.Error(), "moltnet message send returned") {
-		t.Fatalf("expected send error, got %v", err)
-	}
-
-	invalidSend := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requestBody = string(body)
 		response.Header().Set("Content-Type", "application/json")
-		_, _ = response.Write([]byte(`{"message_id":`))
+		_, _ = response.Write([]byte(`{"from":"researcher","message":"ok"}`))
 	}))
-	defer invalidSend.Close()
+	defer controlServer.Close()
 
-	client.baseURL = invalidSend.URL
-	client.token = ""
-	_, err = client.sendMessage(context.Background(), protocol.SendMessageRequest{
-		From:   protocol.Actor{Type: "agent", ID: "researcher"},
-		Parts:  []protocol.Part{{Kind: "text", Text: "hello"}},
-		Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+	_, err := sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{
+		Agent: bridgeconfig.AgentConfig{ID: "researcher"},
+		Moltnet: bridgeconfig.MoltnetConfig{
+			NetworkID: "local",
+		},
+		Runtime: bridgeconfig.RuntimeConfig{ControlURL: controlServer.URL},
+	}, protocol.Event{
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Target: protocol.Target{
+				Kind:           protocol.TargetKindDM,
+				DMID:           "dm-orchestrator-researcher",
+				ParticipantIDs: []string{"orchestrator", "researcher"},
+			},
+			From:      protocol.Actor{Type: "agent", ID: "writer"},
+			Parts:     []protocol.Part{{Kind: "text", Text: "hello"}},
+			CreatedAt: time.Now().UTC(),
+		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "decode moltnet message response") {
-		t.Fatalf("expected send decode error, got %v", err)
+	if err != nil {
+		t.Fatalf("sendControlMessage() error = %v", err)
+	}
+
+	if !strings.Contains(requestBody, "\"context_id\":\"moltnet:local:dm:dm-orchestrator-researcher\"") {
+		t.Fatalf("expected stable dm context id, got %q", requestBody)
+	}
+}
+
+func TestSendControlMessageIncludesRuntimeAuthToken(t *testing.T) {
+	t.Parallel()
+
+	var authorization string
+	controlServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		authorization = request.Header.Get("Authorization")
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"from":"researcher","message":"ok"}`))
+	}))
+	defer controlServer.Close()
+
+	_, err := sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "researcher"},
+		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
+		Runtime: bridgeconfig.RuntimeConfig{ControlURL: controlServer.URL, Token: "runtime-secret"},
+	}, protocol.Event{
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+			From:      protocol.Actor{Type: "agent", ID: "writer"},
+			Parts:     []protocol.Part{{Kind: "text", Text: "hello"}},
+			CreatedAt: time.Now().UTC(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("sendControlMessage() error = %v", err)
+	}
+	if authorization != "Bearer runtime-secret" {
+		t.Fatalf("unexpected authorization header %q", authorization)
 	}
 }

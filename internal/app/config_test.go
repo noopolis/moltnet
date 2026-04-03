@@ -1,6 +1,9 @@
 package app
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestConfigFromEnv(t *testing.T) {
 	t.Setenv("MOLTNET_ALLOW_HUMAN_INGRESS", "false")
@@ -9,7 +12,10 @@ func TestConfigFromEnv(t *testing.T) {
 	t.Setenv("MOLTNET_NETWORK_NAME", "Lab")
 	t.Setenv("MOLTNET_PAIRINGS_JSON", `[{"id":"pair_1","remote_network_id":"remote","remote_network_name":"Remote Lab","status":"connected"}]`)
 
-	config := ConfigFromEnv("1.2.3")
+	config, err := ConfigFromEnv("1.2.3")
+	if err != nil {
+		t.Fatalf("ConfigFromEnv() error = %v", err)
+	}
 	if config.AllowHumanIngress {
 		t.Fatalf("expected human ingress disabled, got %#v", config)
 	}
@@ -21,40 +27,58 @@ func TestConfigFromEnv(t *testing.T) {
 	}
 }
 
-func TestEnvOrDefault(t *testing.T) {
-	t.Parallel()
+func TestConfigFromEnvRejectsInvalidPairingsJSON(t *testing.T) {
+	t.Setenv("MOLTNET_PAIRINGS_JSON", `not-json`)
 
-	if got := envOrDefault("MOLTNET_UNKNOWN", "fallback"); got != "fallback" {
-		t.Fatalf("unexpected fallback %q", got)
+	if _, err := ConfigFromEnv("1.2.3"); err == nil {
+		t.Fatal("expected invalid pairings env error")
 	}
 }
 
-func TestEnvBoolOrDefault(t *testing.T) {
+func TestEnvValueAndBoolValue(t *testing.T) {
+	t.Setenv("MOLTNET_VALUE", "  configured  ")
+	if got, ok := envValue("MOLTNET_VALUE"); !ok || got != "configured" {
+		t.Fatalf("unexpected envValue() result value=%q ok=%v", got, ok)
+	}
+	if got, ok := envValue("MOLTNET_MISSING"); ok || got != "" {
+		t.Fatalf("expected missing envValue() result, got value=%q ok=%v", got, ok)
+	}
+
 	t.Setenv("MOLTNET_FLAG", "yes")
-	if got := envBoolOrDefault("MOLTNET_FLAG", false); !got {
-		t.Fatal("expected truthy value")
+	if got, ok := envBoolValue("MOLTNET_FLAG"); !ok || !got {
+		t.Fatalf("expected truthy envBoolValue(), got value=%v ok=%v", got, ok)
 	}
 
 	t.Setenv("MOLTNET_FLAG", "off")
-	if got := envBoolOrDefault("MOLTNET_FLAG", true); got {
-		t.Fatal("expected falsy value")
+	if got, ok := envBoolValue("MOLTNET_FLAG"); !ok || got {
+		t.Fatalf("expected falsy envBoolValue(), got value=%v ok=%v", got, ok)
 	}
 
 	t.Setenv("MOLTNET_FLAG", "unknown")
-	if got := envBoolOrDefault("MOLTNET_FLAG", true); !got {
-		t.Fatal("expected fallback value")
+	if got, ok := envBoolValue("MOLTNET_FLAG"); ok || got {
+		t.Fatalf("expected invalid envBoolValue() result, got value=%v ok=%v", got, ok)
 	}
 }
 
 func TestEnvPairings(t *testing.T) {
 	t.Setenv("MOLTNET_PAIRINGS_JSON", `[{"id":"pair_1","remote_network_id":"remote"}]`)
-	pairings := envPairings("MOLTNET_PAIRINGS_JSON")
+	pairings, err := envPairings("MOLTNET_PAIRINGS_JSON")
+	if err != nil {
+		t.Fatalf("envPairings() error = %v", err)
+	}
 	if len(pairings) != 1 || pairings[0].ID != "pair_1" {
 		t.Fatalf("unexpected pairings %#v", pairings)
 	}
 
 	t.Setenv("MOLTNET_PAIRINGS_JSON", `not-json`)
-	if got := envPairings("MOLTNET_PAIRINGS_JSON"); got != nil {
-		t.Fatalf("expected nil on invalid json, got %#v", got)
+	got, err := envPairings("MOLTNET_PAIRINGS_JSON")
+	if err == nil || !strings.Contains(err.Error(), "MOLTNET_PAIRINGS_JSON must contain valid JSON") {
+		t.Fatalf("expected invalid json error, got pairings=%#v err=%v", got, err)
+	}
+
+	t.Setenv("MOLTNET_PAIRINGS_JSON", "")
+	got, err = envPairings("MOLTNET_PAIRINGS_JSON")
+	if err != nil || got != nil {
+		t.Fatalf("expected empty env pairings to return nil,nil, got %#v %v", got, err)
 	}
 }

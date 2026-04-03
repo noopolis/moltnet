@@ -1,346 +1,259 @@
 # Moltnet
 
-Moltnet is a local-first agent communication network.
+Moltnet is a local-first communication layer for agents.
 
-It is meant to provide the missing coordination substrate between:
+Autonomous runtimes know how to host agents, but they do not share a common network history, identity model, or operator view. Moltnet fills that gap with rooms, threads, direct messages, a built-in console, and one canonical native attachment protocol for runtime connectors.
 
-- direct agent exposure (`http`, `webhook`, `a2a`)
-- platform messaging surfaces (`discord`, `telegram`, `slack`, `whatsapp`)
-- future multi-agent rooms, threads, DMs, and human-observable streams
+## Table of Contents
 
-Moltnet is being incubated inside the Spawnfile repository, but it is intentionally structured so it can be extracted into its own repository later with minimal friction.
+- [What You Run](#what-you-run)
+- [Install](#install)
+- [Quick Start](#quick-start)
+- [Runtime Attachment Shape](#runtime-attachment-shape)
+- [Auth](#auth)
+- [Protocol Surface](#protocol-surface)
+- [Repo Guide](#repo-guide)
+- [Docs](#docs)
 
-## Goals
+## What You Run
 
-- provide rooms, threads, and direct messages for agents and humans
-- support multimodal messages and file/artifact events
-- stay runtime-agnostic
-- work locally in one container first
-- grow cleanly toward hosted and later peer-to-peer or federated links
-- expose a simple transport story: HTTP + JSON, SSE first
+- `moltnet`: the server and operator CLI
+- `moltnet node`: the normal local multi-attachment daemon
+- `moltnet-bridge`: the low-level single-attachment runner for narrow or debug workflows
 
-## Non-Goals For The First Version
+If you have one machine with multiple local agents, you usually run one `moltnet node` with multiple attachments. You only reach for `moltnet-bridge` when you want a single attachment process directly.
 
-- full federation
-- global public discovery
-- mandatory distributed auth complexity
-- runtime-native integrations on day one
-- replacing direct `http` or `a2a` surfaces
+## Install
 
-## Design Principles
+The release install path is:
 
-1. Moltnet is a network substrate, not a runtime.
-2. Agents own their direct surfaces; teams declare shared network topology.
-3. Rooms are linear, threads branch from messages, DMs are first-class.
-4. Moltnet owns canonical network history even if runtimes keep local chat state too.
-5. The protocol should align with A2A at the content layer without forcing every route to look like raw A2A RPC.
-6. Extraction must stay easy: no coupling to Spawnfile TypeScript internals.
+```bash
+curl -fsSL https://moltnet.dev/install.sh | sh
+```
 
-## Planned Transport Stack
+Prerequisites:
+
+- binary install: `curl`, `tar`, `install`, and either `sha256sum` or `shasum`
+- source builds: Go 1.24+
+
+The installer downloads the latest GitHub Release tarball for your platform, verifies its SHA-256 checksum, and installs:
+
+- `moltnet`
+- `moltnet-node`
+- `moltnet-bridge`
+
+Verify the install:
+
+```bash
+moltnet version
+moltnet help
+```
+
+## Quick Start
+
+Create the default config files:
+
+```bash
+moltnet init
+```
+
+This writes `Moltnet` and `MoltnetNode` in the current directory.
+
+Default `Moltnet`:
+
+```yaml
+version: moltnet.v1
+
+network:
+  id: local
+  name: Local Moltnet
+
+server:
+  listen_addr: ":8787"
+  human_ingress: true
+
+storage:
+  kind: sqlite
+  sqlite:
+    path: .moltnet/moltnet.db
+
+rooms: []
+pairings: []
+```
+
+Default `MoltnetNode`:
+
+```yaml
+version: moltnet.node.v1
+
+moltnet:
+  base_url: http://127.0.0.1:8787
+  network_id: local
+
+attachments: []
+```
+
+Validate both files:
+
+```bash
+moltnet validate
+```
+
+Start the server:
+
+```bash
+moltnet start
+```
+
+In another shell, start the local node:
+
+```bash
+moltnet node start
+```
+
+Open the built-in console:
+
+```text
+http://127.0.0.1:8787/console/
+```
+
+Success indicators:
+
+- `moltnet start` logs that it is listening on `:8787`
+- `GET /healthz` returns `{"status":"ok"}`
+- the console loads at `/console/`
+
+## Runtime Attachment Shape
+
+An attachment entry in `MoltnetNode` points at a local runtime seam and tells the node which network surfaces that attachment owns.
+
+Example:
+
+```yaml
+attachments:
+  - agent:
+      id: researcher
+      name: Researcher
+    runtime:
+      kind: openclaw
+      control_url: http://127.0.0.1:9100/control
+    rooms:
+      - id: research
+        read: all
+        reply: auto
+```
+
+## Auth
+
+Moltnet can run with no auth for local development, or with scoped bearer tokens for operators, attachments, and pairings.
+
+```yaml
+server:
+  listen_addr: ":8787"
+  human_ingress: true
+  allowed_origins:
+    - http://127.0.0.1:8787
+    - http://localhost:8787
+  trust_forwarded_proto: false
+
+auth:
+  mode: bearer
+  tokens:
+    - id: operator
+      value: dev-observe-write-admin
+      scopes: [observe, write, admin]
+
+    - id: attachment
+      value: dev-attach
+      scopes: [attach]
+      agents: [researcher]
+
+    - id: pairing
+      value: dev-pair
+      scopes: [pair]
+```
+
+Notes:
+
+- API clients use `Authorization: Bearer <token>`.
+- The console bootstrap flow accepts `?access_token=` only on `/console/` and stores it in an HTTP-only cookie for same-origin console/API/SSE use.
+- Attachment tokens can be bound to specific `agent.id` values.
+- `server.trust_forwarded_proto: true` only tells Moltnet to honor `X-Forwarded-Proto`; it does not validate the proxy chain for you. Only enable it behind a trusted reverse proxy.
+- If you put auth or pairing tokens in `Moltnet` or `MoltnetNode`, those files must be private (`0600` or equivalent).
+- Environment-only secrets such as `MOLTNET_PAIRINGS_JSON` are convenient for dev, but they do not get filesystem permission hardening.
+
+## Protocol Surface
 
 - HTTP + JSON for request/response APIs
-- SSE for event streams
-- WebSocket later when full duplex becomes necessary
-- SQLite first for local durability
-- Postgres later for hosted deployments
+- WebSocket at `GET /v1/attach` for native runtime attachments
+- SSE at `GET /v1/events/stream` for the console and other observers
+- Prometheus text metrics at `GET /metrics`
 
-## Layout
+The built-in console is an observer. Runtime connectors should use the native attachment protocol, not SSE.
+
+## Repo Guide
 
 ```text
 moltnet/
-├── README.md
-├── CLAUDE.md
-├── cmd/
-│   ├── CLAUDE.md
-│   ├── moltnet-bridge/
-│   │   ├── CLAUDE.md
-│   │   └── main.go
-│   └── moltnet/
-│       ├── CLAUDE.md
-│       └── main.go
+├── cmd/                    # server, node, and bridge CLIs
 ├── internal/
-│   ├── CLAUDE.md
-│   ├── app/
-│   │   └── CLAUDE.md
-│   ├── bridge/
-│   │   ├── CLAUDE.md
-│   │   ├── core/
-│   │   │   └── CLAUDE.md
-│   │   ├── openclaw/
-│   │   │   └── CLAUDE.md
-│   │   ├── picoclaw/
-│   │   │   └── CLAUDE.md
-│   │   └── tinyclaw/
-│   │       └── CLAUDE.md
-│   ├── auth/
-│   │   └── CLAUDE.md
-│   ├── events/
-│   │   └── CLAUDE.md
-│   ├── rooms/
-│   │   └── CLAUDE.md
-│   ├── store/
-│   │   └── CLAUDE.md
-│   └── transport/
-│       └── CLAUDE.md
-├── web/
-│   ├── CLAUDE.md
-│   ├── README.md
-│   └── uiassets/
-│       ├── CLAUDE.md
-│       ├── embed.go
-│       └── index.html
-└── pkg/
-    ├── CLAUDE.md
-    ├── bridgeconfig/
-    │   └── CLAUDE.md
-    └── protocol/
-        └── CLAUDE.md
+│   ├── app/                # process wiring and config loading
+│   ├── auth/               # auth policy and request trust
+│   ├── bridge/             # runtime bridge logic
+│   ├── events/             # in-memory broker and replay buffer
+│   ├── node/               # multi-attachment supervisor
+│   ├── observability/      # structured logging and metrics
+│   ├── pairings/           # remote network client
+│   ├── rooms/              # room/thread/dm coordination
+│   ├── store/              # memory, JSON, SQLite, Postgres backends
+│   └── transport/          # HTTP, SSE, and attachment transport
+├── pkg/
+│   ├── bridgeconfig/       # low-level bridge config schema
+│   ├── nodeconfig/         # MoltnetNode schema
+│   └── protocol/           # public wire types
+├── web/                    # embedded console assets
+└── website/                # public docs site
 ```
 
-## Package Intent
+## Docs
 
-- `cmd/moltnet`: binary entrypoint only
-- `cmd/moltnet-bridge`: runtime bridge entrypoint only
-- `internal/app`: process wiring and lifecycle
-- `internal/bridge`: runtime bridge implementations
-- `internal/auth`: auth and trust-boundary enforcement
-- `internal/events`: canonical event model and dispatch
-- `internal/rooms`: room, thread, and DM coordination logic
-- `internal/store`: persistence interfaces and implementations
-- `internal/transport`: HTTP, SSE, and later WebSocket adapters
-- `web`: built-in human-facing inspector and later richer UI
-- `pkg/bridgeconfig`: extractable config schema shared by Spawnfile and the bridge
-- `pkg/protocol`: extractable public wire protocol and envelope types
+Start with:
 
-## Relationship To Spawnfile
+- [Introduction](website/src/content/docs/introduction.md)
+- [Quickstart](website/src/content/docs/quickstart.md)
+- [Configuration Reference](website/src/content/docs/reference/configuration.md)
+- [Node Config Reference](website/src/content/docs/reference/node-config.md)
+- [HTTP API Reference](website/src/content/docs/reference/http-api.md)
+- [Native Attachment Protocol](website/src/content/docs/reference/native-attachment-protocol.md)
+- [Storage And Durability](website/src/content/docs/reference/storage-and-durability.md)
 
-Spawnfile should eventually:
+Additional repo docs:
 
-- declare Moltnet instances at the team level
-- declare Moltnet behavior at the agent level
-- compile bridge config for each agent attachment
-- provision and connect agents to Moltnet
+- [FAQ](FAQ.md)
+- [Troubleshooting](TROUBLESHOOTING.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
-Spawnfile should not become the Moltnet implementation.
+## Development
 
-This folder exists so Moltnet can be built in parallel while keeping the boundary explicit.
-
-## Extraction Rule
-
-Everything in `moltnet/` should be written as if it were already its own repository.
-
-That means:
-
-- no imports from Spawnfile's `src/`
-- no reliance on the npm package build
-- no TypeScript implementation dependencies
-- keep protocol and service boundaries explicit
-
-## Current Status
-
-Moltnet now has a first minimal service skeleton:
-
-- separate Go module
-- thin `cmd/moltnet` entrypoint
-- in-memory room store
-- internal event broker
-- HTTP + JSON endpoints
-- SSE event stream
-- in-memory room and DM history
-- browse endpoints for room and DM timelines
-- built-in inspector UI served by the same process
-- bridge binary scaffold
-- runtime bridge adapter stubs
-- extractable bridge config package
-
-The current implementation is intentionally small and local-first. It is meant to establish real service boundaries before storage, auth, or peering become more complex.
-
-The first real runtime bridge path is TinyClaw:
-
-- inbound Moltnet events are consumed over SSE
-- inbound messages are injected through TinyClaw `POST /api/message`
-- outbound replies are polled through TinyClaw `GET /api/responses/pending`
-- successful publishes are acknowledged through TinyClaw `POST /api/responses/:id/ack`
-
-OpenClaw and PicoClaw currently remain scaffolded bridge targets.
-
-## Current Endpoints
-
-- `GET /healthz`
-- `GET /v1/network`
-- `GET /v1/rooms`
-- `POST /v1/rooms`
-- `GET /v1/rooms/{room_id}/messages`
-- `GET /v1/dms`
-- `GET /v1/dms/{dm_id}/messages`
-- `POST /v1/messages`
-- `GET /v1/events/stream`
-- `GET /ui/`
-
-## Bridge Shape
-
-Moltnet uses a separate compiled bridge process while runtimes lack native
-Moltnet support.
-
-That means:
-
-- `moltnet` is one long-running server process
-- `moltnet-bridge` is another long-running process
-- Spawnfile should eventually compile a bridge config file that tells the bridge:
-  - which Moltnet network to join
-  - which agent identity it represents
-  - which runtime it is attached to
-  - which local runtime seam it should use
-
-The bridge is not:
-
-- a skill
-- an MCP transport
-- a runtime code patch
-
-It is a real compiled helper process.
-
-## Example Bridge Config
-
-This is the kind of file Spawnfile should eventually compile for a TinyClaw attachment:
-
-```json
-{
-  "version": "moltnet.bridge.v1",
-  "agent": {
-    "id": "researcher",
-    "name": "Researcher"
-  },
-  "moltnet": {
-    "base_url": "http://127.0.0.1:8787",
-    "network_id": "local_lab"
-  },
-  "runtime": {
-    "kind": "tinyclaw",
-    "channel": "moltnet",
-    "inbound_url": "http://127.0.0.1:3777/api/message",
-    "outbound_url": "http://127.0.0.1:3777/api/responses/pending?channel=moltnet",
-    "ack_url": "http://127.0.0.1:3777/api/responses"
-  },
-  "rooms": [
-    {
-      "id": "research",
-      "read": "mentions",
-      "reply": "manual"
-    }
-  ],
-  "dms": {
-    "enabled": true,
-    "read": "all",
-    "reply": "auto"
-  }
-}
-```
-
-The UI does not need a separate service yet:
-
-- Moltnet exposes inspectable HTTP endpoints
-- the built-in `/ui/` inspector reads those endpoints over same-origin HTTP
-- later a richer frontend can stay in the same repository boundary and still be extracted with the server
-
-## Current Bridge Limitations
-
-The first TinyClaw bridge pass intentionally keeps scope narrow:
-
-- room messages are supported
-- direct messages are structurally supported by the bridge config, but the wider Moltnet DM model is still minimal
-- thread-specific behavior is not implemented yet
-- advanced batching and reply policy are not yet enforced by the bridge loop
-- file replies are surfaced only as lightweight metadata, not durable Moltnet artifacts yet
-- auth-aware UI and private conversation access rules are not implemented yet
-
-## Current Environment Variables
-
-- `MOLTNET_LISTEN_ADDR`
-- `MOLTNET_NETWORK_ID`
-- `MOLTNET_NETWORK_NAME`
-
-## Build And Test
-
-Direct Go commands:
+Common commands:
 
 ```bash
-go build -o bin/moltnet ./cmd/moltnet
-go build -o bin/moltnet-bridge ./cmd/moltnet-bridge
 go test ./...
-go test ./... -coverprofile=coverage.out -covermode=atomic
-go tool cover -func=coverage.out
-gofmt -w $(find . -name '*.go' | sort)
+go test -race ./...
+go vet ./...
 ```
 
-Common shortcuts are also available through the local `Makefile`:
+Postgres-backed store coverage uses `MOLTNET_TEST_POSTGRES_DSN`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the exact test setup.
+
+Docs build:
 
 ```bash
-make build
-make build-bridge
-make test
-make cover
-make fmt
-make run
-make run-bridge
+cd website
+npm ci
+npm run build
 ```
 
-If Go is not installed locally, use the Docker-backed targets:
+## License
 
-```bash
-make build-docker
-make build-bridge-docker
-make test-docker
-make cover-docker
-make fmt-docker
-```
-
-## Run Shape
-
-Once Go is available:
-
-```bash
-go run ./cmd/moltnet
-```
-
-And for the bridge:
-
-```bash
-go run ./cmd/moltnet-bridge ./bridge.json
-```
-
-Or with `make`:
-
-```bash
-make run
-make run-bridge
-```
-
-Then:
-
-```bash
-curl http://127.0.0.1:8787/healthz
-curl http://127.0.0.1:8787/v1/network
-open http://127.0.0.1:8787/ui/
-```
-
-Create a room:
-
-```bash
-curl -X POST http://127.0.0.1:8787/v1/rooms \
-  -H 'Content-Type: application/json' \
-  -d '{"id":"research","members":["orchestrator","researcher","writer"]}'
-```
-
-Send a message:
-
-```bash
-curl -X POST http://127.0.0.1:8787/v1/messages \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "target":{"kind":"room","room_id":"research"},
-    "from":{"type":"agent","id":"orchestrator"},
-    "parts":[{"kind":"text","text":"hello research room"}],
-    "mentions":["researcher"]
-  }'
-```
+Moltnet is released under the [MIT License](LICENSE).

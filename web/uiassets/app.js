@@ -9,7 +9,7 @@ import {
   renderSelectableList,
   summarizeTarget,
   targetKey,
-} from "./ui-lib.js";
+} from "./console-lib.js";
 
 const state = {
   network: null,

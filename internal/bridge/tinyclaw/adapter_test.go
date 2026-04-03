@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 func validBridgeConfig(baseURL string) bridgeconfig.Config {
@@ -62,6 +65,12 @@ func TestNewBridgeAndAdapterRun(t *testing.T) {
 	cancel()
 	if err := adapter.Run(ctx, config); err != nil {
 		t.Fatalf("Run() error = %v", err)
+	}
+
+	controlConfig := config
+	controlConfig.Runtime.ControlURL = server.URL + "/control"
+	if err := adapter.Run(ctx, controlConfig); err != nil {
+		t.Fatalf("Run() control path error = %v", err)
 	}
 }
 
@@ -139,8 +148,52 @@ func TestFlushResponses(t *testing.T) {
 	if len(sentBodies) != 1 || !strings.Contains(sentBodies[0], "report.md") {
 		t.Fatalf("unexpected sent bodies %#v", sentBodies)
 	}
+	if !strings.Contains(sentBodies[0], "\"id\":\"tinyclaw:researcher:7\"") {
+		t.Fatalf("expected deterministic request id, got %#v", sentBodies)
+	}
 	if len(acked) != 1 || acked[0] != "/api/responses/7/ack" {
 		t.Fatalf("unexpected acked paths %#v", acked)
+	}
+}
+
+func TestFlushResponsesLimitsOnePollBatch(t *testing.T) {
+	t.Parallel()
+
+	var sent int
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/responses/pending":
+			response.Header().Set("Content-Type", "application/json")
+			payload := make([]string, 0, maxResponsesPerPoll+5)
+			for index := 1; index <= maxResponsesPerPoll+5; index++ {
+				payload = append(payload, `{"id":`+strconv.Itoa(index)+`,"sender":"Writer","senderId":"room:research","message":"done"}`)
+			}
+			_, _ = response.Write([]byte("[" + strings.Join(payload, ",") + "]"))
+		case "/api/responses/1/ack", "/api/responses/2/ack", "/api/responses/3/ack", "/api/responses/4/ack", "/api/responses/5/ack",
+			"/api/responses/6/ack", "/api/responses/7/ack", "/api/responses/8/ack", "/api/responses/9/ack", "/api/responses/10/ack",
+			"/api/responses/11/ack", "/api/responses/12/ack", "/api/responses/13/ack", "/api/responses/14/ack", "/api/responses/15/ack",
+			"/api/responses/16/ack", "/api/responses/17/ack", "/api/responses/18/ack", "/api/responses/19/ack", "/api/responses/20/ack":
+			response.WriteHeader(http.StatusOK)
+		case "/v1/messages":
+			sent++
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"message_id":"msg_1","event_id":"evt_1","accepted":true}`))
+		default:
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	bridge, err := newBridge(validBridgeConfig(server.URL))
+	if err != nil {
+		t.Fatalf("newBridge() error = %v", err)
+	}
+
+	if err := bridge.flushResponses(context.Background()); err != nil {
+		t.Fatalf("flushResponses() error = %v", err)
+	}
+	if sent != maxResponsesPerPoll {
+		t.Fatalf("expected %d sends, got %d", maxResponsesPerPoll, sent)
 	}
 }
 
@@ -148,12 +201,23 @@ func TestRunInboundSkipsUnrelatedMessage(t *testing.T) {
 	t.Parallel()
 
 	var posted int
+	event := protocol.Event{
+		ID:        "evt_1",
+		Type:      protocol.EventTypeMessageCreated,
+		NetworkID: "local",
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "unknown"},
+			From:      protocol.Actor{Type: "agent", ID: "writer"},
+			Parts:     []protocol.Part{{Kind: "text", Text: "hello"}},
+			CreatedAt: time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC),
+		},
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
-		case "/v1/events/stream":
-			response.Header().Set("Content-Type", "text/event-stream")
-			_, _ = response.Write([]byte("event: message.created\n"))
-			_, _ = response.Write([]byte("data: {\"id\":\"evt_1\",\"type\":\"message.created\",\"network_id\":\"local\",\"message\":{\"id\":\"msg_1\",\"network_id\":\"local\",\"target\":{\"kind\":\"room\",\"room_id\":\"unknown\"},\"from\":{\"type\":\"agent\",\"id\":\"writer\"},\"parts\":[{\"kind\":\"text\",\"text\":\"hello\"}],\"created_at\":\"2026-03-30T12:00:00Z\"}}\n\n"))
+		case "/v1/attach":
+			serveAttachmentEvent(t, response, request, event)
 		case "/api/message":
 			posted++
 			response.WriteHeader(http.StatusOK)
@@ -180,12 +244,24 @@ func TestRunInboundPostsRelevantMessage(t *testing.T) {
 	t.Parallel()
 
 	var posted tinyclawMessageRequest
+	event := protocol.Event{
+		ID:        "evt_1",
+		Type:      protocol.EventTypeMessageCreated,
+		NetworkID: "local",
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+			From:      protocol.Actor{Type: "agent", ID: "writer", Name: "Writer"},
+			Mentions:  []string{"researcher"},
+			Parts:     []protocol.Part{{Kind: "text", Text: "hello"}},
+			CreatedAt: time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC),
+		},
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
-		case "/v1/events/stream":
-			response.Header().Set("Content-Type", "text/event-stream")
-			_, _ = response.Write([]byte("event: message.created\n"))
-			_, _ = response.Write([]byte("data: {\"id\":\"evt_1\",\"type\":\"message.created\",\"network_id\":\"local\",\"message\":{\"id\":\"msg_1\",\"network_id\":\"local\",\"target\":{\"kind\":\"room\",\"room_id\":\"research\"},\"from\":{\"type\":\"agent\",\"id\":\"writer\",\"name\":\"Writer\"},\"mentions\":[\"researcher\"],\"parts\":[{\"kind\":\"text\",\"text\":\"hello\"}],\"created_at\":\"2026-03-30T12:00:00Z\"}}\n\n"))
+		case "/v1/attach":
+			serveAttachmentEvent(t, response, request, event)
 		case "/api/message":
 			if err := json.NewDecoder(request.Body).Decode(&posted); err != nil {
 				t.Fatalf("decode posted message: %v", err)
@@ -207,6 +283,63 @@ func TestRunInboundPostsRelevantMessage(t *testing.T) {
 	}
 	if posted.Agent != "researcher" || posted.SenderID != "room:research" {
 		t.Fatalf("unexpected posted message %#v", posted)
+	}
+}
+
+func TestRunInboundReconnectsAfterAttachFailure(t *testing.T) {
+	t.Parallel()
+
+	var attachRequests int
+	var posted tinyclawMessageRequest
+	event := protocol.Event{
+		ID:        "evt_1",
+		Type:      protocol.EventTypeMessageCreated,
+		NetworkID: "local",
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+			From:      protocol.Actor{Type: "agent", ID: "writer", Name: "Writer"},
+			Mentions:  []string{"researcher"},
+			Parts:     []protocol.Part{{Kind: "text", Text: "hello"}},
+			CreatedAt: time.Now().UTC(),
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/attach":
+			attachRequests++
+			if attachRequests == 1 {
+				response.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			serveAttachmentEvent(t, response, request, event)
+		case "/api/message":
+			if err := json.NewDecoder(request.Body).Decode(&posted); err != nil {
+				t.Fatalf("decode posted message: %v", err)
+			}
+			response.WriteHeader(http.StatusOK)
+		default:
+			response.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	bridge, err := newBridge(validBridgeConfig(server.URL))
+	if err != nil {
+		t.Fatalf("newBridge() error = %v", err)
+	}
+
+	if err := bridge.runInbound(context.Background()); err != nil {
+		t.Fatalf("runInbound() error = %v", err)
+	}
+	if attachRequests < 2 {
+		t.Fatalf("expected reconnect after attach failure, got %d requests", attachRequests)
+	}
+	if posted.Agent != "researcher" {
+		t.Fatalf("expected reconnected message delivery, got %#v", posted)
 	}
 }
 
@@ -307,4 +440,63 @@ func TestAdapterRunReturnsConfigError(t *testing.T) {
 	if err := adapter.Run(context.Background(), config); err == nil {
 		t.Fatal("expected config error")
 	}
+}
+
+func serveAttachmentEvent(
+	t *testing.T,
+	response http.ResponseWriter,
+	request *http.Request,
+	event protocol.Event,
+) {
+	t.Helper()
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	connection, err := upgrader.Upgrade(response, request, nil)
+	if err != nil {
+		t.Fatalf("upgrade websocket: %v", err)
+	}
+	defer connection.Close()
+
+	if err := connection.WriteJSON(protocol.AttachmentFrame{
+		Op:                  protocol.AttachmentOpHello,
+		Version:             protocol.AttachmentProtocolV1,
+		HeartbeatIntervalMS: 30000,
+	}); err != nil {
+		t.Fatalf("write hello: %v", err)
+	}
+
+	var identify protocol.AttachmentFrame
+	if err := connection.ReadJSON(&identify); err != nil {
+		t.Fatalf("read identify: %v", err)
+	}
+
+	if err := connection.WriteJSON(protocol.AttachmentFrame{
+		Op:        protocol.AttachmentOpReady,
+		Version:   protocol.AttachmentProtocolV1,
+		NetworkID: "local",
+		AgentID:   "researcher",
+	}); err != nil {
+		t.Fatalf("write ready: %v", err)
+	}
+
+	if err := connection.WriteJSON(protocol.AttachmentFrame{
+		Op:        protocol.AttachmentOpEvent,
+		Version:   protocol.AttachmentProtocolV1,
+		NetworkID: "local",
+		Cursor:    event.ID,
+		Event:     &event,
+	}); err != nil {
+		t.Fatalf("write event: %v", err)
+	}
+
+	var ack protocol.AttachmentFrame
+	if err := connection.ReadJSON(&ack); err != nil {
+		t.Fatalf("read ack: %v", err)
+	}
+
+	_ = connection.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "done"),
+		time.Now().Add(time.Second),
+	)
 }

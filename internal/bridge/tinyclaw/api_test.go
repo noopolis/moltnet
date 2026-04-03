@@ -18,6 +18,9 @@ func TestAPIClient(t *testing.T) {
 	var ackPath string
 
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer runtime-secret" {
+			t.Fatalf("unexpected auth header %q", request.Header.Get("Authorization"))
+		}
 		switch request.URL.Path {
 		case "/api/message":
 			if err := json.NewDecoder(request.Body).Decode(&posted); err != nil {
@@ -41,6 +44,7 @@ func TestAPIClient(t *testing.T) {
 
 	client := newAPIClient(bridgeconfig.Config{
 		Runtime: bridgeconfig.RuntimeConfig{
+			Token:       "runtime-secret",
 			InboundURL:  server.URL + "/api/message",
 			OutboundURL: server.URL + "/api/responses/pending",
 			AckURL:      server.URL + "/api/responses/",
@@ -61,11 +65,11 @@ func TestAPIClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pendingResponses() error = %v", err)
 	}
-	if len(responses) != 1 || responses[0].ID != 7 {
+	if len(responses) != 1 || responses[0].ID.String() != "7" {
 		t.Fatalf("unexpected responses %#v", responses)
 	}
 
-	if err := client.ackResponse(context.Background(), 7); err != nil {
+	if err := client.ackResponse(context.Background(), pendingResponseID("7")); err != nil {
 		t.Fatalf("ackResponse() error = %v", err)
 	}
 	if ackPath != "/api/responses/7/ack" {
@@ -107,7 +111,7 @@ func TestAPIClientErrors(t *testing.T) {
 	if _, err := client.pendingResponses(context.Background()); err == nil {
 		t.Fatal("expected pending responses error")
 	}
-	if err := client.ackResponse(context.Background(), 1); err == nil {
+	if err := client.ackResponse(context.Background(), pendingResponseID("1")); err == nil {
 		t.Fatal("expected ack error")
 	}
 }
@@ -145,5 +149,36 @@ func TestAPIClientDecodeErrors(t *testing.T) {
 
 	if err := client.postJSON(context.Background(), ":", map[string]string{"hello": "world"}, nil); err == nil {
 		t.Fatal("expected invalid url error")
+	}
+}
+
+func TestAPIClientAuthorizeWithoutToken(t *testing.T) {
+	t.Parallel()
+
+	request := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	client := &apiClient{}
+	client.authorize(request)
+	if request.Header.Get("Authorization") != "" {
+		t.Fatalf("expected empty auth header, got %q", request.Header.Get("Authorization"))
+	}
+}
+
+func TestPendingResponseIDValidation(t *testing.T) {
+	t.Parallel()
+
+	var id pendingResponseID
+	if err := json.Unmarshal([]byte(`"valid_7"`), &id); err != nil {
+		t.Fatalf("expected valid pending response id, got %v", err)
+	}
+	if id.String() != "valid_7" {
+		t.Fatalf("unexpected pending response id %q", id.String())
+	}
+	if err := json.Unmarshal([]byte(`"../../evil"`), &id); err == nil {
+		t.Fatal("expected invalid pending response id error")
+	}
+
+	client := &apiClient{ackURL: "http://example.com/api/responses"}
+	if err := client.ackResponse(context.Background(), pendingResponseID("../bad")); err == nil {
+		t.Fatal("expected ackResponse() to reject invalid pending response id")
 	}
 }

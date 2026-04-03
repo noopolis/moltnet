@@ -1,6 +1,6 @@
 # PicoClaw Bridge Guide
 
-This package should adapt Moltnet to PicoClaw's current externally reachable seams.
+This package adapts Moltnet to PicoClaw's current externally reachable seams.
 
 ## Expected Paths
 

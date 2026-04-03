@@ -2,43 +2,44 @@ package store
 
 import "github.com/noopolis/moltnet/pkg/protocol"
 
-func pageMessages(messages []protocol.Message, before string, limit int) protocol.MessagePage {
-	selected := make([]protocol.Message, 0)
+type messageItem struct{ protocol.Message }
 
-	if limit <= 0 {
-		limit = len(messages)
-	}
+func (m messageItem) GetID() string { return m.Message.ID }
 
-	end := len(messages)
-	if before != "" {
-		for index, message := range messages {
-			if message.ID == before {
-				end = index
-				break
-			}
+func pageMessagesResult(messages []protocol.Message, page protocol.PageRequest) (protocol.MessagePage, error) {
+	if page.Before == "" && page.After == "" {
+		limit := page.Limit
+		if limit <= 0 || len(messages) <= limit {
+			return protocol.MessagePage{
+				Messages: append([]protocol.Message(nil), messages...),
+				Page:     protocol.PageInfo{},
+			}, nil
 		}
+
+		selected := append([]protocol.Message(nil), messages[len(messages)-limit:]...)
+		return protocol.MessagePage{
+			Messages: selected,
+			Page: protocol.PageInfo{
+				HasMore:    true,
+				NextBefore: selected[0].ID,
+			},
+		}, nil
 	}
 
-	if end < 0 {
-		end = 0
+	items := make([]messageItem, 0, len(messages))
+	for _, message := range messages {
+		items = append(items, messageItem{Message: message})
 	}
-
-	start := 0
-	if limit < end {
-		start = end - limit
+	selected, info, err := paginateByID(items, page)
+	if err != nil {
+		return protocol.MessagePage{}, err
 	}
-
-	selected = append(selected, messages[start:end]...)
-
-	page := protocol.PageInfo{
-		HasMore: start > 0,
+	values := make([]protocol.Message, 0, len(selected))
+	for _, item := range selected {
+		values = append(values, item.Message)
 	}
-	if page.HasMore && len(selected) > 0 {
-		page.NextBefore = selected[0].ID
-	}
-
 	return protocol.MessagePage{
-		Messages: selected,
-		Page:     page,
-	}
+		Messages: values,
+		Page:     info,
+	}, nil
 }

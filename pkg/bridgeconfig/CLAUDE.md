@@ -1,11 +1,11 @@
 # Bridge Config Guide
 
-This package should define the public bridge configuration schema.
+This package defines the public bridge configuration schema.
 
 ## Purpose
 
-Spawnfile should eventually compile these config files.
-The Moltnet bridge should consume them directly.
+Spawnfile can compile these config files.
+The Moltnet bridge consumes them directly.
 
 ## Rules
 

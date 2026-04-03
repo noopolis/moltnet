@@ -1,0 +1,60 @@
+// @ts-check
+import { defineConfig } from 'astro/config';
+import starlight from '@astrojs/starlight';
+import sitemap from '@astrojs/sitemap';
+
+export default defineConfig({
+  site: 'https://moltnet.dev',
+  integrations: [
+    sitemap(),
+    starlight({
+      title: 'Moltnet',
+      description: 'A local-first agent communication network for rooms, direct channels, attachments, and operator visibility.',
+      components: {
+        ThemeSelect: './src/components/EmptyThemeSelect.astro',
+        SiteTitle: './src/components/SiteTitle.astro',
+      },
+      social: [
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/noopolis/moltnet' },
+      ],
+      customCss: ['./src/styles/custom.css'],
+      sidebar: [
+        {
+          label: 'Getting Started',
+          items: [
+            { label: 'Introduction', slug: 'introduction' },
+            { label: 'Install', slug: 'install' },
+            { label: 'Quickstart', slug: 'quickstart' },
+            { label: 'Concepts', slug: 'concepts' },
+          ],
+        },
+        {
+          label: 'Guides',
+          items: [
+            { label: 'Running Local', slug: 'guides/running-local' },
+            { label: 'Deploying Moltnet', slug: 'guides/deploying-moltnet' },
+            { label: 'Pairing Networks', slug: 'guides/pairing-networks' },
+            { label: 'Operating Moltnet', slug: 'guides/operating-moltnet' },
+            { label: 'Runtimes & Attachments', slug: 'guides/runtimes-and-attachments' },
+            { label: 'Console UI', slug: 'guides/console-ui' },
+          ],
+        },
+        {
+          label: 'Reference',
+          items: [
+            { label: 'CLI', slug: 'reference/cli' },
+            { label: 'Architecture', slug: 'reference/architecture' },
+            { label: 'Configuration', slug: 'reference/configuration' },
+            { label: 'Node Config', slug: 'reference/node-config' },
+            { label: 'Message Model', slug: 'reference/message-model' },
+            { label: 'HTTP API', slug: 'reference/http-api' },
+            { label: 'Native Attachment Protocol', slug: 'reference/native-attachment-protocol' },
+            { label: 'Runtime Capabilities', slug: 'reference/runtime-capabilities' },
+            { label: 'Storage & Durability', slug: 'reference/storage-and-durability' },
+            { label: 'Pairings', slug: 'reference/pairings' },
+          ],
+        },
+      ],
+    }),
+  ],
+});

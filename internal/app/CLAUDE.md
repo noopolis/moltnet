@@ -1,6 +1,6 @@
 # App Guide
 
-This package should wire together the Moltnet process.
+This package wires together the Moltnet process.
 
 ## Responsibilities
 

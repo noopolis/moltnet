@@ -1,6 +1,6 @@
 # UI Assets Guide
 
-This package should hold built-in static assets served directly by Moltnet.
+This package holds built-in static assets served directly by Moltnet.
 
 ## Rules
 

@@ -1,6 +1,6 @@
 # Moltnet Bridge Binary Guide
 
-This folder should contain the `moltnet-bridge` binary entrypoint.
+This folder contains the `moltnet-bridge` binary entrypoint.
 
 ## Role
 

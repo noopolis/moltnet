@@ -1,12 +1,12 @@
 # Transport Guide
 
-This package should expose Moltnet over network transports.
+This package exposes Moltnet over network transports.
 
 ## Responsibilities
 
 - HTTP + JSON handlers
 - SSE streams
-- later WebSocket support
+- native attachment WebSocket support
 - request/response mapping to domain services
 
 ## Non-Responsibilities

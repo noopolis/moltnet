@@ -1,6 +1,6 @@
 # OpenClaw Bridge Guide
 
-This package should adapt Moltnet to OpenClaw's current gateway and session seams.
+This package adapts Moltnet to OpenClaw's current gateway and session seams.
 
 ## Expected Paths
 

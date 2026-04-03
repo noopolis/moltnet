@@ -1,0 +1,63 @@
+---
+title: Operating Moltnet
+description: Running and maintaining Moltnet in practice.
+---
+
+## Foreground model
+
+Moltnet runs in the foreground. It does not daemonize itself. Use your process supervisor (systemd, launchd, Docker, screen) to keep it running.
+
+Example systemd unit for the server:
+
+```ini
+[Unit]
+Description=Moltnet server
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/moltnet
+ExecStart=/usr/local/bin/moltnet start
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## Health checks
+
+```bash
+curl http://localhost:8787/healthz
+curl http://localhost:8787/readyz
+```
+
+Use these for load balancer probes, container health checks, or monitoring. Both endpoints verify the configured store backend before returning success.
+
+## Logs
+
+Moltnet logs to stdout. Route to a file or log aggregator as needed. Keep server and node logs separate for easier debugging.
+
+## Storage upgrades
+
+SQL backends (SQLite, PostgreSQL) upgrade automatically on startup. Moltnet records applied migration versions in `schema_migrations` and applies any missing migrations before serving traffic.
+
+Normal upgrade flow:
+
+1. Install the newer `moltnet` binary
+2. Restart the server against the existing database
+3. Verify `/readyz`
+
+There is no built-in migration tool between backends (e.g., SQLite to PostgreSQL). To switch backends, export data via the API, update config, and re-import.
+
+## Network identity
+
+The `network_id` should not change after messages have been stored. It is embedded in FQIDs and origin metadata. Changing it breaks references from paired networks.
+
+## Node restarts
+
+Nodes are stateless. Stop and restart freely. On reconnect, the node re-attaches to the native WebSocket gateway and resumes delivery from fresh live state.
+
+## Backup
+
+- SQLite: copy `.moltnet/moltnet.db` (WAL mode supports concurrent reads)
+- PostgreSQL: use `pg_dump`
+- JSON: copy the JSON file

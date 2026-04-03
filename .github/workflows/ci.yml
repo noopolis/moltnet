@@ -1,0 +1,113 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: go.mod
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
+          "$(go env GOPATH)/bin/staticcheck" ./...
+
+      - name: Check go mod tidy
+        shell: bash
+        run: |
+          set -euo pipefail
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Go test with coverage
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+
+      - name: Enforce coverage threshold
+        shell: bash
+        run: |
+          set -euo pipefail
+          go tool cover -func=coverage.out | tee coverage.txt
+          total="$(awk '/^total:/{gsub("%","",$3); print $3}' coverage.txt)"
+          awk -v total="$total" 'BEGIN { if (total + 0 < 90.0) exit 1 }'
+
+  go-test-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: moltnet
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d moltnet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      MOLTNET_TEST_POSTGRES_DSN: postgres://postgres:postgres@127.0.0.1:5432/moltnet?sslmode=disable
+    steps:
+      - name: Check out
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: go.mod
+
+      - name: Postgres-backed store tests
+        run: go test ./internal/store
+
+      - name: Postgres-backed store tests with race detector
+        run: go test -race ./internal/store
+
+  go-race:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: go.mod
+
+      - name: Go test -race
+        run: go test -race ./...
+
+  docs-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install docs deps
+        working-directory: website
+        run: npm ci
+
+      - name: Build docs
+        working-directory: website
+        run: npm run build

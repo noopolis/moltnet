@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
+
+var processStateMu sync.Mutex
 
 func TestRun(t *testing.T) {
 	t.Parallel()
@@ -73,4 +77,73 @@ func TestDefaultSignalContext(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("expected canceled signal context")
 	}
+}
+
+func TestRunVersion(t *testing.T) {
+	if got := captureStdout(t, func() {
+		if err := run(context.Background(), []string{"version"}); err != nil {
+			t.Fatalf("run(version) error = %v", err)
+		}
+	}); got != version+"\n" {
+		t.Fatalf("unexpected version output %q", got)
+	}
+}
+
+func TestMainVersion(t *testing.T) {
+	if got := captureMainOutput(t, []string{"moltnet-bridge", "version"}, func() {
+		main()
+	}); got != version+"\n" {
+		t.Fatalf("unexpected version output %q", got)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	processStateMu.Lock()
+	defer processStateMu.Unlock()
+
+	return captureStdoutLocked(t, fn)
+}
+
+func captureMainOutput(t *testing.T, args []string, fn func()) string {
+	t.Helper()
+
+	processStateMu.Lock()
+	defer processStateMu.Unlock()
+
+	previousArgs := os.Args
+	defer func() { os.Args = previousArgs }()
+	os.Args = append([]string(nil), args...)
+
+	return captureStdoutLocked(t, fn)
+}
+
+func captureStdoutLocked(t *testing.T, fn func()) string {
+	t.Helper()
+
+	current := stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	defer reader.Close()
+
+	stdout = writer
+	defer func() {
+		stdout = current
+	}()
+
+	fn()
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+
+	var buffer bytes.Buffer
+	if _, err := buffer.ReadFrom(reader); err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+
+	return buffer.String()
 }

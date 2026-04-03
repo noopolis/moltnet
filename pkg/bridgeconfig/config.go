@@ -16,50 +16,48 @@ const (
 )
 
 type Config struct {
-	Version string        `json:"version"`
-	Agent   AgentConfig   `json:"agent"`
-	Moltnet MoltnetConfig `json:"moltnet"`
-	Runtime RuntimeConfig `json:"runtime"`
-	Read    ReadConfig    `json:"read,omitempty"`
-	Reply   ReplyConfig   `json:"reply,omitempty"`
-	Batch   *BatchConfig  `json:"batch,omitempty"`
-	Rooms   []RoomBinding `json:"rooms,omitempty"`
-	DMs     *DMConfig     `json:"dms,omitempty"`
+	Version string        `json:"version" yaml:"version"`
+	Agent   AgentConfig   `json:"agent" yaml:"agent"`
+	Moltnet MoltnetConfig `json:"moltnet" yaml:"moltnet"`
+	Runtime RuntimeConfig `json:"runtime" yaml:"runtime"`
+	Read    ReadConfig    `json:"read,omitempty" yaml:"read,omitempty"`
+	Reply   ReplyConfig   `json:"reply,omitempty" yaml:"reply,omitempty"`
+	Rooms   []RoomBinding `json:"rooms,omitempty" yaml:"rooms,omitempty"`
+	DMs     *DMConfig     `json:"dms,omitempty" yaml:"dms,omitempty"`
 }
 
 type AgentConfig struct {
-	ID   string `json:"id"`
-	Name string `json:"name,omitempty"`
+	ID   string `json:"id" yaml:"id"`
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 }
 
 type MoltnetConfig struct {
-	BaseURL   string `json:"base_url"`
-	NetworkID string `json:"network_id"`
-	Token     string `json:"token,omitempty"`
+	BaseURL   string `json:"base_url" yaml:"base_url"`
+	NetworkID string `json:"network_id" yaml:"network_id"`
+	Token     string `json:"token,omitempty" yaml:"token,omitempty"`
 }
 
 type RuntimeConfig struct {
-	Kind        string `json:"kind"`
-	Channel     string `json:"channel,omitempty"`
-	InboundURL  string `json:"inbound_url,omitempty"`
-	OutboundURL string `json:"outbound_url,omitempty"`
-	AckURL      string `json:"ack_url,omitempty"`
-	EventsURL   string `json:"events_url,omitempty"`
-	ControlURL  string `json:"control_url,omitempty"`
+	Kind        string `json:"kind" yaml:"kind"`
+	Token       string `json:"token,omitempty" yaml:"token,omitempty"`
+	Channel     string `json:"channel,omitempty" yaml:"channel,omitempty"`
+	InboundURL  string `json:"inbound_url,omitempty" yaml:"inbound_url,omitempty"`
+	OutboundURL string `json:"outbound_url,omitempty" yaml:"outbound_url,omitempty"`
+	AckURL      string `json:"ack_url,omitempty" yaml:"ack_url,omitempty"`
+	EventsURL   string `json:"events_url,omitempty" yaml:"events_url,omitempty"`
+	ControlURL  string `json:"control_url,omitempty" yaml:"control_url,omitempty"`
 }
 
 type RoomBinding struct {
-	ID    string       `json:"id"`
-	Read  ReadConfig   `json:"read,omitempty"`
-	Reply ReplyConfig  `json:"reply,omitempty"`
-	Batch *BatchConfig `json:"batch,omitempty"`
+	ID    string      `json:"id" yaml:"id"`
+	Read  ReadConfig  `json:"read,omitempty" yaml:"read,omitempty"`
+	Reply ReplyConfig `json:"reply,omitempty" yaml:"reply,omitempty"`
 }
 
 type DMConfig struct {
-	Enabled bool         `json:"enabled"`
-	Read    ReadConfig   `json:"read,omitempty"`
-	Reply   ReplyConfig  `json:"reply,omitempty"`
-	Batch   *BatchConfig `json:"batch,omitempty"`
+	Enabled bool        `json:"enabled" yaml:"enabled"`
+	Read    ReadConfig  `json:"read,omitempty" yaml:"read,omitempty"`
+	Reply   ReplyConfig `json:"reply,omitempty" yaml:"reply,omitempty"`
 }
 
 type ReadConfig string
@@ -78,11 +76,6 @@ const (
 	ReplyNever  ReplyConfig = "never"
 )
 
-type BatchConfig struct {
-	MaxMessages int    `json:"max_messages,omitempty"`
-	MaxWait     string `json:"max_wait,omitempty"`
-}
-
 func LoadFile(path string) (Config, error) {
 	bytes, err := os.ReadFile(path)
 	if err != nil {
@@ -96,6 +89,11 @@ func LoadFile(path string) (Config, error) {
 
 	if err := config.Validate(); err != nil {
 		return Config{}, err
+	}
+	if strings.TrimSpace(config.Moltnet.Token) != "" || strings.TrimSpace(config.Runtime.Token) != "" {
+		if err := validatePrivateConfigMode(path); err != nil {
+			return Config{}, err
+		}
 	}
 
 	return config, nil
@@ -124,7 +122,17 @@ func (c Config) Validate() error {
 		return fmt.Errorf("bridge config runtime.kind %q is unsupported", c.Runtime.Kind)
 	}
 
+	if err := validateURL("bridge config moltnet.base_url", c.Moltnet.BaseURL); err != nil {
+		return err
+	}
+	if err := validateReadReplyConfig(c); err != nil {
+		return err
+	}
+
 	if strings.TrimSpace(c.Runtime.ControlURL) != "" {
+		if err := validateURL("bridge config runtime.control_url", c.Runtime.ControlURL); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -139,6 +147,16 @@ func (c Config) Validate() error {
 
 		if strings.TrimSpace(c.Runtime.AckURL) == "" {
 			return fmt.Errorf("bridge config runtime.ack_url is required for tinyclaw")
+		}
+
+		if err := validateURL("bridge config runtime.inbound_url", c.Runtime.InboundURL); err != nil {
+			return err
+		}
+		if err := validateURL("bridge config runtime.outbound_url", c.Runtime.OutboundURL); err != nil {
+			return err
+		}
+		if err := validateURL("bridge config runtime.ack_url", c.Runtime.AckURL); err != nil {
+			return err
 		}
 	}
 
