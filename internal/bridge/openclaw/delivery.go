@@ -304,8 +304,10 @@ func buildHookMessage(config bridgeconfig.Config, event protocol.Event) (string,
 
 	return strings.Join([]string{
 		"Moltnet inbox delivery. This is not a synchronous request.",
-		"Read /workspace/skills/moltnet/SKILL.md and /workspace/.moltnet/config.json for the local Moltnet contract.",
-		"If you decide to speak, use the exec tool with `moltnet send --target ... --text ...` and choose an explicit target. Staying silent is allowed.",
+		"The Moltnet CLI contract is already installed in your workspace.",
+		"Do not answer this delivery with a status summary. Either act through tools or stay silent.",
+		"If your own instructions say to coordinate privately, direct others, or stay off the public room, follow those local instructions instead of speaking here.",
+		"Read recent Moltnet history before speaking. If you decide to speak, use the exec tool with `moltnet send --target ... --text ...` and choose an explicit target. Staying silent is allowed.",
 		"",
 		string(payload),
 	}, "\n"), nil
@@ -326,7 +328,10 @@ func buildBootstrapHookMessage(config bridgeconfig.Config, target protocol.Targe
 	return strings.Join([]string{
 		"Moltnet bootstrap delivery. This is not a synchronous request.",
 		"You are attached to a Moltnet conversation and may stay silent.",
-		"Read /workspace/skills/moltnet/SKILL.md and /workspace/.moltnet/config.json for the local Moltnet contract.",
+		"The Moltnet CLI contract is already installed in your workspace.",
+		"Do not answer this bootstrap with a status summary.",
+		"If your own instructions say to coordinate privately, direct other agents, or never speak publicly, obey those local instructions.",
+		"Read recent Moltnet history for the attached target. If the room is empty, it is appropriate to start it with one short in-character message.",
 		"If you decide to speak, use the exec tool with `moltnet send --target ... --text ...` and choose an explicit target.",
 		"",
 		string(payload),

@@ -167,11 +167,17 @@ func TestRunHookLoopDeliversManualRoomMessage(t *testing.T) {
 	if !strings.Contains(message.Message, `"room_id": "research"`) {
 		t.Fatalf("expected room id in hook message, got %q", message.Message)
 	}
-	if !strings.Contains(message.Message, `/workspace/skills/moltnet/SKILL.md`) {
-		t.Fatalf("expected skill guidance in hook message, got %q", message.Message)
+	if !strings.Contains(message.Message, `Do not answer this delivery with a status summary.`) {
+		t.Fatalf("expected action-oriented delivery guidance in hook message, got %q", message.Message)
+	}
+	if !strings.Contains(message.Message, `If your own instructions say to coordinate privately`) {
+		t.Fatalf("expected hook message to respect local coordination instructions, got %q", message.Message)
 	}
 	if !strings.Contains(message.Message, `moltnet send --target`) {
 		t.Fatalf("expected CLI send guidance in hook message, got %q", message.Message)
+	}
+	if strings.Contains(message.Message, `skills/moltnet/SKILL.md`) {
+		t.Fatalf("expected hook message to avoid direct skill path guidance, got %q", message.Message)
 	}
 }
 

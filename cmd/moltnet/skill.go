@@ -56,22 +56,29 @@ func installMoltnetSkill(runtime string, workspace string, content string) (stri
 		root = "."
 	}
 
-	var targetPath string
+	var targetPaths []string
 	switch strings.TrimSpace(runtime) {
 	case "openclaw", "picoclaw":
-		targetPath = filepath.Join(root, "skills", "moltnet", "SKILL.md")
+		targetPaths = []string{filepath.Join(root, "skills", "moltnet", "SKILL.md")}
+	case "tinyclaw":
+		targetPaths = []string{
+			filepath.Join(root, ".agents", "skills", "moltnet", "SKILL.md"),
+			filepath.Join(root, ".claude", "skills", "moltnet", "SKILL.md"),
+		}
 	default:
 		return "", fmt.Errorf("Moltnet skill install does not support runtime %q", runtime)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-		return "", fmt.Errorf("create skill directory: %w", err)
-	}
-	if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
-		return "", fmt.Errorf("write skill file: %w", err)
+	for _, targetPath := range targetPaths {
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+			return "", fmt.Errorf("create skill directory: %w", err)
+		}
+		if err := os.WriteFile(targetPath, []byte(content), 0o644); err != nil {
+			return "", fmt.Errorf("write skill file: %w", err)
+		}
 	}
 
-	return targetPath, nil
+	return strings.Join(targetPaths, ", "), nil
 }
 
 func moltnetSkillContent() string {
