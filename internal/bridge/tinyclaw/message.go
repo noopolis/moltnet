@@ -1,13 +1,18 @@
 package tinyclaw
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	bridgeutil "github.com/noopolis/moltnet/internal/bridge"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
+
+var tinyclawSignaturePattern = regexp.MustCompile(`\n\n- \[[^\]]+\]\s*$`)
+var errSkipTinyClawResponse = errors.New("skip tinyclaw response")
 
 func (b *bridge) shouldHandle(event protocol.Event) bool {
 	if event.Type != protocol.EventTypeMessageCreated || event.Message == nil {
@@ -60,10 +65,19 @@ func (b *bridge) toTinyClawMessage(event protocol.Event) (tinyclawMessageRequest
 		return tinyclawMessageRequest{}, err
 	}
 
-	text := bridgeutil.RenderInboundText(event.Message)
-	if text == "" {
+	body := bridgeutil.RenderMessageBody(event.Message)
+	if body == "" {
+		body = bridgeutil.RenderInboundText(event.Message)
+	}
+	if body == "" {
 		return tinyclawMessageRequest{}, fmt.Errorf("message has no supported text content")
 	}
+
+	text := bridgeutil.RenderCompactInboundMessage(
+		b.config.Moltnet.NetworkID,
+		event.Message,
+		true,
+	)
 
 	return tinyclawMessageRequest{
 		Message:   text,
@@ -82,7 +96,7 @@ func (b *bridge) toMoltnetMessage(response tinyclawPendingResponse) (protocol.Se
 	}
 
 	parts := make([]protocol.Part, 0, 2)
-	if text := strings.TrimSpace(response.Message); text != "" {
+	if text, ok := tinyclawRoomReplyText(response.Message); ok {
 		parts = append(parts, protocol.Part{
 			Kind: protocol.PartKindText,
 			Text: text,
@@ -99,7 +113,7 @@ func (b *bridge) toMoltnetMessage(response tinyclawPendingResponse) (protocol.Se
 	}
 
 	if len(parts) == 0 {
-		return protocol.SendMessageRequest{}, fmt.Errorf("response has no message or files")
+		return protocol.SendMessageRequest{}, errSkipTinyClawResponse
 	}
 
 	return protocol.SendMessageRequest{
@@ -176,4 +190,29 @@ func decodeTarget(value string) (protocol.Target, error) {
 
 func responseMessageID(agentID string, responseID pendingResponseID) string {
 	return fmt.Sprintf("tinyclaw:%s:%s", strings.TrimSpace(agentID), responseID.String())
+}
+
+func tinyclawRoomReplyText(raw string) (string, bool) {
+	text := strings.TrimSpace(tinyclawSignaturePattern.ReplaceAllString(raw, ""))
+	if text == "" {
+		return "", false
+	}
+
+	if strings.HasPrefix(text, "[tool:") {
+		return "", false
+	}
+	if strings.HasPrefix(text, "My cue! Drafting line:") {
+		return "", false
+	}
+	if text == "Line sent." {
+		return "", false
+	}
+	if text == "Queue confirmed. Sending." {
+		return "", false
+	}
+	if strings.HasPrefix(text, "Latest director queue is ") && strings.Contains(text, "I stay silent.") {
+		return "", false
+	}
+
+	return text, true
 }

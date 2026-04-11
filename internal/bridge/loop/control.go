@@ -250,7 +250,8 @@ func publishControlResponse(
 	target protocol.Target,
 	message string,
 ) error {
-	if strings.TrimSpace(message) == "" {
+	trimmed := strings.TrimSpace(message)
+	if trimmed == "" {
 		return nil
 	}
 

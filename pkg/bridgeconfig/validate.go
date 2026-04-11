@@ -54,15 +54,20 @@ func validateReplyConfig(name string, mode ReplyConfig) error {
 	}
 }
 
-func validateURL(name string, value string) error {
+func validateURLWithSchemes(name string, value string, schemes ...string) error {
 	parsed, err := url.Parse(strings.TrimSpace(value))
 	if err != nil {
 		return fmt.Errorf("%s is invalid: %w", name, err)
 	}
 
-	switch parsed.Scheme {
-	case "http", "https":
-	default:
+	allowed := false
+	for _, scheme := range schemes {
+		if parsed.Scheme == scheme {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
 		return fmt.Errorf("%s scheme %q is unsupported", name, parsed.Scheme)
 	}
 
@@ -71,4 +76,12 @@ func validateURL(name string, value string) error {
 	}
 
 	return nil
+}
+
+func validateURL(name string, value string) error {
+	return validateURLWithSchemes(name, value, "http", "https")
+}
+
+func validateSocketURL(name string, value string) error {
+	return validateURLWithSchemes(name, value, "ws", "wss")
 }

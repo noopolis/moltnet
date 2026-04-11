@@ -296,7 +296,7 @@ func writeAttachmentConfig(t *testing.T) string {
   "version":"moltnet.bridge.v1",
   "agent":{"id":"researcher"},
   "moltnet":{"base_url":"http://127.0.0.1:8787","network_id":"local"},
-  "runtime":{"kind":"openclaw","control_url":"http://127.0.0.1:9100/team/message"}
+  "runtime":{"kind":"openclaw","gateway_url":"ws://127.0.0.1:18789"}
 }`
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("write attachment config: %v", err)

@@ -1,12 +1,8 @@
 package openclaw
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -15,8 +11,6 @@ import (
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
-
-const maxHookResponseBytes = 1 << 20
 
 type eventStreamer interface {
 	StreamEvents(
@@ -30,36 +24,10 @@ type backoffPolicy interface {
 	Delay(attempt int) time.Duration
 }
 
-type hookRequest struct {
-	Message        string `json:"message"`
-	Name           string `json:"name"`
-	AgentID        string `json:"agentId,omitempty"`
-	SessionKey     string `json:"sessionKey,omitempty"`
-	IdempotencyKey string `json:"idempotencyKey,omitempty"`
-	DisableMessage bool   `json:"disableMessageTool,omitempty"`
-	Deliver        bool   `json:"deliver"`
-	WakeMode       string `json:"wakeMode,omitempty"`
-}
-
-type hookPrompt struct {
-	Kind         string          `json:"kind,omitempty"`
-	Source       string          `json:"source"`
-	NetworkID    string          `json:"network_id"`
-	EventID      string          `json:"event_id,omitempty"`
-	MessageID    string          `json:"message_id,omitempty"`
-	Conversation string          `json:"conversation"`
-	Target       protocol.Target `json:"target"`
-	From         protocol.Actor  `json:"from,omitempty"`
-	Mentions     []string        `json:"mentions,omitempty"`
-	Text         string          `json:"text,omitempty"`
-	Parts        []protocol.Part `json:"parts,omitempty"`
-}
-
-func runHookLoop(
+func runGatewayLoop(
 	ctx context.Context,
 	config bridgeconfig.Config,
 	streamer eventStreamer,
-	controlClient *http.Client,
 	backoff backoffPolicy,
 ) error {
 	attempt := 0
@@ -71,7 +39,7 @@ func runHookLoop(
 		}
 
 		if !bootstrapped {
-			if err := sendBootstrapHooks(ctx, controlClient, config); err != nil {
+			if err := sendBootstrapDispatches(ctx, config); err != nil {
 				attempt++
 				observability.Logger(ctx, "bridge.openclaw", "agent_id", config.Agent.ID, "error", err).
 					Warn("openclaw bridge bootstrap error")
@@ -90,7 +58,7 @@ func runHookLoop(
 			if !shouldDeliver(config, event) {
 				return nil
 			}
-			return sendHookEvent(ctx, controlClient, config, event)
+			return sendEventDispatch(ctx, config, event)
 		})
 		if err == nil || ctx.Err() != nil {
 			return err
@@ -164,27 +132,15 @@ func shouldDeliverDirectMessage(config bridgeconfig.Config, message *protocol.Me
 	return false
 }
 
-func sendBootstrapHooks(
-	ctx context.Context,
-	controlClient *http.Client,
-	config bridgeconfig.Config,
-) error {
+func sendBootstrapDispatches(ctx context.Context, config bridgeconfig.Config) error {
 	for _, target := range bootstrapTargets(config) {
-		prompt, err := buildBootstrapHookMessage(config, target)
-		if err != nil {
-			return err
-		}
-
-		if err := sendHookRequest(ctx, controlClient, config, hookRequest{
-			Message:        prompt,
-			Name:           "Moltnet Bootstrap",
-			AgentID:        config.Agent.ID,
-			SessionKey:     hookSessionKeyForTarget(config.Moltnet.NetworkID, target),
-			IdempotencyKey: hookBootstrapIdempotencyKey(config, target),
-			DisableMessage: true,
-			Deliver:        false,
-			WakeMode:       "now",
-		}); err != nil {
+		if err := sendGatewayChat(
+			ctx,
+			config,
+			sessionKeyForTarget(config, target),
+			buildBootstrapMessage(config, target),
+			bootstrapIdempotencyKey(config, target),
+		); err != nil {
 			return err
 		}
 	}
@@ -197,7 +153,8 @@ func bootstrapTargets(config bridgeconfig.Config) []protocol.Target {
 	for _, binding := range config.Rooms {
 		if strings.TrimSpace(binding.ID) == "" ||
 			binding.Reply == bridgeconfig.ReplyNever ||
-			binding.Read == bridgeconfig.ReadThreadOnly {
+			binding.Read == bridgeconfig.ReadThreadOnly ||
+			binding.Read == bridgeconfig.ReadMentions {
 			continue
 		}
 		targets = append(targets, protocol.Target{
@@ -209,200 +166,21 @@ func bootstrapTargets(config bridgeconfig.Config) []protocol.Target {
 	return targets
 }
 
-func sendHookEvent(
-	ctx context.Context,
-	controlClient *http.Client,
-	config bridgeconfig.Config,
-	event protocol.Event,
-) error {
+func sendEventDispatch(ctx context.Context, config bridgeconfig.Config, event protocol.Event) error {
 	if event.Message == nil {
 		return fmt.Errorf("event has no message")
 	}
 
-	prompt, err := buildHookMessage(config, event)
+	message, err := buildInboundMessage(config, event)
 	if err != nil {
 		return err
 	}
 
-	return sendHookRequest(ctx, controlClient, config, hookRequest{
-		Message:        prompt,
-		Name:           "Moltnet",
-		AgentID:        config.Agent.ID,
-		SessionKey:     hookSessionKey(config, event.Message),
-		IdempotencyKey: hookIdempotencyKey(config, event),
-		DisableMessage: true,
-		Deliver:        false,
-		WakeMode:       "now",
-	})
-}
-
-func sendHookRequest(
-	ctx context.Context,
-	controlClient *http.Client,
-	config bridgeconfig.Config,
-	payload hookRequest,
-) error {
-	requestBody, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("encode hook request: %w", err)
-	}
-
-	request, err := http.NewRequestWithContext(
+	return sendGatewayChat(
 		ctx,
-		http.MethodPost,
-		config.Runtime.ControlURL,
-		bytes.NewReader(requestBody),
+		config,
+		sessionKey(config, event.Message),
+		message,
+		idempotencyKey(config, event),
 	)
-	if err != nil {
-		return fmt.Errorf("build hook request: %w", err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	if token := strings.TrimSpace(config.Runtime.Token); token != "" {
-		request.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	response, err := controlClient.Do(request)
-	if err != nil {
-		return fmt.Errorf("request hook url %s: %w", request.URL.Redacted(), err)
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, maxHookResponseBytes))
-		message := strings.TrimSpace(string(body))
-		if message == "" {
-			return fmt.Errorf("hook url returned %s", response.Status)
-		}
-		return fmt.Errorf("hook url returned %s: %s", response.Status, message)
-	}
-
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxHookResponseBytes))
-	return nil
-}
-
-func buildHookMessage(config bridgeconfig.Config, event protocol.Event) (string, error) {
-	if event.Message == nil {
-		return "", fmt.Errorf("event has no message")
-	}
-
-	payload, err := json.MarshalIndent(hookPrompt{
-		Kind:         "message",
-		Source:       "moltnet",
-		NetworkID:    config.Moltnet.NetworkID,
-		EventID:      event.ID,
-		MessageID:    event.Message.ID,
-		Conversation: conversationContextID(config.Moltnet.NetworkID, event.Message),
-		Target:       event.Message.Target,
-		From:         event.Message.From,
-		Mentions:     append([]string(nil), event.Message.Mentions...),
-		Text:         bridgeutil.RenderInboundText(event.Message),
-		Parts:        append([]protocol.Part(nil), event.Message.Parts...),
-	}, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("encode hook prompt: %w", err)
-	}
-
-	return strings.Join([]string{
-		"Moltnet inbox delivery. This is not a synchronous request.",
-		"The Moltnet CLI contract is already installed in your workspace.",
-		"Do not answer this delivery with a status summary. Either act through tools or stay silent.",
-		"If your own instructions say to coordinate privately, direct others, or stay off the public room, follow those local instructions instead of speaking here.",
-		"Read recent Moltnet history before speaking. If you decide to speak, use the exec tool with `moltnet send --target ... --text ...` and choose an explicit target. Staying silent is allowed.",
-		"",
-		string(payload),
-	}, "\n"), nil
-}
-
-func buildBootstrapHookMessage(config bridgeconfig.Config, target protocol.Target) (string, error) {
-	payload, err := json.MarshalIndent(hookPrompt{
-		Kind:         "bootstrap",
-		Source:       "moltnet",
-		NetworkID:    config.Moltnet.NetworkID,
-		Conversation: conversationContextIDForTarget(config.Moltnet.NetworkID, target),
-		Target:       target,
-	}, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("encode bootstrap hook prompt: %w", err)
-	}
-
-	return strings.Join([]string{
-		"Moltnet bootstrap delivery. This is not a synchronous request.",
-		"You are attached to a Moltnet conversation and may stay silent.",
-		"The Moltnet CLI contract is already installed in your workspace.",
-		"Do not answer this bootstrap with a status summary.",
-		"If your own instructions say to coordinate privately, direct other agents, or never speak publicly, obey those local instructions.",
-		"Read recent Moltnet history for the attached target. If the room is empty, it is appropriate to start it with one short in-character message.",
-		"If you decide to speak, use the exec tool with `moltnet send --target ... --text ...` and choose an explicit target.",
-		"",
-		string(payload),
-	}, "\n"), nil
-}
-
-func hookSessionKey(config bridgeconfig.Config, message *protocol.Message) string {
-	contextID := conversationContextID(config.Moltnet.NetworkID, message)
-	if contextID == "" {
-		return ""
-	}
-	if strings.HasPrefix(contextID, "hook:") {
-		return contextID
-	}
-	return "hook:" + contextID
-}
-
-func hookSessionKeyForTarget(networkID string, target protocol.Target) string {
-	contextID := conversationContextIDForTarget(networkID, target)
-	if contextID == "" {
-		return ""
-	}
-	if strings.HasPrefix(contextID, "hook:") {
-		return contextID
-	}
-	return "hook:" + contextID
-}
-
-func hookIdempotencyKey(config bridgeconfig.Config, event protocol.Event) string {
-	if strings.TrimSpace(event.ID) == "" {
-		return ""
-	}
-	return fmt.Sprintf("moltnet:%s:%s", config.Agent.ID, strings.TrimSpace(event.ID))
-}
-
-func hookBootstrapIdempotencyKey(config bridgeconfig.Config, target protocol.Target) string {
-	contextID := conversationContextIDForTarget(config.Moltnet.NetworkID, target)
-	if contextID == "" {
-		return ""
-	}
-
-	return fmt.Sprintf("moltnet:%s:bootstrap:%s", config.Agent.ID, contextID)
-}
-
-func conversationContextID(networkID string, message *protocol.Message) string {
-	if message == nil {
-		return ""
-	}
-
-	return conversationContextIDForTarget(networkID, message.Target, message.ID)
-}
-
-func conversationContextIDForTarget(networkID string, target protocol.Target, fallbackMessageID ...string) string {
-	switch target.Kind {
-	case protocol.TargetKindRoom:
-		if target.RoomID != "" {
-			return fmt.Sprintf("moltnet:%s:room:%s", networkID, target.RoomID)
-		}
-	case protocol.TargetKindDM:
-		if target.DMID != "" {
-			return fmt.Sprintf("moltnet:%s:dm:%s", networkID, target.DMID)
-		}
-	case protocol.TargetKindThread:
-		if target.ThreadID != "" {
-			return fmt.Sprintf("moltnet:%s:thread:%s", networkID, target.ThreadID)
-		}
-	}
-
-	if len(fallbackMessageID) == 0 || fallbackMessageID[0] == "" {
-		return ""
-	}
-
-	return fmt.Sprintf("moltnet:%s:%s", networkID, fallbackMessageID[0])
 }

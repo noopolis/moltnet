@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
+
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -37,6 +39,11 @@ func (backoffStub) Delay(int) time.Duration {
 	return 0
 }
 
+type gatewayRequestRecord struct {
+	Method string
+	Params map[string]any
+}
+
 func TestAdapter(t *testing.T) {
 	t.Parallel()
 
@@ -49,41 +56,64 @@ func TestAdapter(t *testing.T) {
 	cancel()
 
 	if err := adapter.Run(ctx, bridgeconfig.Config{
-		Runtime: bridgeconfig.RuntimeConfig{ControlURL: "http://control"},
+		Runtime: bridgeconfig.RuntimeConfig{GatewayURL: "ws://gateway"},
 		Moltnet: bridgeconfig.MoltnetConfig{BaseURL: "http://moltnet"},
 	}); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
 	if err := adapter.Run(context.Background(), bridgeconfig.Config{}); err == nil {
-		t.Fatal("expected missing control url error")
+		t.Fatal("expected missing gateway url error")
 	}
 }
 
-func TestRunHookLoopDeliversManualRoomMessage(t *testing.T) {
+func TestRunGatewayLoopDeliversBootstrapAndMessage(t *testing.T) {
 	t.Parallel()
 
-	type receivedHook struct {
-		Message        string `json:"message"`
-		Name           string `json:"name"`
-		AgentID        string `json:"agentId"`
-		SessionKey     string `json:"sessionKey"`
-		IdempotencyKey string `json:"idempotencyKey"`
-		DisableMessage bool   `json:"disableMessageTool"`
-		Deliver        bool   `json:"deliver"`
-	}
-	var received []receivedHook
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	received := make(chan gatewayRequestRecord, 4)
+
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if auth := request.Header.Get("Authorization"); auth != "Bearer runtime-secret" {
-			t.Fatalf("unexpected auth header %q", auth)
+		conn, err := upgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			t.Fatalf("upgrade websocket: %v", err)
 		}
-		defer request.Body.Close()
-		var payload receivedHook
-		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request: %v", err)
+		defer conn.Close()
+
+		if err := conn.WriteJSON(map[string]any{
+			"type":  "event",
+			"event": "connect.challenge",
+			"payload": map[string]any{
+				"nonce": "nonce-123",
+			},
+		}); err != nil {
+			t.Fatalf("write connect challenge: %v", err)
 		}
-		received = append(received, payload)
-		writer.WriteHeader(http.StatusOK)
+
+		for i := 0; i < 2; i++ {
+			var requestFrame map[string]any
+			if err := conn.ReadJSON(&requestFrame); err != nil {
+				t.Fatalf("read gateway request: %v", err)
+			}
+
+			method, _ := requestFrame["method"].(string)
+			params, _ := requestFrame["params"].(map[string]any)
+			received <- gatewayRequestRecord{
+				Method: method,
+				Params: params,
+			}
+
+			if err := conn.WriteJSON(map[string]any{
+				"type": "res",
+				"id":   requestFrame["id"],
+				"ok":   true,
+				"payload": map[string]any{
+					"type": "hello-ok",
+				},
+			}); err != nil {
+				t.Fatalf("write gateway response: %v", err)
+			}
+		}
 	}))
 	defer server.Close()
 
@@ -94,7 +124,7 @@ func TestRunHookLoopDeliversManualRoomMessage(t *testing.T) {
 			NetworkID: "local",
 		},
 		Runtime: bridgeconfig.RuntimeConfig{
-			ControlURL: server.URL,
+			GatewayURL: strings.Replace(server.URL, "http://", "ws://", 1),
 			Token:      "runtime-secret",
 		},
 		Rooms: []bridgeconfig.RoomBinding{
@@ -113,71 +143,105 @@ func TestRunHookLoopDeliversManualRoomMessage(t *testing.T) {
 				Kind:   protocol.TargetKindRoom,
 				RoomID: "research",
 			},
-			From: protocol.Actor{Type: "agent", ID: "writer", Name: "Writer"},
+			From:     protocol.Actor{Type: "agent", ID: "writer", Name: "Writer"},
+			Mentions: []string{"reviewer"},
 			Parts: []protocol.Part{
-				{Kind: protocol.PartKindText, Text: "Review this patch"},
+				{Kind: protocol.PartKindText, Text: "@reviewer Review this patch"},
 			},
 		},
 	}
 
-	if err := runHookLoop(context.Background(), config, streamerStub{events: []protocol.Event{event}}, server.Client(), backoffStub{}); err != nil {
-		t.Fatalf("runHookLoop() error = %v", err)
+	if err := runGatewayLoop(context.Background(), config, streamerStub{events: []protocol.Event{event}}, backoffStub{}); err != nil {
+		t.Fatalf("runGatewayLoop() error = %v", err)
 	}
 
-	if len(received) != 2 {
-		t.Fatalf("expected bootstrap + message hook, got %d requests", len(received))
+	var requests []gatewayRequestRecord
+	for len(requests) < 4 {
+		select {
+		case request := <-received:
+			requests = append(requests, request)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for openclaw gateway requests, got %d", len(requests))
+		}
 	}
 
-	bootstrap := received[0]
-	if bootstrap.Name != "Moltnet Bootstrap" {
-		t.Fatalf("unexpected bootstrap hook name %q", bootstrap.Name)
+	connectBootstrap := requests[0]
+	if connectBootstrap.Method != "connect" {
+		t.Fatalf("unexpected bootstrap connect method %q", connectBootstrap.Method)
 	}
-	if bootstrap.SessionKey != "hook:moltnet:local:room:research" {
-		t.Fatalf("unexpected bootstrap session key %q", bootstrap.SessionKey)
+	auth, _ := connectBootstrap.Params["auth"].(map[string]any)
+	if token, _ := auth["token"].(string); token != "runtime-secret" {
+		t.Fatalf("unexpected connect token %q", token)
 	}
-	if bootstrap.IdempotencyKey != "moltnet:reviewer:bootstrap:moltnet:local:room:research" {
-		t.Fatalf("unexpected bootstrap idempotency key %q", bootstrap.IdempotencyKey)
+	if connectBootstrap.Params["role"] != "operator" {
+		t.Fatalf("unexpected connect role %v", connectBootstrap.Params["role"])
 	}
-	if !strings.Contains(bootstrap.Message, `"kind": "bootstrap"`) {
-		t.Fatalf("expected bootstrap prompt kind, got %q", bootstrap.Message)
+	scopes, _ := connectBootstrap.Params["scopes"].([]any)
+	if len(scopes) != 3 {
+		t.Fatalf("expected three connect scopes, got %v", connectBootstrap.Params["scopes"])
+	}
+	device, _ := connectBootstrap.Params["device"].(map[string]any)
+	if strings.TrimSpace(device["id"].(string)) == "" {
+		t.Fatalf("expected connect device id, got %#v", device)
+	}
+	if device["nonce"] != "nonce-123" {
+		t.Fatalf("unexpected connect device nonce %v", device["nonce"])
+	}
+	if strings.TrimSpace(device["publicKey"].(string)) == "" || strings.TrimSpace(device["signature"].(string)) == "" {
+		t.Fatalf("expected connect device public key and signature, got %#v", device)
 	}
 
-	message := received[1]
-	if message.AgentID != "reviewer" {
-		t.Fatalf("unexpected agent id %q", message.AgentID)
+	bootstrap := requests[1]
+	if bootstrap.Method != "chat.send" {
+		t.Fatalf("unexpected bootstrap method %q", bootstrap.Method)
 	}
-	if message.Name != "Moltnet" {
-		t.Fatalf("unexpected hook name %q", message.Name)
+	if bootstrap.Params["sessionKey"] != "agent:main:moltnet:local:room:research" {
+		t.Fatalf("unexpected bootstrap session key %v", bootstrap.Params["sessionKey"])
 	}
-	if message.Deliver {
-		t.Fatal("expected deliver=false for hook dispatch")
+	if bootstrap.Params["deliver"] != false {
+		t.Fatalf("expected bootstrap deliver=false, got %v", bootstrap.Params["deliver"])
 	}
-	if message.SessionKey != "hook:moltnet:local:room:research" {
-		t.Fatalf("unexpected session key %q", message.SessionKey)
+	bootstrapMessage, _ := bootstrap.Params["message"].(string)
+	if !strings.Contains(bootstrapMessage, "Channel: moltnet") {
+		t.Fatalf("expected bootstrap message to include channel context, got %q", bootstrapMessage)
 	}
-	if message.IdempotencyKey != "moltnet:reviewer:evt_123" {
-		t.Fatalf("unexpected idempotency key %q", message.IdempotencyKey)
+	if !strings.Contains(bootstrapMessage, "Chat ID: local:room:research") {
+		t.Fatalf("expected bootstrap message to include chat id, got %q", bootstrapMessage)
 	}
-	if !message.DisableMessage {
-		t.Fatal("expected disableMessageTool=true for Moltnet hook dispatch")
+	if !strings.Contains(bootstrapMessage, "Moltnet conversation attached. Use the `moltnet` skill in this conversation.") {
+		t.Fatalf("unexpected bootstrap message %q", bootstrapMessage)
 	}
-	if !strings.Contains(message.Message, `"kind": "room"`) {
-		t.Fatalf("expected room target in hook message, got %q", message.Message)
+
+	connectInbound := requests[2]
+	if connectInbound.Method != "connect" {
+		t.Fatalf("unexpected inbound connect method %q", connectInbound.Method)
 	}
-	if !strings.Contains(message.Message, `"room_id": "research"`) {
-		t.Fatalf("expected room id in hook message, got %q", message.Message)
+
+	inbound := requests[3]
+	if inbound.Method != "chat.send" {
+		t.Fatalf("unexpected inbound method %q", inbound.Method)
 	}
-	if !strings.Contains(message.Message, `Do not answer this delivery with a status summary.`) {
-		t.Fatalf("expected action-oriented delivery guidance in hook message, got %q", message.Message)
+	if inbound.Params["sessionKey"] != "agent:main:moltnet:local:room:research" {
+		t.Fatalf("unexpected inbound session key %v", inbound.Params["sessionKey"])
 	}
-	if !strings.Contains(message.Message, `If your own instructions say to coordinate privately`) {
-		t.Fatalf("expected hook message to respect local coordination instructions, got %q", message.Message)
+	if inbound.Params["idempotencyKey"] != "moltnet:reviewer:evt_123" {
+		t.Fatalf("unexpected inbound idempotency key %v", inbound.Params["idempotencyKey"])
 	}
-	if !strings.Contains(message.Message, `moltnet send --target`) {
-		t.Fatalf("expected CLI send guidance in hook message, got %q", message.Message)
+	inboundMessage, _ := inbound.Params["message"].(string)
+	expectedLines := []string{
+		"Channel: moltnet",
+		"Chat ID: local:room:research",
+		"From: local/agent/writer",
+		"Name: Writer",
+		"Mentions: reviewer",
+		"Message ID: msg_123",
+		"Message:",
+		"@reviewer Review this patch",
 	}
-	if strings.Contains(message.Message, `skills/moltnet/SKILL.md`) {
-		t.Fatalf("expected hook message to avoid direct skill path guidance, got %q", message.Message)
+	for _, expected := range expectedLines {
+		if !strings.Contains(inboundMessage, expected) {
+			t.Fatalf("expected inbound message to contain %q, got %q", expected, inboundMessage)
+		}
 	}
 }
 
@@ -223,31 +287,249 @@ func TestShouldDeliverIgnoresReplyNeverAndThreads(t *testing.T) {
 	}
 }
 
-func TestRunHookLoopSkipsBootstrapForThreadOnlyBindings(t *testing.T) {
+func TestRunGatewayLoopSkipsBootstrapForThreadOnlyBindings(t *testing.T) {
 	t.Parallel()
-
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		requests++
-		writer.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
 
 	config := bridgeconfig.Config{
 		Agent:   bridgeconfig.AgentConfig{ID: "reviewer"},
 		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
-		Runtime: bridgeconfig.RuntimeConfig{ControlURL: server.URL},
+		Runtime: bridgeconfig.RuntimeConfig{GatewayURL: "ws://127.0.0.1:18789"},
 		Rooms: []bridgeconfig.RoomBinding{
 			{ID: "research", Read: bridgeconfig.ReadThreadOnly, Reply: bridgeconfig.ReplyManual},
 			{ID: "private", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyNever},
 		},
 	}
 
-	if err := runHookLoop(context.Background(), config, streamerStub{}, server.Client(), backoffStub{}); err != nil {
-		t.Fatalf("runHookLoop() error = %v", err)
+	if targets := bootstrapTargets(config); len(targets) != 0 {
+		t.Fatalf("expected no bootstrap targets, got %#v", targets)
+	}
+}
+
+func TestRunGatewayLoopSkipsBootstrapForMentionOnlyBindings(t *testing.T) {
+	t.Parallel()
+
+	config := bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "reviewer"},
+		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
+		Runtime: bridgeconfig.RuntimeConfig{GatewayURL: "ws://127.0.0.1:18789"},
+		Rooms: []bridgeconfig.RoomBinding{
+			{ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto},
+		},
 	}
 
-	if requests != 0 {
-		t.Fatalf("expected no bootstrap hooks, got %d", requests)
+	if targets := bootstrapTargets(config); len(targets) != 0 {
+		t.Fatalf("expected no bootstrap targets, got %#v", targets)
+	}
+}
+
+func TestConnectGatewayRequiresChallenge(t *testing.T) {
+	t.Parallel()
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		conn, err := upgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			t.Fatalf("upgrade websocket: %v", err)
+		}
+		defer conn.Close()
+
+		if err := conn.WriteJSON(map[string]any{
+			"type":  "event",
+			"event": "tick",
+		}); err != nil {
+			t.Fatalf("write tick event: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(strings.Replace(server.URL, "http://", "ws://", 1), nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	err = connectGateway(ctx, conn, bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "reviewer"},
+		Runtime: bridgeconfig.RuntimeConfig{Token: "runtime-secret"},
+	})
+	if err == nil {
+		t.Fatal("expected connect gateway error")
+	}
+}
+
+func TestGatewayRequestDecodesResponseErrors(t *testing.T) {
+	t.Parallel()
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		conn, err := upgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			t.Fatalf("upgrade websocket: %v", err)
+		}
+		defer conn.Close()
+
+		var requestFrame map[string]any
+		if err := conn.ReadJSON(&requestFrame); err != nil {
+			t.Fatalf("read gateway request: %v", err)
+		}
+		if err := conn.WriteJSON(map[string]any{
+			"type": "res",
+			"id":   requestFrame["id"],
+			"ok":   false,
+			"error": map[string]any{
+				"code":    "UNAVAILABLE",
+				"message": "boom",
+			},
+		}); err != nil {
+			t.Fatalf("write gateway error response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(strings.Replace(server.URL, "http://", "ws://", 1), nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	_, err = requestGateway(context.Background(), conn, "chat.send", map[string]any{"message": "hi"})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected gateway error, got %v", err)
+	}
+}
+
+func TestBuildInboundMessageRequiresMessage(t *testing.T) {
+	t.Parallel()
+
+	_, err := buildInboundMessage(bridgeconfig.Config{}, protocol.Event{})
+	if err == nil {
+		t.Fatal("expected buildInboundMessage error")
+	}
+}
+
+func TestBootstrapAndIdempotencyHelpers(t *testing.T) {
+	t.Parallel()
+
+	config := bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "reviewer"},
+		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
+	}
+
+	target := protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"}
+	if got := buildBootstrapMessage(config, target); !strings.Contains(got, "Chat ID: local:room:research") {
+		t.Fatalf("unexpected bootstrap message %q", got)
+	}
+	if got := sessionKeyForTarget(config, target); got != "agent:main:moltnet:local:room:research" {
+		t.Fatalf("unexpected session key %q", got)
+	}
+	if got := bootstrapIdempotencyKey(config, target); got != "moltnet:reviewer:bootstrap:moltnet:local:room:research" {
+		t.Fatalf("unexpected bootstrap idempotency key %q", got)
+	}
+
+	event := protocol.Event{
+		ID: "evt_123",
+		Message: &protocol.Message{
+			ID:     "msg_123",
+			Target: target,
+		},
+	}
+	if got := idempotencyKey(config, event); got != "moltnet:reviewer:evt_123" {
+		t.Fatalf("unexpected idempotency key %q", got)
+	}
+	if got := sessionKey(config, event.Message); got != "agent:main:moltnet:local:room:research" {
+		t.Fatalf("unexpected session key %q", got)
+	}
+}
+
+func TestResolveGatewayTokenFallsBackToEnv(t *testing.T) {
+	t.Setenv("OPENCLAW_GATEWAY_TOKEN", "env-token")
+	if got := resolveGatewayToken(bridgeconfig.Config{}); got != "env-token" {
+		t.Fatalf("unexpected gateway token %q", got)
+	}
+}
+
+func TestReadGatewayFrameRejectsInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		conn, err := upgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			t.Fatalf("upgrade websocket: %v", err)
+		}
+		defer conn.Close()
+
+		if err := conn.WriteMessage(websocket.TextMessage, []byte("{")); err != nil {
+			t.Fatalf("write invalid message: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(strings.Replace(server.URL, "http://", "ws://", 1), nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	_, _, err = readGatewayFrame(context.Background(), conn)
+	if err == nil {
+		t.Fatal("expected invalid json error")
+	}
+}
+
+func TestRequestGatewayIgnoresEventsUntilResponse(t *testing.T) {
+	t.Parallel()
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		conn, err := upgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			t.Fatalf("upgrade websocket: %v", err)
+		}
+		defer conn.Close()
+
+		var requestFrame map[string]any
+		if err := conn.ReadJSON(&requestFrame); err != nil {
+			t.Fatalf("read gateway request: %v", err)
+		}
+		if err := conn.WriteJSON(map[string]any{
+			"type":  "event",
+			"event": "tick",
+		}); err != nil {
+			t.Fatalf("write gateway event: %v", err)
+		}
+		if err := conn.WriteJSON(map[string]any{
+			"type": "res",
+			"id":   requestFrame["id"],
+			"ok":   true,
+			"payload": map[string]any{
+				"status": "started",
+			},
+		}); err != nil {
+			t.Fatalf("write gateway response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	conn, _, err := websocket.DefaultDialer.Dial(strings.Replace(server.URL, "http://", "ws://", 1), nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	payload, err := requestGateway(context.Background(), conn, "chat.send", map[string]any{"message": "hi"})
+	if err != nil {
+		t.Fatalf("requestGateway() error = %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("decode response payload: %v", err)
+	}
+	if decoded["status"] != "started" {
+		t.Fatalf("unexpected payload %#v", decoded)
 	}
 }

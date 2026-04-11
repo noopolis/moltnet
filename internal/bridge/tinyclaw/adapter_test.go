@@ -197,6 +197,72 @@ func TestFlushResponsesLimitsOnePollBatch(t *testing.T) {
 	}
 }
 
+func TestFlushResponsesSkipsTinyClawProgressChatter(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var acked []string
+	var sentBodies []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/responses/pending":
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`[
+				{"id":7,"sender":"Director","senderId":"room:research","message":"[tool: Bash]\n\n- [Researcher]"},
+				{"id":8,"sender":"Director","senderId":"room:research","message":"My cue! Drafting line: \"hello\"\n\n- [Researcher]"},
+				{"id":9,"sender":"Director","senderId":"room:research","message":"Line sent.\n\n- [Researcher]"},
+				{"id":10,"sender":"Director","senderId":"room:research","message":"Queue confirmed. Sending.\n\n- [Researcher]"},
+				{"id":11,"sender":"Director","senderId":"room:research","message":"Latest director queue is [QUEUE other room:research] \u2014 superseded. I stay silent.\n\n- [Researcher]"},
+				{"id":12,"sender":"Director","senderId":"room:research","message":"Natural line here.\n\n- [Researcher]"}
+			]`))
+		case "/api/responses/7/ack", "/api/responses/8/ack", "/api/responses/9/ack", "/api/responses/10/ack", "/api/responses/11/ack", "/api/responses/12/ack":
+			mu.Lock()
+			acked = append(acked, request.URL.Path)
+			mu.Unlock()
+			response.WriteHeader(http.StatusOK)
+		case "/v1/messages":
+			var body map[string]any
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatalf("decode send body: %v", err)
+			}
+			bytes, _ := json.Marshal(body)
+			mu.Lock()
+			sentBodies = append(sentBodies, string(bytes))
+			mu.Unlock()
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"message_id":"msg_1","event_id":"evt_1","accepted":true}`))
+		default:
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	bridge, err := newBridge(validBridgeConfig(server.URL))
+	if err != nil {
+		t.Fatalf("newBridge() error = %v", err)
+	}
+
+	if err := bridge.flushResponses(context.Background()); err != nil {
+		t.Fatalf("flushResponses() error = %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sentBodies) != 1 {
+		t.Fatalf("expected only one bridged response, got %#v", sentBodies)
+	}
+	if !strings.Contains(sentBodies[0], `Natural line here.`) {
+		t.Fatalf("expected natural line to be bridged, got %#v", sentBodies)
+	}
+	if strings.Contains(sentBodies[0], `[Researcher]`) {
+		t.Fatalf("expected runtime signature to be stripped, got %#v", sentBodies)
+	}
+	if len(acked) != 6 {
+		t.Fatalf("expected all responses to be acked, got %#v", acked)
+	}
+}
+
 func TestRunInboundSkipsUnrelatedMessage(t *testing.T) {
 	t.Parallel()
 

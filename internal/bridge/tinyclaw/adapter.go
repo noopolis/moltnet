@@ -214,6 +214,13 @@ func (b *bridge) flushResponses(ctx context.Context) error {
 
 		request, err := b.toMoltnetMessage(response)
 		if err != nil {
+			if errors.Is(err, errSkipTinyClawResponse) {
+				if err := b.tinyclaw.ackResponse(ctx, response.ID); err != nil {
+					return err
+				}
+				b.clearPending(messageID)
+				continue
+			}
 			b.clearPending(messageID)
 			observability.Logger(
 				ctx,

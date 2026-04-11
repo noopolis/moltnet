@@ -1,6 +1,7 @@
 package tinyclaw
 
 import (
+	"strings"
 	"testing"
 
 	bridgeutil "github.com/noopolis/moltnet/internal/bridge"
@@ -176,8 +177,20 @@ func TestToTinyClawMessage(t *testing.T) {
 	if message.Sender != "Writer" {
 		t.Fatalf("unexpected sender %q", message.Sender)
 	}
-	if message.Message == "" || message.Message[0] != '[' {
+	if message.Message == "" || !strings.Contains(message.Message, "Channel: moltnet") {
 		t.Fatalf("unexpected rendered message %q", message.Message)
+	}
+	if !strings.Contains(message.Message, "Chat ID: local:room:research") {
+		t.Fatalf("expected chat id in rendered message %q", message.Message)
+	}
+	if !strings.Contains(message.Message, "From: local/writer") {
+		t.Fatalf("expected actor address in rendered message %q", message.Message)
+	}
+	if !strings.Contains(message.Message, "Message ID: msg_1") {
+		t.Fatalf("expected message id in rendered message %q", message.Message)
+	}
+	if !strings.Contains(message.Message, "Message:\nhello\nhttps://example.com") {
+		t.Fatalf("expected message body in rendered message %q", message.Message)
 	}
 
 	if _, err := bridge.toTinyClawMessage(protocol.Event{}); err == nil {

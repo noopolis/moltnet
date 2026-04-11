@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
@@ -40,6 +41,48 @@ func TestRenderInboundTextAndMentions(t *testing.T) {
 	}
 	if mentions := ParseMentions("no mentions here"); mentions != nil {
 		t.Fatalf("expected nil mentions, got %#v", mentions)
+	}
+
+	body := RenderMessageBody(message)
+	expectedBody := "hello\nhttps://example.com/report\nfiles: report.md, summary.txt"
+	if body != expectedBody {
+		t.Fatalf("unexpected rendered body %q", body)
+	}
+
+	compact := RenderCompactInboundMessage("local_lab", &protocol.Message{
+		ID:       "msg_42",
+		Target:   protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+		From:     protocol.Actor{Type: "agent", ID: "writer", Name: "Writer"},
+		Mentions: []string{"reviewer"},
+		Parts:    []protocol.Part{{Kind: "text", Text: "hello"}},
+	}, true)
+	expectedCompact := strings.Join([]string{
+		"Channel: moltnet",
+		"Chat ID: local_lab:room:research",
+		"From: local_lab/agent/writer",
+		"Name: Writer",
+		"Mentions: reviewer",
+		"Message ID: msg_42",
+		"",
+		"Message:",
+		"hello",
+	}, "\n")
+	if compact != expectedCompact {
+		t.Fatalf("unexpected compact message %q", compact)
+	}
+
+	bootstrap := RenderCompactBootstrapMessage("local_lab", protocol.Target{
+		Kind:   protocol.TargetKindRoom,
+		RoomID: "research",
+	}, true)
+	expectedBootstrap := strings.Join([]string{
+		"Channel: moltnet",
+		"Chat ID: local_lab:room:research",
+		"",
+		"Moltnet conversation attached. Use the `moltnet` skill in this conversation.",
+	}, "\n")
+	if bootstrap != expectedBootstrap {
+		t.Fatalf("unexpected bootstrap message %q", bootstrap)
 	}
 }
 
@@ -100,6 +143,18 @@ func TestBridgeHelpers(t *testing.T) {
 	}
 	if TargetPrefix(protocol.Target{Kind: "unknown"}, "Writer") != "Writer" {
 		t.Fatal("expected unknown target prefix fallback")
+	}
+	if ChatID("local_lab", protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"}) != "local_lab:room:research" {
+		t.Fatal("expected room chat id")
+	}
+	if ChatID("local_lab", protocol.Target{Kind: protocol.TargetKindDM, DMID: "dm_writer_reviewer"}) != "local_lab:dm:dm_writer_reviewer" {
+		t.Fatal("expected dm chat id")
+	}
+	if ActorAddress("local_lab", protocol.Actor{Type: "agent", ID: "writer"}) != "local_lab/agent/writer" {
+		t.Fatal("expected actor address")
+	}
+	if ActorAddress("local_lab", protocol.Actor{FQID: "remote/agent/writer"}) != "remote/agent/writer" {
+		t.Fatal("expected actor address to prefer fqid")
 	}
 	if payload, ok := RenderDataPart(map[string]any{"files": []any{1, true}}); ok || payload != "" {
 		t.Fatal("expected invalid file payload to be ignored")

@@ -38,7 +38,20 @@ func TestConfigValidate(t *testing.T) {
 			},
 		},
 		{
-			name: "openclaw requires control url",
+			name: "openclaw accepts gateway url",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind:       RuntimeOpenClaw,
+					GatewayURL: "ws://127.0.0.1:18789",
+				},
+			},
+			ok: true,
+		},
+		{
+			name: "openclaw rejects legacy control url",
 			config: Config{
 				Version: VersionV1,
 				Agent:   AgentConfig{ID: "researcher"},
@@ -48,20 +61,44 @@ func TestConfigValidate(t *testing.T) {
 					ControlURL: "http://127.0.0.1:9100/team/message",
 				},
 			},
-			ok: true,
 		},
 		{
-			name: "picoclaw requires control url",
+			name: "picoclaw accepts direct command config",
 			config: Config{
 				Version: VersionV1,
 				Agent:   AgentConfig{ID: "researcher"},
 				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
 				Runtime: RuntimeConfig{
 					Kind:       RuntimePicoClaw,
-					ControlURL: "http://127.0.0.1:9100/team/message",
+					Command:    "/usr/local/bin/picoclaw",
+					ConfigPath: "/var/lib/spawnfile/instances/picoclaw/agent-researcher/picoclaw/config.json",
 				},
 			},
 			ok: true,
+		},
+		{
+			name: "picoclaw command requires config path",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind:    RuntimePicoClaw,
+					Command: "/usr/local/bin/picoclaw",
+				},
+			},
+		},
+		{
+			name: "picoclaw rejects invalid events url scheme",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind:      RuntimePicoClaw,
+					EventsURL: "http://127.0.0.1:18990/pico/ws",
+				},
+			},
 		},
 		{
 			name: "tinyclaw missing ack url",
@@ -82,7 +119,7 @@ func TestConfigValidate(t *testing.T) {
 				Version: VersionV1,
 				Agent:   AgentConfig{ID: "researcher"},
 				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
-				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, ControlURL: "http://127.0.0.1:9100/team/message"},
+				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, ControlURL: "http://127.0.0.1:18789/hooks/agent"},
 				Rooms:   []RoomBinding{{ID: "research", Read: ReadConfig("whenever")}},
 			},
 		},
@@ -92,7 +129,7 @@ func TestConfigValidate(t *testing.T) {
 				Version: VersionV1,
 				Agent:   AgentConfig{ID: "researcher"},
 				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
-				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, ControlURL: "http://127.0.0.1:9100/team/message"},
+				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, ControlURL: "http://127.0.0.1:18789/hooks/agent"},
 				Rooms:   []RoomBinding{{ID: "research", Reply: ReplyConfig("whenever")}},
 			},
 		},
@@ -103,6 +140,15 @@ func TestConfigValidate(t *testing.T) {
 				Agent:   AgentConfig{ID: "researcher"},
 				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
 				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, ControlURL: "unix:///tmp/control.sock"},
+			},
+		},
+		{
+			name: "invalid gateway url scheme",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, GatewayURL: "http://127.0.0.1:18789"},
 			},
 		},
 	}
@@ -170,7 +216,7 @@ func TestLoadFile(t *testing.T) {
   "version":"moltnet.bridge.v1",
   "agent":{"id":"researcher"},
   "moltnet":{"base_url":"http://127.0.0.1:8787","network_id":"local","token":"secret"},
-  "runtime":{"kind":"openclaw","control_url":"http://127.0.0.1:9100/team/message"}
+  "runtime":{"kind":"openclaw","gateway_url":"ws://127.0.0.1:18789"}
 }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +229,7 @@ func TestLoadFile(t *testing.T) {
   "version":"moltnet.bridge.v1",
   "agent":{"id":"researcher"},
   "moltnet":{"base_url":"http://127.0.0.1:8787","network_id":"local"},
-  "runtime":{"kind":"openclaw","control_url":"http://127.0.0.1:9100/team/message","token":"secret"}
+  "runtime":{"kind":"openclaw","gateway_url":"ws://127.0.0.1:18789","token":"secret"}
 }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
