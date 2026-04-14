@@ -202,7 +202,7 @@ func statPath(path string) (string, bool, error) {
 		return "", false, err
 	}
 	if info.IsDir() {
-		return "", false, fmt.Errorf("Moltnet client config %q is a directory", path)
+		return "", false, fmt.Errorf("moltnet client config %q is a directory", path)
 	}
 
 	return path, true, nil

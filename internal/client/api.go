@@ -141,9 +141,9 @@ func (c *Client) doJSON(ctx context.Context, method string, requestPath string, 
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 		trimmed := strings.TrimSpace(string(message))
 		if trimmed == "" {
-			return fmt.Errorf("Moltnet %s %s returned %s", method, request.URL.Redacted(), response.Status)
+			return fmt.Errorf("moltnet %s %s returned %s", method, request.URL.Redacted(), response.Status)
 		}
-		return fmt.Errorf("Moltnet %s %s returned %s: %s", method, request.URL.Redacted(), response.Status, trimmed)
+		return fmt.Errorf("moltnet %s %s returned %s: %s", method, request.URL.Redacted(), response.Status, trimmed)
 	}
 
 	if out == nil {

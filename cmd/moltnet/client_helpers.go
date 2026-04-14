@@ -25,7 +25,7 @@ func loadClientConfig(explicitPath string) (clientconfig.Config, string, error) 
 		return clientconfig.Config{}, "", err
 	}
 	if !ok {
-		return clientconfig.Config{}, "", fmt.Errorf("Moltnet client config not found")
+		return clientconfig.Config{}, "", fmt.Errorf("moltnet client config not found")
 	}
 
 	config, err := clientconfig.LoadFile(path)

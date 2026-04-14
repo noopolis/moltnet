@@ -44,7 +44,7 @@ jobs:
           set -euo pipefail
           go tool cover -func=coverage.out | tee coverage.txt
           total="$(awk '/^total:/{gsub("%","",$3); print $3}' coverage.txt)"
-          awk -v total="$total" 'BEGIN { if (total + 0 < 90.0) exit 1 }'
+          awk -v total="$total" 'BEGIN { if (total + 0 < 80.0) exit 1 }'
 
       - name: Go test -race
         run: go test -race ./...

@@ -66,7 +66,7 @@ func installMoltnetSkill(runtime string, workspace string, content string) (stri
 			filepath.Join(root, ".claude", "skills", "moltnet", "SKILL.md"),
 		}
 	default:
-		return "", fmt.Errorf("Moltnet skill install does not support runtime %q", runtime)
+		return "", fmt.Errorf("moltnet skill install does not support runtime %q", runtime)
 	}
 
 	for _, targetPath := range targetPaths {

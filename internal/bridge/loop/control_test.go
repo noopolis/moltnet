@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 func TestRunControlLoop(t *testing.T) {
 	t.Parallel()
 
+	var mu sync.Mutex
 	var controlBodies []string
 	var published int
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
@@ -93,7 +95,9 @@ func TestRunControlLoop(t *testing.T) {
 				time.Now().Add(time.Second),
 			)
 		case "/v1/messages":
+			mu.Lock()
 			published++
+			mu.Unlock()
 			response.WriteHeader(http.StatusBadGateway)
 		default:
 			response.WriteHeader(http.StatusNotFound)
@@ -107,9 +111,12 @@ func TestRunControlLoop(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read control body: %v", err)
 		}
-		controlBodies = append(controlBodies, string(body))
+		bodyText := string(body)
+		mu.Lock()
+		controlBodies = append(controlBodies, bodyText)
+		mu.Unlock()
 		response.Header().Set("Content-Type", "application/json")
-		if strings.Contains(string(body), `"from":"Moltnet Bootstrap"`) {
+		if strings.Contains(bodyText, `"from":"Moltnet Bootstrap"`) {
 			_, _ = response.Write([]byte(`{"from":"researcher","message":""}`))
 			return
 		}
@@ -135,18 +142,23 @@ func TestRunControlLoop(t *testing.T) {
 		t.Fatalf("RunControlLoop() error = %v", err)
 	}
 
-	if len(controlBodies) != 2 {
-		t.Fatalf("unexpected control requests %#v", controlBodies)
+	mu.Lock()
+	controlBodiesSnapshot := append([]string(nil), controlBodies...)
+	publishedSnapshot := published
+	mu.Unlock()
+
+	if len(controlBodiesSnapshot) != 2 {
+		t.Fatalf("unexpected control requests %#v", controlBodiesSnapshot)
 	}
 
 	var sawBootstrap bool
 	var sawInbound bool
-	for _, body := range controlBodies {
+	for _, body := range controlBodiesSnapshot {
 		if !strings.Contains(body, "\"to\":\"researcher\"") {
-			t.Fatalf("unexpected control target in %#v", controlBodies)
+			t.Fatalf("unexpected control target in %#v", controlBodiesSnapshot)
 		}
 		if !strings.Contains(body, "\"context_id\":\"moltnet:local:room:research\"") {
-			t.Fatalf("expected stable room context id, got %#v", controlBodies)
+			t.Fatalf("expected stable room context id, got %#v", controlBodiesSnapshot)
 		}
 		if strings.Contains(body, "\"from\":\"Moltnet Bootstrap\"") {
 			sawBootstrap = true
@@ -156,23 +168,27 @@ func TestRunControlLoop(t *testing.T) {
 		}
 	}
 	if !sawBootstrap || !sawInbound {
-		t.Fatalf("expected bootstrap and inbound control requests, got %#v", controlBodies)
+		t.Fatalf("expected bootstrap and inbound control requests, got %#v", controlBodiesSnapshot)
 	}
-	if published != 0 {
-		t.Fatalf("expected control loop responses to stay off Moltnet, got %d sends", published)
+	if publishedSnapshot != 0 {
+		t.Fatalf("expected control loop responses to stay off Moltnet, got %d sends", publishedSnapshot)
 	}
 }
 
 func TestRunControlLoopReconnectsAfterAttachFailure(t *testing.T) {
 	t.Parallel()
 
+	var mu sync.Mutex
 	var attachRequests int
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	moltnetServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/v1/attach":
+			mu.Lock()
 			attachRequests++
-			if attachRequests == 1 {
+			isFirstAttach := attachRequests == 1
+			mu.Unlock()
+			if isFirstAttach {
 				response.WriteHeader(http.StatusBadGateway)
 				return
 			}
@@ -260,8 +276,11 @@ func TestRunControlLoopReconnectsAfterAttachFailure(t *testing.T) {
 	if err := RunControlLoop(context.Background(), config); err != nil {
 		t.Fatalf("RunControlLoop() error = %v", err)
 	}
-	if attachRequests < 2 {
-		t.Fatalf("expected reconnect after attach failure, got %d requests", attachRequests)
+	mu.Lock()
+	attachRequestsSnapshot := attachRequests
+	mu.Unlock()
+	if attachRequestsSnapshot < 2 {
+		t.Fatalf("expected reconnect after attach failure, got %d requests", attachRequestsSnapshot)
 	}
 }
 
