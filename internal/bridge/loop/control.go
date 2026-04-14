@@ -58,7 +58,7 @@ func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
 			bootstrapStarted = true
 
 			go func() {
-				err := sendBootstrapControlMessages(streamCtx, client, controlClient, config)
+				err := sendBootstrapControlMessages(streamCtx, controlClient, config)
 				if err != nil {
 					bootstrapDone <- err
 					cancelStream()
@@ -80,12 +80,8 @@ func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
 				return nil
 			}
 
-			response, err := sendControlMessage(ctx, controlClient, config, event)
-			if err != nil {
-				return err
-			}
-
-			return publishControlResponse(ctx, client, config, event.Message.Target, response.Message)
+			_, err := sendControlMessage(ctx, controlClient, config, event)
+			return err
 		})
 		cancelStream()
 
@@ -123,12 +119,11 @@ func readBootstrapResult(results <-chan error) (error, bool) {
 
 func sendBootstrapControlMessages(
 	ctx context.Context,
-	client *MoltnetClient,
 	controlClient *http.Client,
 	config bridgeconfig.Config,
 ) error {
 	for _, target := range bootstrapTargets(config) {
-		response, err := sendControlText(
+		_, err := sendControlText(
 			ctx,
 			controlClient,
 			config,
@@ -137,10 +132,6 @@ func sendBootstrapControlMessages(
 			target.message,
 		)
 		if err != nil {
-			return err
-		}
-
-		if err := publishControlResponse(ctx, client, config, target.target, response.Message); err != nil {
 			return err
 		}
 	}
@@ -241,36 +232,6 @@ func sendControlText(
 	}
 
 	return payload, nil
-}
-
-func publishControlResponse(
-	ctx context.Context,
-	client *MoltnetClient,
-	config bridgeconfig.Config,
-	target protocol.Target,
-	message string,
-) error {
-	trimmed := strings.TrimSpace(message)
-	if trimmed == "" {
-		return nil
-	}
-
-	_, err := client.SendMessage(ctx, protocol.SendMessageRequest{
-		From: protocol.Actor{
-			Type: "agent",
-			ID:   config.Agent.ID,
-			Name: bridgeutil.DisplayName(config.Agent),
-		},
-		Mentions: bridgeutil.ParseMentions(message),
-		Parts: []protocol.Part{
-			{
-				Kind: protocol.PartKindText,
-				Text: message,
-			},
-		},
-		Target: target,
-	})
-	return err
 }
 
 func buildBootstrapControlMessage(config bridgeconfig.Config, target protocol.Target) string {

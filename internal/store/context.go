@@ -38,3 +38,9 @@ type ContextAgentStore interface {
 	ListAgentsContext(ctx context.Context) ([]protocol.AgentSummary, error)
 	GetAgentContext(ctx context.Context, agentID string) (protocol.AgentSummary, bool, error)
 }
+
+type ContextAgentRegistryStore interface {
+	RegisterAgentContext(ctx context.Context, registration protocol.AgentRegistration) (protocol.AgentRegistration, error)
+	ListRegisteredAgentsContext(ctx context.Context) ([]protocol.AgentRegistration, error)
+	GetRegisteredAgentContext(ctx context.Context, agentID string) (protocol.AgentRegistration, bool, error)
+}

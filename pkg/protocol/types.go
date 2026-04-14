@@ -102,9 +102,27 @@ type DirectConversation struct {
 
 type AgentSummary struct {
 	ID        string   `json:"id"`
+	Name      string   `json:"name,omitempty"`
+	ActorUID  string   `json:"actor_uid,omitempty"`
 	FQID      string   `json:"fqid,omitempty"`
 	NetworkID string   `json:"network_id"`
 	Rooms     []string `json:"rooms,omitempty"`
+}
+
+type RegisterAgentRequest struct {
+	RequestedAgentID string `json:"requested_agent_id,omitempty"`
+	Name             string `json:"name,omitempty"`
+}
+
+type AgentRegistration struct {
+	NetworkID     string    `json:"network_id"`
+	AgentID       string    `json:"agent_id"`
+	ActorUID      string    `json:"actor_uid"`
+	ActorURI      string    `json:"actor_uri"`
+	DisplayName   string    `json:"display_name,omitempty"`
+	CredentialKey string    `json:"-"`
+	CreatedAt     time.Time `json:"created_at,omitempty"`
+	UpdatedAt     time.Time `json:"updated_at,omitempty"`
 }
 
 type Pairing struct {

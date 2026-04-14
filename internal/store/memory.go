@@ -28,6 +28,7 @@ type MemoryStore struct {
 	threadMessages map[string][]protocol.Message
 	directMessages map[string][]protocol.Message
 	directMembers  map[string]map[string]struct{}
+	agents         map[string]protocol.AgentRegistration
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -40,6 +41,7 @@ func NewMemoryStore() *MemoryStore {
 		threadMessages: make(map[string][]protocol.Message),
 		directMessages: make(map[string][]protocol.Message),
 		directMembers:  make(map[string]map[string]struct{}),
+		agents:         make(map[string]protocol.AgentRegistration),
 	}
 }
 
@@ -119,6 +121,55 @@ func (s *MemoryStore) GetAgentContext(_ context.Context, agentID string) (protoc
 	defer s.mu.RUnlock()
 
 	return agentSummaryLocked(s.rooms, agentID)
+}
+
+func (s *MemoryStore) RegisterAgentContext(
+	_ context.Context,
+	registration protocol.AgentRegistration,
+) (protocol.AgentRegistration, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing, ok := s.agents[registration.AgentID]
+	if ok {
+		if existing.CredentialKey != registration.CredentialKey {
+			return protocol.AgentRegistration{}, ErrAgentCredential
+		}
+		if registration.DisplayName != "" {
+			existing.DisplayName = registration.DisplayName
+		}
+		existing.UpdatedAt = registration.UpdatedAt
+		s.agents[registration.AgentID] = existing
+		return existing, nil
+	}
+
+	s.agents[registration.AgentID] = registration
+	return registration, nil
+}
+
+func (s *MemoryStore) ListRegisteredAgentsContext(_ context.Context) ([]protocol.AgentRegistration, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	agents := make([]protocol.AgentRegistration, 0, len(s.agents))
+	for _, agent := range s.agents {
+		agents = append(agents, agent)
+	}
+	slices.SortFunc(agents, func(left, right protocol.AgentRegistration) int {
+		return strings.Compare(left.AgentID, right.AgentID)
+	})
+	return agents, nil
+}
+
+func (s *MemoryStore) GetRegisteredAgentContext(
+	_ context.Context,
+	agentID string,
+) (protocol.AgentRegistration, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	agent, ok := s.agents[strings.TrimSpace(agentID)]
+	return agent, ok, nil
 }
 
 func (s *MemoryStore) UpdateRoomMembers(roomID string, add []string, remove []string) (protocol.Room, error) {

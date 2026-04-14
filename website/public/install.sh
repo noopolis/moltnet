@@ -4,7 +4,7 @@ set -eu
 OWNER_REPO="${MOLTNET_REPO:-noopolis/moltnet}"
 INSTALL_DIR="${MOLTNET_INSTALL_DIR:-$HOME/.local/bin}"
 BINARY_URL_BASE="${MOLTNET_DOWNLOAD_BASE_URL:-}"
-BINARIES="moltnet moltnet-node moltnet-bridge"
+BINARIES="moltnet"
 
 need_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then

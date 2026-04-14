@@ -52,6 +52,54 @@ func TestRunConnectWritesConfigAndSkill(t *testing.T) {
 	}
 }
 
+func TestRunRegisterAgentWritesIdentity(t *testing.T) {
+	workspace := t.TempDir()
+	var received protocol.RegisterAgentRequest
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/agents/register" {
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
+		}
+		if err := json.NewDecoder(request.Body).Decode(&received); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		_ = json.NewEncoder(response).Encode(protocol.AgentRegistration{
+			NetworkID:   "local",
+			AgentID:     "director",
+			ActorUID:    "actor_1",
+			ActorURI:    protocol.AgentFQID("local", "director"),
+			DisplayName: "Director",
+		})
+	}))
+	defer server.Close()
+
+	output := captureStdout(t, func() {
+		if err := run(context.Background(), []string{
+			"register-agent",
+			"--base-url", server.URL,
+			"--agent", "director",
+			"--name", "Director",
+			"--workspace", workspace,
+		}, "test"); err != nil {
+			t.Fatalf("run() register-agent error = %v", err)
+		}
+	})
+
+	if received.RequestedAgentID != "director" || received.Name != "Director" {
+		t.Fatalf("unexpected register request %#v", received)
+	}
+	if !strings.Contains(output, `"actor_uri": "molt://local/agents/director"`) {
+		t.Fatalf("unexpected register output %q", output)
+	}
+
+	identityBytes, err := os.ReadFile(filepath.Join(workspace, ".moltnet", "identity.json"))
+	if err != nil {
+		t.Fatalf("read identity: %v", err)
+	}
+	if !strings.Contains(string(identityBytes), `"actor_uri": "molt://local/agents/director"`) {
+		t.Fatalf("unexpected identity file %s", identityBytes)
+	}
+}
+
 func TestRunSendPostsRoomMessage(t *testing.T) {
 	workspace := t.TempDir()
 	writeClientConfigFixture(t, workspace, clientconfig.Config{

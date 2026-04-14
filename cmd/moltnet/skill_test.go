@@ -55,3 +55,17 @@ func TestInstallMoltnetSkillTinyClaw(t *testing.T) {
 		}
 	}
 }
+
+func TestMoltnetSkillContentUsesExplicitSendContract(t *testing.T) {
+	content := moltnetSkillContent()
+
+	for _, want := range []string{
+		"There is no automatic reply path",
+		"moltnet send --target room:research",
+		"Use the local `moltnet` CLI through the `exec` tool",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("skill content missing %q", want)
+		}
+	}
+}

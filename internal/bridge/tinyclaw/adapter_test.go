@@ -105,7 +105,7 @@ func TestFlushResponses(t *testing.T) {
 
 	var mu sync.Mutex
 	var acked []string
-	var sentBodies []string
+	var sent int
 
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -118,16 +118,10 @@ func TestFlushResponses(t *testing.T) {
 			mu.Unlock()
 			response.WriteHeader(http.StatusOK)
 		case "/v1/messages":
-			var body map[string]any
-			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
-				t.Fatalf("decode send body: %v", err)
-			}
-			bytes, _ := json.Marshal(body)
 			mu.Lock()
-			sentBodies = append(sentBodies, string(bytes))
+			sent++
 			mu.Unlock()
-			response.Header().Set("Content-Type", "application/json")
-			_, _ = response.Write([]byte(`{"message_id":"msg_1","event_id":"evt_1","accepted":true}`))
+			response.WriteHeader(http.StatusBadGateway)
 		default:
 			response.WriteHeader(http.StatusNotFound)
 		}
@@ -145,11 +139,8 @@ func TestFlushResponses(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(sentBodies) != 1 || !strings.Contains(sentBodies[0], "report.md") {
-		t.Fatalf("unexpected sent bodies %#v", sentBodies)
-	}
-	if !strings.Contains(sentBodies[0], "\"id\":\"tinyclaw:researcher:7\"") {
-		t.Fatalf("expected deterministic request id, got %#v", sentBodies)
+	if sent != 0 {
+		t.Fatalf("expected no Moltnet messages, got %d", sent)
 	}
 	if len(acked) != 1 || acked[0] != "/api/responses/7/ack" {
 		t.Fatalf("unexpected acked paths %#v", acked)
@@ -159,6 +150,7 @@ func TestFlushResponses(t *testing.T) {
 func TestFlushResponsesLimitsOnePollBatch(t *testing.T) {
 	t.Parallel()
 
+	var acked int
 	var sent int
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -173,11 +165,11 @@ func TestFlushResponsesLimitsOnePollBatch(t *testing.T) {
 			"/api/responses/6/ack", "/api/responses/7/ack", "/api/responses/8/ack", "/api/responses/9/ack", "/api/responses/10/ack",
 			"/api/responses/11/ack", "/api/responses/12/ack", "/api/responses/13/ack", "/api/responses/14/ack", "/api/responses/15/ack",
 			"/api/responses/16/ack", "/api/responses/17/ack", "/api/responses/18/ack", "/api/responses/19/ack", "/api/responses/20/ack":
+			acked++
 			response.WriteHeader(http.StatusOK)
 		case "/v1/messages":
 			sent++
-			response.Header().Set("Content-Type", "application/json")
-			_, _ = response.Write([]byte(`{"message_id":"msg_1","event_id":"evt_1","accepted":true}`))
+			response.WriteHeader(http.StatusBadGateway)
 		default:
 			response.WriteHeader(http.StatusNotFound)
 		}
@@ -192,17 +184,20 @@ func TestFlushResponsesLimitsOnePollBatch(t *testing.T) {
 	if err := bridge.flushResponses(context.Background()); err != nil {
 		t.Fatalf("flushResponses() error = %v", err)
 	}
-	if sent != maxResponsesPerPoll {
-		t.Fatalf("expected %d sends, got %d", maxResponsesPerPoll, sent)
+	if acked != maxResponsesPerPoll {
+		t.Fatalf("expected %d acks, got %d", maxResponsesPerPoll, acked)
+	}
+	if sent != 0 {
+		t.Fatalf("expected no Moltnet sends, got %d", sent)
 	}
 }
 
-func TestFlushResponsesSkipsTinyClawProgressChatter(t *testing.T) {
+func TestFlushResponsesDrainsTinyClawOutputQueue(t *testing.T) {
 	t.Parallel()
 
 	var mu sync.Mutex
 	var acked []string
-	var sentBodies []string
+	var sent int
 
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -222,16 +217,10 @@ func TestFlushResponsesSkipsTinyClawProgressChatter(t *testing.T) {
 			mu.Unlock()
 			response.WriteHeader(http.StatusOK)
 		case "/v1/messages":
-			var body map[string]any
-			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
-				t.Fatalf("decode send body: %v", err)
-			}
-			bytes, _ := json.Marshal(body)
 			mu.Lock()
-			sentBodies = append(sentBodies, string(bytes))
+			sent++
 			mu.Unlock()
-			response.Header().Set("Content-Type", "application/json")
-			_, _ = response.Write([]byte(`{"message_id":"msg_1","event_id":"evt_1","accepted":true}`))
+			response.WriteHeader(http.StatusBadGateway)
 		default:
 			response.WriteHeader(http.StatusNotFound)
 		}
@@ -249,14 +238,8 @@ func TestFlushResponsesSkipsTinyClawProgressChatter(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if len(sentBodies) != 1 {
-		t.Fatalf("expected only one bridged response, got %#v", sentBodies)
-	}
-	if !strings.Contains(sentBodies[0], `Natural line here.`) {
-		t.Fatalf("expected natural line to be bridged, got %#v", sentBodies)
-	}
-	if strings.Contains(sentBodies[0], `[Researcher]`) {
-		t.Fatalf("expected runtime signature to be stripped, got %#v", sentBodies)
+	if sent != 0 {
+		t.Fatalf("expected TinyClaw pending responses to stay off Moltnet, got %d sends", sent)
 	}
 	if len(acked) != 6 {
 		t.Fatalf("expected all responses to be acked, got %#v", acked)
@@ -454,44 +437,25 @@ func TestFlushResponsesErrorPaths(t *testing.T) {
 		t.Fatal("expected pending response error")
 	}
 
-	sendFailure := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	ackFailure := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/api/responses/pending":
 			response.Header().Set("Content-Type", "application/json")
 			_, _ = response.Write([]byte(`[{"id":7,"sender":"Writer","senderId":"room:research","message":"done"}]`))
-		case "/v1/messages":
+		case "/api/responses/7/ack":
 			response.WriteHeader(http.StatusBadGateway)
 		default:
 			response.WriteHeader(http.StatusOK)
 		}
 	}))
-	defer sendFailure.Close()
+	defer ackFailure.Close()
 
-	bridge, err = newBridge(validBridgeConfig(sendFailure.URL))
+	bridge, err = newBridge(validBridgeConfig(ackFailure.URL))
 	if err != nil {
 		t.Fatalf("newBridge() error = %v", err)
 	}
 	if err := bridge.flushResponses(context.Background()); err == nil {
-		t.Fatal("expected moltnet send error")
-	}
-
-	skipInvalid := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		switch request.URL.Path {
-		case "/api/responses/pending":
-			response.Header().Set("Content-Type", "application/json")
-			_, _ = response.Write([]byte(`[{"id":7,"sender":"Writer","senderId":"bad","message":"done"}]`))
-		default:
-			response.WriteHeader(http.StatusOK)
-		}
-	}))
-	defer skipInvalid.Close()
-
-	bridge, err = newBridge(validBridgeConfig(skipInvalid.URL))
-	if err != nil {
-		t.Fatalf("newBridge() error = %v", err)
-	}
-	if err := bridge.flushResponses(context.Background()); err != nil {
-		t.Fatalf("expected invalid response to be skipped, got %v", err)
+		t.Fatal("expected ack error")
 	}
 }
 

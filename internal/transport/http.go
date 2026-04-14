@@ -25,6 +25,7 @@ type Service interface {
 	ListRoomsContext(ctx context.Context, page protocol.PageRequest) (protocol.RoomPage, error)
 	CreateRoomContext(ctx context.Context, request protocol.CreateRoomRequest) (protocol.Room, error)
 	UpdateRoomMembers(ctx context.Context, roomID string, request protocol.UpdateRoomMembersRequest) (protocol.Room, error)
+	RegisterAgentContext(ctx context.Context, request protocol.RegisterAgentRequest) (protocol.AgentRegistration, error)
 	ListRoomMessagesContext(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.MessagePage, error)
 	ListThreadsContext(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.ThreadPage, error)
 	ListThreadMessagesContext(ctx context.Context, threadID string, page protocol.PageRequest) (protocol.MessagePage, error)
@@ -40,6 +41,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
 	mux := http.NewServeMux()
 	attachUIRoutes(mux, policy)
 	sseLimiter := newStreamLimiter(defaultMaxSSESubscribers)
+	attachments := newAttachmentRegistry()
 
 	mux.Handle("GET /metrics", authorized(policy, authn.ScopeAdmin, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		observability.DefaultMetrics.ServeHTTP(response, request)
@@ -116,6 +118,20 @@ func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
 			return
 		}
 		writeJSON(response, http.StatusOK, agent)
+	}))
+
+	mux.HandleFunc("POST /v1/agents/register", authorizedAny(policy, []authn.Scope{authn.ScopeAdmin, authn.ScopeAttach}, func(response http.ResponseWriter, request *http.Request) {
+		var payload protocol.RegisterAgentRequest
+		if err := decodeJSON(response, request, &payload); err != nil {
+			writeError(response, http.StatusBadRequest, err)
+			return
+		}
+		agent, err := service.RegisterAgentContext(request.Context(), payload)
+		if err != nil {
+			writeError(response, statusForError(err), err)
+			return
+		}
+		writeJSON(response, http.StatusCreated, agent)
 	}))
 
 	mux.HandleFunc("GET /v1/pairings", authorized(policy, authn.ScopeObserve, func(response http.ResponseWriter, request *http.Request) {
@@ -329,7 +345,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
 	}))
 
 	mux.HandleFunc("GET /v1/attach", authorized(policy, authn.ScopeAttach, func(response http.ResponseWriter, request *http.Request) {
-		handleAttachment(response, request, service, policy)
+		handleAttachment(response, request, service, policy, attachments)
 	}))
 
 	mux.HandleFunc("GET /v1/events/stream", authorized(policy, authn.ScopeObserve, handleEventStream(service, sseLimiter)))

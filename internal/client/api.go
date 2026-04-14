@@ -94,6 +94,17 @@ func (c *Client) SendMessage(ctx context.Context, request protocol.SendMessageRe
 	return accepted, nil
 }
 
+func (c *Client) RegisterAgent(
+	ctx context.Context,
+	request protocol.RegisterAgentRequest,
+) (protocol.AgentRegistration, error) {
+	var registration protocol.AgentRegistration
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/agents/register", request, &registration); err != nil {
+		return protocol.AgentRegistration{}, err
+	}
+	return registration, nil
+}
+
 func (c *Client) doJSON(ctx context.Context, method string, requestPath string, body any, out any) error {
 	endpoint := strings.TrimRight(c.attachment.BaseURL, "/") + "/" + strings.TrimLeft(requestPath, "/")
 	if !strings.HasPrefix(requestPath, "/") {

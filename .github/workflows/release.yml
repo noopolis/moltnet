@@ -82,7 +82,7 @@ jobs:
           asset="moltnet_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz"
           workdir="$(mktemp -d)"
 
-          for cmd in moltnet moltnet-node moltnet-bridge; do
+          for cmd in moltnet; do
             GOOS="${{ matrix.goos }}" \
             GOARCH="${{ matrix.goarch }}" \
             CGO_ENABLED=0 \
@@ -93,7 +93,7 @@ jobs:
               "./cmd/${cmd}"
           done
 
-          tar -C "${workdir}" -czf "${asset}" moltnet moltnet-node moltnet-bridge
+          tar -C "${workdir}" -czf "${asset}" moltnet
           shasum -a 256 "${asset}" > "${asset}.sha256"
 
       - name: Upload build artifacts

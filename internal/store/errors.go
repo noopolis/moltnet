@@ -7,4 +7,5 @@ var (
 	ErrRoomExists       = errors.New("room already exists")
 	ErrRoomNotFound     = errors.New("room not found")
 	ErrInvalidCursor    = errors.New("invalid cursor")
+	ErrAgentCredential  = errors.New("agent credential mismatch")
 )

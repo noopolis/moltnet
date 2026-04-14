@@ -77,6 +77,15 @@ func (s *Service) GetAgent(agentID string) (protocol.AgentSummary, error) {
 	if id == "" {
 		return protocol.AgentSummary{}, unknownAgentError(id)
 	}
+	if registration, ok, err := s.registeredAgent(context.Background(), id); err != nil {
+		return protocol.AgentSummary{}, err
+	} else if ok {
+		rooms, err := s.listRooms(context.Background())
+		if err != nil {
+			return protocol.AgentSummary{}, err
+		}
+		return registeredAgentSummary(registration, rooms), nil
+	}
 	if s.contextAgents != nil {
 		agent, ok, err := s.contextAgents.GetAgentContext(context.Background(), id)
 		if err != nil {

@@ -216,4 +216,32 @@ var sqlMigrations = []migration{
 			`CREATE INDEX IF NOT EXISTS idx_threads_room ON threads (room_id, id)`,
 		},
 	},
+	{
+		Version: 5,
+		Name:    "agent_registry",
+		SQLiteStatements: []string{
+			`CREATE TABLE IF NOT EXISTS agents (
+				agent_id TEXT PRIMARY KEY,
+				network_id TEXT NOT NULL,
+				actor_uid TEXT NOT NULL,
+				actor_uri TEXT NOT NULL,
+				display_name TEXT,
+				credential_key TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+		},
+		PostgresStatements: []string{
+			`CREATE TABLE IF NOT EXISTS agents (
+				agent_id TEXT PRIMARY KEY,
+				network_id TEXT NOT NULL,
+				actor_uid TEXT NOT NULL,
+				actor_uri TEXT NOT NULL,
+				display_name TEXT,
+				credential_key TEXT NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL
+			)`,
+		},
+	},
 }

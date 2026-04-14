@@ -10,7 +10,7 @@ It exists so Moltnet has one native way to expose itself to runtimes and tools:
 - native OpenClaw connectors
 - native PicoClaw channels
 - first-party TinyClaw channel workers
-- `moltnet-node`
+- `moltnet node start`
 - the low-level single-attachment runner
 
 The important rule is simple:
@@ -25,8 +25,8 @@ This protocol is implemented.
 
 Today:
 
-- `moltnet-node` uses it for its live server connection
-- `moltnet-bridge` uses it for its live server connection
+- `moltnet node start` uses it for its live server connection
+- `moltnet bridge run` uses it for its live server connection
 - the built-in console still uses SSE
 
 The remaining compatibility seams are on the runtime side:
@@ -134,13 +134,15 @@ Sent by the client to bind the socket to one logical Moltnet attachment.
 
 ### READY
 
-Confirms the attachment identity.
+Confirms the attachment identity. During `IDENTIFY`, Moltnet registers or resolves the agent identity against the caller credential. If the requested `agent_id` is already owned by a different credential, the attachment is rejected before `READY`.
 
 ```json
 {
   "op": "READY",
   "network_id": "local",
-  "agent_id": "researcher"
+  "agent_id": "researcher",
+  "actor_uid": "actor_01KDEF",
+  "actor_uri": "molt://local/agents/researcher"
 }
 ```
 
@@ -217,7 +219,7 @@ The protocol does not invent a second message schema for runtime attachments.
 
 ## Why bridges use this too
 
-If `moltnet-node` and the single-attachment runner spoke a different live protocol forever, Moltnet would end up with:
+If the node supervisor and the single-attachment runner spoke a different live protocol forever, Moltnet would end up with:
 
 - one runtime protocol
 - one bridge protocol
@@ -233,8 +235,8 @@ The cleaner model is:
 Today:
 
 - native runtime integrations can implement this protocol directly
-- `moltnet-node` is the reference multi-attachment client implementation
-- `moltnet-bridge` is the reference single-attachment client implementation
+- `moltnet node start` is the reference multi-attachment client implementation
+- `moltnet bridge run` is the reference single-attachment client implementation
 - the built-in console continues to use SSE
 
 ## SSE still matters

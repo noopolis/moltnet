@@ -2,7 +2,6 @@ package loop
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +18,7 @@ func TestRunControlLoop(t *testing.T) {
 	t.Parallel()
 
 	var controlBodies []string
-	var published []protocol.SendMessageRequest
+	var published int
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	event := protocol.Event{
 		ID:        "evt_1",
@@ -94,13 +93,8 @@ func TestRunControlLoop(t *testing.T) {
 				time.Now().Add(time.Second),
 			)
 		case "/v1/messages":
-			var payload protocol.SendMessageRequest
-			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
-				t.Fatalf("decode published message: %v", err)
-			}
-			published = append(published, payload)
-			response.Header().Set("Content-Type", "application/json")
-			_, _ = response.Write([]byte(`{"message_id":"msg_2","event_id":"evt_2","accepted":true}`))
+			published++
+			response.WriteHeader(http.StatusBadGateway)
 		default:
 			response.WriteHeader(http.StatusNotFound)
 		}
@@ -164,8 +158,8 @@ func TestRunControlLoop(t *testing.T) {
 	if !sawBootstrap || !sawInbound {
 		t.Fatalf("expected bootstrap and inbound control requests, got %#v", controlBodies)
 	}
-	if len(published) != 1 || len(published[0].Mentions) != 1 || published[0].Mentions[0] != "reviewer" {
-		t.Fatalf("unexpected published messages %#v", published)
+	if published != 0 {
+		t.Fatalf("expected control loop responses to stay off Moltnet, got %d sends", published)
 	}
 }
 

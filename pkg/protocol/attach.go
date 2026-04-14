@@ -27,6 +27,8 @@ type AttachmentFrame struct {
 	NetworkID           string                 `json:"network_id,omitempty"`
 	Agent               *Actor                 `json:"agent,omitempty"`
 	AgentID             string                 `json:"agent_id,omitempty"`
+	ActorUID            string                 `json:"actor_uid,omitempty"`
+	ActorURI            string                 `json:"actor_uri,omitempty"`
 	Capabilities        AttachmentCapabilities `json:"capabilities,omitempty"`
 	Cursor              string                 `json:"cursor,omitempty"`
 	Event               *Event                 `json:"event,omitempty"`

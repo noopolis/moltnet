@@ -19,6 +19,8 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 	switch command {
 	case "", "start", "server":
 		return runServer(ctx, buildVersion)
+	case "bridge":
+		return runBridgeCommand(ctx, rest)
 	case "connect":
 		return runConnect(rest)
 	case "conversations":
@@ -29,6 +31,8 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runParticipants(rest)
 	case "read":
 		return runRead(rest)
+	case "register-agent":
+		return runRegisterAgent(rest)
 	case "send":
 		return runSend(rest)
 	case "skill":
@@ -79,6 +83,21 @@ func runAttachmentCommand(ctx context.Context, args []string) error {
 	}
 	if args[0] == "help" {
 		fmt.Fprint(stdout, buildAttachmentUsage())
+		return nil
+	}
+	if args[0] == "run" {
+		return runAttachment(ctx, args[1:])
+	}
+
+	return runAttachment(ctx, args)
+}
+
+func runBridgeCommand(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("bridge runner config path required")
+	}
+	if args[0] == "help" {
+		fmt.Fprint(stdout, buildBridgeUsage())
 		return nil
 	}
 	if args[0] == "run" {

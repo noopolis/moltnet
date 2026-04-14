@@ -93,8 +93,6 @@ type bridge struct {
 	tinyclaw     *apiClient
 	roomBindings map[string]bridgeconfig.RoomBinding
 	agentName    string
-	pendingMu    sync.Mutex
-	pendingAcks  map[string]struct{}
 }
 
 func newBridge(config bridgeconfig.Config) (*bridge, error) {
@@ -132,7 +130,6 @@ func newBridge(config bridgeconfig.Config) (*bridge, error) {
 		tinyclaw:     newAPIClient(config),
 		roomBindings: roomBindings,
 		agentName:    agentName,
-		pendingAcks:  make(map[string]struct{}),
 	}, nil
 }
 
@@ -202,65 +199,10 @@ func (b *bridge) flushResponses(ctx context.Context) error {
 	}
 
 	for _, response := range responses[:limit] {
-		messageID := responseMessageID(b.config.Agent.ID, response.ID)
-		if b.isPending(messageID) {
-			if err := b.tinyclaw.ackResponse(ctx, response.ID); err != nil {
-				return err
-			}
-			b.clearPending(messageID)
-			continue
-		}
-		b.markPending(messageID)
-
-		request, err := b.toMoltnetMessage(response)
-		if err != nil {
-			if errors.Is(err, errSkipTinyClawResponse) {
-				if err := b.tinyclaw.ackResponse(ctx, response.ID); err != nil {
-					return err
-				}
-				b.clearPending(messageID)
-				continue
-			}
-			b.clearPending(messageID)
-			observability.Logger(
-				ctx,
-				"bridge.tinyclaw",
-				"agent_id", b.config.Agent.ID,
-				"response_id", response.ID.String(),
-				"error", err,
-			).Warn("tinyclaw bridge skip invalid response")
-			continue
-		}
-
-		if _, err := b.moltnet.SendMessage(ctx, request); err != nil {
-			b.clearPending(messageID)
-			return err
-		}
-
 		if err := b.tinyclaw.ackResponse(ctx, response.ID); err != nil {
 			return err
 		}
-		b.clearPending(messageID)
 	}
 
 	return nil
-}
-
-func (b *bridge) markPending(messageID string) {
-	b.pendingMu.Lock()
-	defer b.pendingMu.Unlock()
-	b.pendingAcks[messageID] = struct{}{}
-}
-
-func (b *bridge) isPending(messageID string) bool {
-	b.pendingMu.Lock()
-	defer b.pendingMu.Unlock()
-	_, ok := b.pendingAcks[messageID]
-	return ok
-}
-
-func (b *bridge) clearPending(messageID string) {
-	b.pendingMu.Lock()
-	defer b.pendingMu.Unlock()
-	delete(b.pendingAcks, messageID)
 }

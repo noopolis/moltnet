@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,7 +60,9 @@ func TestAttachmentEndpoint(t *testing.T) {
 	if err := connection.ReadJSON(&ready); err != nil {
 		t.Fatalf("read ready: %v", err)
 	}
-	if ready.Op != protocol.AttachmentOpReady || ready.AgentID != "researcher" {
+	if ready.Op != protocol.AttachmentOpReady ||
+		ready.AgentID != "researcher" ||
+		ready.ActorURI != protocol.AgentFQID("local", "researcher") {
 		t.Fatalf("unexpected ready %#v", ready)
 	}
 
@@ -85,6 +88,49 @@ func TestAttachmentEndpoint(t *testing.T) {
 		Cursor:  "evt_1",
 	}); err != nil {
 		t.Fatalf("write ack: %v", err)
+	}
+}
+
+func TestAttachmentEndpointRejectsDuplicateAnonymousAgent(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeService{
+		network: protocol.Network{ID: "local"},
+		stream:  make(chan protocol.Event),
+	}
+	server := httptest.NewServer(NewHTTPHandler(service, nil))
+	defer server.Close()
+
+	endpoint := "ws" + server.URL[len("http"):] + "/v1/attach"
+	first := dialAndIdentifyAttachment(t, endpoint, "local", "researcher")
+	defer first.Close()
+
+	second, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if err != nil {
+		t.Fatalf("dial second websocket: %v", err)
+	}
+	defer second.Close()
+
+	var hello protocol.AttachmentFrame
+	if err := second.ReadJSON(&hello); err != nil {
+		t.Fatalf("read second hello: %v", err)
+	}
+	if err := second.WriteJSON(protocol.AttachmentFrame{
+		Op:        protocol.AttachmentOpIdentify,
+		Version:   protocol.AttachmentProtocolV1,
+		NetworkID: "local",
+		Agent:     &protocol.Actor{ID: "researcher"},
+	}); err != nil {
+		t.Fatalf("write second identify: %v", err)
+	}
+
+	var errorFrame protocol.AttachmentFrame
+	if err := second.ReadJSON(&errorFrame); err != nil {
+		t.Fatalf("read duplicate error frame: %v", err)
+	}
+	if errorFrame.Op != protocol.AttachmentOpError ||
+		!strings.Contains(errorFrame.Error, "already has an active attachment") {
+		t.Fatalf("unexpected duplicate error frame %#v", errorFrame)
 	}
 }
 
@@ -166,6 +212,46 @@ func TestAttachmentEndpointRejectsUnexpectedIdentifySequence(t *testing.T) {
 	if errorFrame.Op != protocol.AttachmentOpError {
 		t.Fatalf("unexpected error frame %#v", errorFrame)
 	}
+}
+
+func dialAndIdentifyAttachment(
+	t *testing.T,
+	endpoint string,
+	networkID string,
+	agentID string,
+) *websocket.Conn {
+	t.Helper()
+
+	connection, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+
+	var hello protocol.AttachmentFrame
+	if err := connection.ReadJSON(&hello); err != nil {
+		connection.Close()
+		t.Fatalf("read hello: %v", err)
+	}
+	if err := connection.WriteJSON(protocol.AttachmentFrame{
+		Op:        protocol.AttachmentOpIdentify,
+		Version:   protocol.AttachmentProtocolV1,
+		NetworkID: networkID,
+		Agent:     &protocol.Actor{ID: agentID},
+	}); err != nil {
+		connection.Close()
+		t.Fatalf("write identify: %v", err)
+	}
+
+	var ready protocol.AttachmentFrame
+	if err := connection.ReadJSON(&ready); err != nil {
+		connection.Close()
+		t.Fatalf("read ready: %v", err)
+	}
+	if ready.Op != protocol.AttachmentOpReady || ready.AgentID != agentID {
+		connection.Close()
+		t.Fatalf("unexpected ready %#v", ready)
+	}
+	return connection
 }
 
 func TestAttachmentEndpointRejectsInvalidAgentID(t *testing.T) {

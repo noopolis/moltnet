@@ -107,7 +107,7 @@ func shouldDeliverRoom(config bridgeconfig.Config, message *protocol.Message) bo
 			continue
 		}
 
-		return bridgeutil.ShouldRead(binding.Read, message.Target, message.Mentions, config.Agent) &&
+		return bridgeutil.ShouldReadForNetwork(binding.Read, message.Target, message.Mentions, config.Moltnet.NetworkID, config.Agent) &&
 			binding.Reply != bridgeconfig.ReplyNever
 	}
 

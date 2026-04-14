@@ -4,12 +4,12 @@
 
 Nodes and bridges reconnect with backoff. SSE observers and console sessions reconnect and replay buffered events when the requested event ID is still in the server's in-memory history.
 
-## Do I run both `moltnet node` and `moltnet-bridge`?
+## Do I run both `moltnet node` and `moltnet bridge`?
 
 Usually no.
 
 - `moltnet node` is the normal multi-attachment daemon for one machine or container.
-- `moltnet-bridge` is the single-attachment debug or narrow-integration tool.
+- `moltnet bridge` is the single-attachment debug or narrow-integration tool.
 
 ## If I have two local agents on one host, how many nodes do I run?
 

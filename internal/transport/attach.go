@@ -23,7 +23,13 @@ const (
 	maxPendingAttachmentAcks      = 1024
 )
 
-func handleAttachment(response http.ResponseWriter, request *http.Request, service Service, policy *authn.Policy) {
+func handleAttachment(
+	response http.ResponseWriter,
+	request *http.Request,
+	service Service,
+	policy *authn.Policy,
+	attachments *attachmentRegistry,
+) {
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			if policy == nil {
@@ -78,6 +84,32 @@ func handleAttachment(response http.ResponseWriter, request *http.Request, servi
 		})
 		return
 	}
+	registration, err := service.RegisterAgentContext(request.Context(), protocol.RegisterAgentRequest{
+		RequestedAgentID: agent.ID,
+		Name:             agent.Name,
+	})
+	if err != nil {
+		_ = writer.write(protocol.AttachmentFrame{
+			Op:    protocol.AttachmentOpError,
+			Error: err.Error(),
+		})
+		return
+	}
+	agent.ID = registration.AgentID
+	agent.FQID = registration.ActorURI
+	agent.NetworkID = registration.NetworkID
+	if agent.Name == "" {
+		agent.Name = registration.DisplayName
+	}
+	release, err := attachments.acquire(agent.ID, attachmentCredentialKey(request.Context()))
+	if err != nil {
+		_ = writer.write(protocol.AttachmentFrame{
+			Op:    protocol.AttachmentOpError,
+			Error: err.Error(),
+		})
+		return
+	}
+	defer release()
 	session := newAttachmentSession(strings.TrimSpace(frame.Cursor))
 
 	if err := writer.write(protocol.AttachmentFrame{
@@ -85,6 +117,8 @@ func handleAttachment(response http.ResponseWriter, request *http.Request, servi
 		Version:   protocol.AttachmentProtocolV1,
 		NetworkID: service.Network().ID,
 		AgentID:   agent.ID,
+		ActorUID:  registration.ActorUID,
+		ActorURI:  registration.ActorURI,
 	}); err != nil {
 		return
 	}

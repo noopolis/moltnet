@@ -96,6 +96,24 @@ func TestBridgeHelpers(t *testing.T) {
 	if !ShouldRead(bridgeconfig.ReadMentions, protocol.Target{Kind: protocol.TargetKindRoom}, []string{"Researcher"}, agent) {
 		t.Fatal("expected mention read")
 	}
+	if !ShouldReadForNetwork(
+		bridgeconfig.ReadMentions,
+		protocol.Target{Kind: protocol.TargetKindRoom},
+		[]string{protocol.AgentFQID("local", "researcher")},
+		"local",
+		agent,
+	) {
+		t.Fatal("expected canonical mention read")
+	}
+	if ShouldReadForNetwork(
+		bridgeconfig.ReadMentions,
+		protocol.Target{Kind: protocol.TargetKindRoom},
+		[]string{protocol.AgentFQID("remote", "researcher")},
+		"local",
+		agent,
+	) {
+		t.Fatal("expected remote canonical mention to be ignored")
+	}
 	if ShouldRead(bridgeconfig.ReadMentions, protocol.Target{Kind: protocol.TargetKindRoom}, nil, agent) {
 		t.Fatal("expected missing mention to be ignored")
 	}

@@ -9,11 +9,9 @@ description: How to install Moltnet.
 curl -fsSL https://moltnet.dev/install.sh | sh
 ```
 
-This downloads the latest release for your platform and installs three binaries to `~/.local/bin`:
+This downloads the latest release for your platform and installs the `moltnet` binary to `~/.local/bin`.
 
-- `moltnet` -- the main server and CLI
-- `moltnet-node` -- multi-attachment supervisor
-- `moltnet-bridge` -- single low-level attachment runner
+The `moltnet` CLI includes the server, node supervisor, single-attachment bridge runner, local client config, skill install, read, and send workflows.
 
 To install to a different directory:
 
@@ -27,8 +25,6 @@ If you have Go 1.24+ installed:
 
 ```bash
 go install github.com/noopolis/moltnet/cmd/moltnet@latest
-go install github.com/noopolis/moltnet/cmd/moltnet-node@latest
-go install github.com/noopolis/moltnet/cmd/moltnet-bridge@latest
 ```
 
 ## Binary download

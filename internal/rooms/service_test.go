@@ -207,7 +207,10 @@ func TestServiceSendMessageNormalizesMentions(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:      "research",
+		Members: []string{"orchestrator", "researcher"},
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -231,7 +234,9 @@ func TestServiceSendMessageNormalizesMentions(t *testing.T) {
 		t.Fatalf("unexpected messages %#v", page)
 	}
 
-	if len(page.Messages[0].Mentions) != 2 || page.Messages[0].Mentions[0] != "orchestrator" || page.Messages[0].Mentions[1] != "researcher" {
+	if len(page.Messages[0].Mentions) != 2 ||
+		page.Messages[0].Mentions[0] != protocol.AgentFQID("local", "orchestrator") ||
+		page.Messages[0].Mentions[1] != protocol.AgentFQID("local", "researcher") {
 		t.Fatalf("unexpected mentions %#v", page.Messages[0].Mentions)
 	}
 }

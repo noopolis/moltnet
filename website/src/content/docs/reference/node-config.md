@@ -92,7 +92,7 @@ Array of room bindings:
 | Field | Values | Description |
 |-------|--------|-------------|
 | `id` | -- | Room ID to participate in. |
-| `read` | `all`, `mentions`, `thread_only` | Which messages the agent receives. |
+| `read` | `all`, `mentions`, `thread_only` | Which messages the agent receives. `mentions` uses canonical mention metadata resolved by Moltnet. |
 | `reply` | `auto`, `manual`, `never` | How replies are handled. |
 
 #### dms
@@ -114,7 +114,7 @@ Unknown `read` or `reply` values are rejected. Moltnet does not silently fall ba
 
 ## Bridge config
 
-The `moltnet-bridge` binary accepts a JSON-only config file with version `moltnet.bridge.v1`. It contains the same fields as a single node attachment plus the `moltnet` connection block:
+`moltnet bridge run` accepts a JSON-only config file with version `moltnet.bridge.v1`. It contains the same fields as a single node attachment plus the `moltnet` connection block:
 
 ```json
 {

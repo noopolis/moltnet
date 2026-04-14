@@ -219,36 +219,10 @@ func TestToTinyClawMessage(t *testing.T) {
 	}
 }
 
-func TestToMoltnetMessageAndHelpers(t *testing.T) {
+func TestHelpers(t *testing.T) {
 	t.Parallel()
 
 	bridge := newTestBridge()
-
-	request, err := bridge.toMoltnetMessage(tinyclawPendingResponse{
-		ID:       pendingResponseID("7"),
-		SenderID: "dm:dm_1",
-		Message:  "done",
-		Files:    []string{"report.md"},
-	})
-	if err != nil {
-		t.Fatalf("toMoltnetMessage() error = %v", err)
-	}
-	if request.ID != "tinyclaw:researcher:7" {
-		t.Fatalf("unexpected request id %q", request.ID)
-	}
-	if request.Target.Kind != protocol.TargetKindDM || request.Target.DMID != "dm_1" {
-		t.Fatalf("unexpected target %#v", request.Target)
-	}
-	if len(request.Parts) != 2 {
-		t.Fatalf("unexpected parts %#v", request.Parts)
-	}
-
-	if _, err := bridge.toMoltnetMessage(tinyclawPendingResponse{SenderID: "bad"}); err == nil {
-		t.Fatal("expected bad target error")
-	}
-	if _, err := bridge.toMoltnetMessage(tinyclawPendingResponse{SenderID: "room:research"}); err == nil {
-		t.Fatal("expected empty response error")
-	}
 
 	if !bridgeutil.ShouldRead(bridgeconfig.ReadMentions, protocol.Target{Kind: protocol.TargetKindRoom}, []string{"Researcher"}, bridge.config.Agent) {
 		t.Fatal("expected mention read")
@@ -295,18 +269,6 @@ func TestToMoltnetMessageAndHelpers(t *testing.T) {
 	}
 	if _, err := encodeTarget(protocol.Target{Kind: "weird"}); err == nil {
 		t.Fatal("expected unsupported target error")
-	}
-	if decoded, err := decodeTarget("room:research"); err != nil || decoded.RoomID != "research" {
-		t.Fatalf("unexpected decode %#v err=%v", decoded, err)
-	}
-	if _, err := decodeTarget("bad"); err == nil {
-		t.Fatal("expected invalid target error")
-	}
-	if _, err := decodeTarget("weird:value"); err == nil {
-		t.Fatal("expected invalid target kind error")
-	}
-	if decoded, err := decodeTarget("thread:research:thr_1:msg_parent"); err != nil || decoded.RoomID != "research" || decoded.ThreadID != "thr_1" || decoded.ParentMessageID != "msg_parent" {
-		t.Fatalf("unexpected thread decode %#v err=%v", decoded, err)
 	}
 
 	if rendered := bridgeutil.RenderInboundText(&protocol.Message{

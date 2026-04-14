@@ -19,6 +19,9 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	if request.From.Type == "human" && !s.allowHumanIngress {
 		return protocol.MessageAccepted{}, humanIngressDisabledError()
 	}
+	if err := s.validateSenderIdentity(ctx, request.From); err != nil {
+		return protocol.MessageAccepted{}, err
+	}
 
 	messageID := strings.TrimSpace(request.ID)
 	if messageID == "" {
@@ -44,6 +47,11 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		}
 	}
 
+	mentions, err := s.resolveMentions(ctx, request.Target, protocol.NormalizeMentions(request.Parts, request.Mentions))
+	if err != nil {
+		return protocol.MessageAccepted{}, err
+	}
+
 	now := time.Now().UTC()
 	from := protocol.NormalizeActor(s.networkID, request.From)
 	target := s.normalizeTarget(request.Target, from)
@@ -55,7 +63,7 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		Target:    target,
 		From:      from,
 		Parts:     append([]protocol.Part(nil), request.Parts...),
-		Mentions:  protocol.NormalizeMentions(request.Parts, request.Mentions),
+		Mentions:  mentions,
 		CreatedAt: now,
 	}
 
@@ -68,7 +76,6 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	}
 
 	lifecycle := store.AppendLifecycle{}
-	var err error
 	if s.lifecycleMessages != nil {
 		lifecycle, err = s.lifecycleMessages.AppendMessageWithLifecycleContext(ctx, message)
 		if err != nil {
@@ -125,6 +132,28 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		ThreadCreated: lifecycle.Thread != nil,
 		DMCreated:     lifecycle.DM != nil,
 	}, nil
+}
+
+func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Actor) error {
+	if s.agentRegistry == nil || strings.TrimSpace(actor.Type) == "human" {
+		return nil
+	}
+	agentID := strings.TrimSpace(actor.ID)
+	if agentID == "" {
+		return nil
+	}
+
+	registration, ok, err := s.registeredAgent(ctx, agentID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	if registration.CredentialKey != registrationCredentialKey(ctx) {
+		return agentConflictError(agentID)
+	}
+	return nil
 }
 
 func (s *Service) Subscribe(ctx context.Context) <-chan protocol.Event {

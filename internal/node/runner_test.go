@@ -32,7 +32,7 @@ func TestNew(t *testing.T) {
 				Agent: bridgeconfig.AgentConfig{ID: "alpha"},
 				Runtime: bridgeconfig.RuntimeConfig{
 					Kind:       bridgeconfig.RuntimeOpenClaw,
-					ControlURL: "http://127.0.0.1:9100/team/message",
+					GatewayURL: "ws://127.0.0.1:9100/gateway",
 				},
 			},
 		},
@@ -148,7 +148,7 @@ func TestNewCoreRunner(t *testing.T) {
 		},
 		Runtime: bridgeconfig.RuntimeConfig{
 			Kind:       bridgeconfig.RuntimeOpenClaw,
-			ControlURL: "http://127.0.0.1:9100/team/message",
+			GatewayURL: "ws://127.0.0.1:9100/gateway",
 		},
 	})
 	if err != nil {

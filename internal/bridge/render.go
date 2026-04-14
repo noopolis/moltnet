@@ -122,12 +122,23 @@ func RenderCompactInboundMessage(
 }
 
 func ShouldRead(mode bridgeconfig.ReadConfig, target protocol.Target, mentions []string, agent bridgeconfig.AgentConfig) bool {
+	return ShouldReadForNetwork(mode, target, mentions, "", agent)
+}
+
+func ShouldReadForNetwork(
+	mode bridgeconfig.ReadConfig,
+	target protocol.Target,
+	mentions []string,
+	networkID string,
+	agent bridgeconfig.AgentConfig,
+) bool {
 	switch mode {
 	case "", bridgeconfig.ReadAll:
 		return true
 	case bridgeconfig.ReadMentions:
 		for _, mention := range mentions {
-			if mention == agent.ID || mention == agent.Name {
+			if mention == agent.ID || mention == agent.Name ||
+				(strings.TrimSpace(networkID) != "" && protocol.ActorMatches(networkID, agent.ID, mention)) {
 				return true
 			}
 		}

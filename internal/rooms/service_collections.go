@@ -249,7 +249,7 @@ func (s *Service) ListAgents() ([]protocol.AgentSummary, error) {
 }
 
 func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageRequest) (protocol.AgentPage, error) {
-	if s.contextAgents != nil {
+	if s.agentRegistry == nil && s.contextAgents != nil {
 		agents, err := s.contextAgents.ListAgentsContext(ctx)
 		if err != nil {
 			return protocol.AgentPage{}, err
@@ -261,19 +261,23 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 	if err != nil {
 		return protocol.AgentPage{}, err
 	}
-	agentsByID := make(map[string]*protocol.AgentSummary)
-	for _, room := range rooms {
-		for _, memberID := range room.Members {
-			agent, ok := agentsByID[memberID]
+	agentsByID := agentSummariesByID(rooms, s.networkID)
+	if s.agentRegistry != nil {
+		registered, err := s.agentRegistry.ListRegisteredAgentsContext(ctx)
+		if err != nil {
+			return protocol.AgentPage{}, err
+		}
+		for _, registration := range registered {
+			summary, ok := agentsByID[registration.AgentID]
 			if !ok {
-				agent = &protocol.AgentSummary{
-					ID:        memberID,
-					FQID:      protocol.AgentFQID(s.networkID, memberID),
-					NetworkID: s.networkID,
-				}
-				agentsByID[memberID] = agent
+				value := registeredAgentSummary(registration, rooms)
+				agentsByID[registration.AgentID] = &value
+				continue
 			}
-			agent.Rooms = append(agent.Rooms, room.ID)
+			summary.Name = registration.DisplayName
+			summary.ActorUID = registration.ActorUID
+			summary.FQID = registration.ActorURI
+			summary.NetworkID = registration.NetworkID
 		}
 	}
 
@@ -287,6 +291,47 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 	})
 
 	return paginateAgents(agents, page)
+}
+
+func agentSummariesByID(rooms []protocol.Room, networkID string) map[string]*protocol.AgentSummary {
+	agentsByID := make(map[string]*protocol.AgentSummary)
+	for _, room := range rooms {
+		for _, memberID := range room.Members {
+			agent, ok := agentsByID[memberID]
+			if !ok {
+				memberNetwork, memberAgent := memberIdentity(networkID, memberID)
+				agent = &protocol.AgentSummary{
+					ID:        memberID,
+					FQID:      protocol.AgentFQID(memberNetwork, memberAgent),
+					NetworkID: memberNetwork,
+				}
+				agentsByID[memberID] = agent
+			}
+			agent.Rooms = append(agent.Rooms, room.ID)
+		}
+	}
+	return agentsByID
+}
+
+func registeredAgentSummary(registration protocol.AgentRegistration, rooms []protocol.Room) protocol.AgentSummary {
+	summary := protocol.AgentSummary{
+		ID:        registration.AgentID,
+		Name:      registration.DisplayName,
+		ActorUID:  registration.ActorUID,
+		FQID:      registration.ActorURI,
+		NetworkID: registration.NetworkID,
+	}
+	for _, room := range rooms {
+		for _, memberID := range room.Members {
+			memberNetwork, memberAgent := memberIdentity(registration.NetworkID, memberID)
+			if memberNetwork == registration.NetworkID && memberAgent == registration.AgentID {
+				summary.Rooms = append(summary.Rooms, room.ID)
+				break
+			}
+		}
+	}
+	slices.Sort(summary.Rooms)
+	return summary
 }
 
 func paginateAgents(agents []protocol.AgentSummary, page protocol.PageRequest) (protocol.AgentPage, error) {

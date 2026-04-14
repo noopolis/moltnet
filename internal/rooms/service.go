@@ -47,6 +47,7 @@ type Service struct {
 	contextMessages   store.ContextMessageStore
 	lifecycleMessages store.ContextLifecycleMessageStore
 	contextAgents     store.ContextAgentStore
+	agentRegistry     store.ContextAgentRegistryStore
 	broker            EventBroker
 	pairingClient     PairingClient
 	relaySlots        chan struct{}
@@ -78,6 +79,7 @@ func NewService(config ServiceConfig) *Service {
 	contextMessages, _ := config.Messages.(store.ContextMessageStore)
 	lifecycleMessages, _ := config.Messages.(store.ContextLifecycleMessageStore)
 	contextAgents, _ := config.Store.(store.ContextAgentStore)
+	agentRegistry, _ := config.Store.(store.ContextAgentRegistryStore)
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 
 	return &Service{
@@ -92,6 +94,7 @@ func NewService(config ServiceConfig) *Service {
 		contextMessages:   contextMessages,
 		lifecycleMessages: lifecycleMessages,
 		contextAgents:     contextAgents,
+		agentRegistry:     agentRegistry,
 		broker:            config.Broker,
 		pairingClient:     config.PairingClient,
 		relaySlots:        make(chan struct{}, 8),

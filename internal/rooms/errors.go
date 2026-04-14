@@ -23,6 +23,7 @@ var (
 	ErrPairingClientMissing = errors.New("pairing client is not configured")
 	ErrHumanIngressDisabled = errors.New("human ingress is disabled")
 	ErrRemotePairing        = errors.New("paired network request failed")
+	ErrAgentConflict        = errors.New("agent identity conflict")
 )
 
 func unknownRoomError(roomID string) error {
@@ -118,6 +119,14 @@ func unknownAgentError(agentID string) error {
 		status: http.StatusNotFound,
 		msg:    fmt.Sprintf("unknown agent %q", agentID),
 		cause:  ErrUnknownAgent,
+	}
+}
+
+func agentConflictError(agentID string) error {
+	return &Error{
+		status: http.StatusConflict,
+		msg:    fmt.Sprintf("agent %q is already registered with different credentials", agentID),
+		cause:  ErrAgentConflict,
 	}
 }
 

@@ -10,14 +10,18 @@ func TestNormalizeMentions(t *testing.T) {
 
 		mentions := NormalizeMentions(
 			[]Part{
-				{Kind: "text", Text: "@orchestrator please involve @researcher"},
+				{Kind: "text", Text: "@orchestrator please involve @researcher and @remote:reviewer"},
 				{Kind: "url", URL: "https://example.com"},
-				{Kind: "text", Text: "loop in @writer too"},
+				{Kind: "text", Text: "loop in <@molt://local_lab/agents/writer> too"},
 			},
 			nil,
 		)
 
-		if len(mentions) != 3 || mentions[0] != "orchestrator" || mentions[1] != "researcher" || mentions[2] != "writer" {
+		if len(mentions) != 4 ||
+			mentions[0] != "orchestrator" ||
+			mentions[1] != "researcher" ||
+			mentions[2] != "remote:reviewer" ||
+			mentions[3] != "molt://local_lab/agents/writer" {
 			t.Fatalf("unexpected mentions %#v", mentions)
 		}
 	})
@@ -52,6 +56,16 @@ func TestParseMentions(t *testing.T) {
 		t.Fatalf("unexpected mentions %#v", mentions)
 	}
 
+	mentions = ParseMentions("@local:writer please ask <@molt://remote/agents/reviewer>")
+	if len(mentions) != 2 || mentions[0] != "local:writer" || mentions[1] != "molt://remote/agents/reviewer" {
+		t.Fatalf("unexpected scoped/canonical mentions %#v", mentions)
+	}
+
+	mentions = ParseMentions("@molt://remote/agents/reviewer ask @writer")
+	if len(mentions) != 1 || mentions[0] != "writer" {
+		t.Fatalf("unexpected raw URI mention handling %#v", mentions)
+	}
+
 	if mentions := ParseMentions("no mentions here"); mentions != nil {
 		t.Fatalf("expected nil mentions, got %#v", mentions)
 	}
@@ -67,9 +81,15 @@ func TestParseMentionMatchesSkipsMalformedEntries(t *testing.T) {
 		{"@writer", "writer"},
 		{"@writer", "writer"},
 		{"@reviewer", "reviewer"},
+		{"<@molt://local/agents/editor>", "molt://local/agents/editor", ""},
+		{"@remote:planner", "", "remote:planner"},
 	})
 
-	if len(mentions) != 2 || mentions[0] != "writer" || mentions[1] != "reviewer" {
+	if len(mentions) != 4 ||
+		mentions[0] != "writer" ||
+		mentions[1] != "reviewer" ||
+		mentions[2] != "molt://local/agents/editor" ||
+		mentions[3] != "remote:planner" {
 		t.Fatalf("unexpected mentions %#v", mentions)
 	}
 }

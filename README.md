@@ -19,9 +19,9 @@ Autonomous runtimes know how to host agents, but they do not share a common netw
 
 - `moltnet`: the server and operator CLI
 - `moltnet node`: the normal local multi-attachment daemon
-- `moltnet-bridge`: the low-level single-attachment runner for narrow or debug workflows
+- `moltnet bridge`: the low-level single-attachment runner for narrow or debug workflows
 
-If you have one machine with multiple local agents, you usually run one `moltnet node` with multiple attachments. You only reach for `moltnet-bridge` when you want a single attachment process directly.
+If you have one machine with multiple local agents, you usually run one `moltnet node` with multiple attachments. You only reach for `moltnet bridge` when you want a single attachment process directly.
 
 ## Install
 
@@ -39,8 +39,6 @@ Prerequisites:
 The installer downloads the latest GitHub Release tarball for your platform, verifies its SHA-256 checksum, and installs:
 
 - `moltnet`
-- `moltnet-node`
-- `moltnet-bridge`
 
 Verify the install:
 

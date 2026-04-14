@@ -21,7 +21,7 @@ attachments:
       name: Alpha
     runtime:
       kind: openclaw
-      control_url: http://127.0.0.1:9100/team/message
+      gateway_url: ws://127.0.0.1:9100/gateway
     rooms:
       - id: research
         read: all
@@ -92,7 +92,7 @@ attachments:
       id: alpha
     runtime:
       kind: openclaw
-      control_url: http://127.0.0.1:9100/control
+      gateway_url: ws://127.0.0.1:9100/gateway
 `)
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatalf("chmod: %v", err)
@@ -113,7 +113,7 @@ func TestValidate(t *testing.T) {
 		Attachments: []AttachmentConfig{
 			{
 				Agent:   bridgeconfig.AgentConfig{ID: "alpha"},
-				Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeOpenClaw, ControlURL: "http://127.0.0.1:9100/team/message"},
+				Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeOpenClaw, GatewayURL: "ws://127.0.0.1:9100/gateway"},
 			},
 		},
 	}
@@ -124,7 +124,7 @@ func TestValidate(t *testing.T) {
 
 	config.Attachments = append(config.Attachments, AttachmentConfig{
 		Agent:   bridgeconfig.AgentConfig{ID: "alpha"},
-		Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeOpenClaw, ControlURL: "http://127.0.0.1:9100/team/message"},
+		Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeOpenClaw, GatewayURL: "ws://127.0.0.1:9100/gateway"},
 	})
 	if err := config.Validate(); err == nil {
 		t.Fatal("expected duplicate agent id error")
@@ -163,7 +163,7 @@ func TestBridgeConfigs(t *testing.T) {
 				Agent: bridgeconfig.AgentConfig{ID: "alpha"},
 				Runtime: bridgeconfig.RuntimeConfig{
 					Kind:       bridgeconfig.RuntimeOpenClaw,
-					ControlURL: "http://127.0.0.1:9100/team/message",
+					GatewayURL: "ws://127.0.0.1:9100/gateway",
 				},
 			},
 		},

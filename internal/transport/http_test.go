@@ -27,52 +27,53 @@ func (e fakeStatusError) StatusCode() int {
 }
 
 type fakeService struct {
-	network       protocol.Network
-	pairNetwork   protocol.Network
-	agents        []protocol.AgentSummary
-	pairAgents    []protocol.AgentSummary
-	pairings      []protocol.Pairing
-	pairingsPage  protocol.PairingPage
-	pairListErr   error
-	rooms         []protocol.Room
-	pairRooms     []protocol.Room
-	roomPage      protocol.MessagePage
-	threads       []protocol.Thread
-	threadPage    protocol.MessagePage
-	threadsPage   protocol.ThreadPage
-	dms           []protocol.DirectConversation
-	dmListPage    protocol.DirectConversationPage
-	dmPage        protocol.MessagePage
-	artifactPage  protocol.ArtifactPage
-	createdRoom   protocol.CreateRoomRequest
-	updatedRoom   protocol.UpdateRoomMembersRequest
-	sentMessage   protocol.SendMessageRequest
-	roomID        string
-	roomBefore    string
-	roomAfter     string
-	threadID      string
-	threadBefore  string
-	threadAfter   string
-	dmID          string
-	dmBefore      string
-	dmAfter       string
-	agentBefore   string
-	agentAfter    string
-	pairBefore    string
-	pairAfter     string
-	pairRoomPage  protocol.RoomPage
-	pairAgentPage protocol.AgentPage
-	limit         int
-	createErr     error
-	pairingErr    error
-	roomError     error
-	threadError   error
-	dmError       error
-	artifactErr   error
-	sendErr       error
-	healthErr     error
-	stream        chan protocol.Event
-	replayStream  chan protocol.Event
+	network         protocol.Network
+	pairNetwork     protocol.Network
+	agents          []protocol.AgentSummary
+	pairAgents      []protocol.AgentSummary
+	pairings        []protocol.Pairing
+	pairingsPage    protocol.PairingPage
+	pairListErr     error
+	rooms           []protocol.Room
+	pairRooms       []protocol.Room
+	roomPage        protocol.MessagePage
+	threads         []protocol.Thread
+	threadPage      protocol.MessagePage
+	threadsPage     protocol.ThreadPage
+	dms             []protocol.DirectConversation
+	dmListPage      protocol.DirectConversationPage
+	dmPage          protocol.MessagePage
+	artifactPage    protocol.ArtifactPage
+	createdRoom     protocol.CreateRoomRequest
+	registeredAgent protocol.RegisterAgentRequest
+	updatedRoom     protocol.UpdateRoomMembersRequest
+	sentMessage     protocol.SendMessageRequest
+	roomID          string
+	roomBefore      string
+	roomAfter       string
+	threadID        string
+	threadBefore    string
+	threadAfter     string
+	dmID            string
+	dmBefore        string
+	dmAfter         string
+	agentBefore     string
+	agentAfter      string
+	pairBefore      string
+	pairAfter       string
+	pairRoomPage    protocol.RoomPage
+	pairAgentPage   protocol.AgentPage
+	limit           int
+	createErr       error
+	pairingErr      error
+	roomError       error
+	threadError     error
+	dmError         error
+	artifactErr     error
+	sendErr         error
+	healthErr       error
+	stream          chan protocol.Event
+	replayStream    chan protocol.Event
 }
 
 func (f *fakeService) Health(ctx context.Context) error { return f.healthErr }
@@ -174,6 +175,20 @@ func (f *fakeService) UpdateRoomMembers(ctx context.Context, roomID string, requ
 	f.roomID = roomID
 	f.updatedRoom = request
 	return protocol.Room{ID: roomID, Members: append(append([]string(nil), request.Add...), request.Remove...)}, nil
+}
+func (f *fakeService) RegisterAgentContext(ctx context.Context, request protocol.RegisterAgentRequest) (protocol.AgentRegistration, error) {
+	f.registeredAgent = request
+	agentID := strings.TrimSpace(request.RequestedAgentID)
+	if agentID == "" {
+		agentID = "agent"
+	}
+	return protocol.AgentRegistration{
+		NetworkID:   "local",
+		AgentID:     agentID,
+		ActorUID:    "actor_1",
+		ActorURI:    protocol.AgentFQID("local", agentID),
+		DisplayName: request.Name,
+	}, nil
 }
 func (f *fakeService) ListRoomMessagesContext(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.MessagePage, error) {
 	f.roomID = roomID

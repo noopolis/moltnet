@@ -19,12 +19,13 @@ type FileStore struct {
 }
 
 type snapshot struct {
-	Rooms          map[string]protocol.Room       `json:"rooms"`
-	RoomMessages   map[string][]protocol.Message  `json:"room_messages"`
-	Threads        map[string]protocol.Thread     `json:"threads"`
-	ThreadMessages map[string][]protocol.Message  `json:"thread_messages"`
-	DirectMessages map[string][]protocol.Message  `json:"direct_messages"`
-	DirectMembers  map[string]map[string]struct{} `json:"direct_members"`
+	Rooms          map[string]protocol.Room              `json:"rooms"`
+	RoomMessages   map[string][]protocol.Message         `json:"room_messages"`
+	Threads        map[string]protocol.Thread            `json:"threads"`
+	ThreadMessages map[string][]protocol.Message         `json:"thread_messages"`
+	DirectMessages map[string][]protocol.Message         `json:"direct_messages"`
+	DirectMembers  map[string]map[string]struct{}        `json:"direct_members"`
+	Agents         map[string]protocol.AgentRegistration `json:"agents,omitempty"`
 }
 
 func NewFileStore(path string) (*FileStore, error) {
@@ -199,6 +200,28 @@ func (s *FileStore) UpdateRoomMembersContext(
 	return room, nil
 }
 
+func (s *FileStore) RegisterAgentContext(
+	_ context.Context,
+	registration protocol.AgentRegistration,
+) (protocol.AgentRegistration, error) {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+
+	working := memoryStoreFromSnapshot(s.snapshot())
+	registered, err := working.RegisterAgentContext(context.Background(), registration)
+	if err != nil {
+		return protocol.AgentRegistration{}, err
+	}
+
+	next := snapshotFromMemoryStore(working)
+	if err := s.persistSnapshot(next); err != nil {
+		return protocol.AgentRegistration{}, err
+	}
+
+	s.restore(next)
+	return registered, nil
+}
+
 func (s *FileStore) load() error {
 	bytes, err := os.ReadFile(s.path)
 	if err != nil {
@@ -220,6 +243,7 @@ func (s *FileStore) load() error {
 	s.MemoryStore.threadMessages = cloneMessages(snapshot.ThreadMessages)
 	s.MemoryStore.directMessages = cloneMessages(snapshot.DirectMessages)
 	s.MemoryStore.directMembers = cloneMembers(snapshot.DirectMembers)
+	s.MemoryStore.agents = cloneAgents(snapshot.Agents)
 	s.MemoryStore.messageIDs = collectMessageIDs(
 		s.MemoryStore.roomMessages,
 		s.MemoryStore.threadMessages,
@@ -304,6 +328,14 @@ func cloneMembers(values map[string]map[string]struct{}) map[string]map[string]s
 	return cloned
 }
 
+func cloneAgents(values map[string]protocol.AgentRegistration) map[string]protocol.AgentRegistration {
+	cloned := make(map[string]protocol.AgentRegistration, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
 func collectMessageIDs(groups ...map[string][]protocol.Message) map[string]struct{} {
 	ids := make(map[string]struct{})
 	for _, group := range groups {
@@ -330,6 +362,7 @@ func (s *FileStore) snapshot() snapshot {
 		ThreadMessages: cloneMessages(s.MemoryStore.threadMessages),
 		DirectMessages: cloneMessages(s.MemoryStore.directMessages),
 		DirectMembers:  cloneMembers(s.MemoryStore.directMembers),
+		Agents:         cloneAgents(s.MemoryStore.agents),
 	}
 }
 
@@ -344,6 +377,7 @@ func (s *FileStore) restore(state snapshot) {
 	s.MemoryStore.threadMessages = cloneMessages(state.ThreadMessages)
 	s.MemoryStore.directMessages = cloneMessages(state.DirectMessages)
 	s.MemoryStore.directMembers = cloneMembers(state.DirectMembers)
+	s.MemoryStore.agents = cloneAgents(state.Agents)
 	s.MemoryStore.messageIDs = collectMessageIDs(
 		s.MemoryStore.roomMessages,
 		s.MemoryStore.threadMessages,
@@ -362,6 +396,7 @@ func snapshotFromMemoryStore(memory *MemoryStore) snapshot {
 		ThreadMessages: cloneMessages(memory.threadMessages),
 		DirectMessages: cloneMessages(memory.directMessages),
 		DirectMembers:  cloneMembers(memory.directMembers),
+		Agents:         cloneAgents(memory.agents),
 	}
 }
 
@@ -374,6 +409,7 @@ func memoryStoreFromSnapshot(state snapshot) *MemoryStore {
 	memory.threadMessages = cloneMessages(state.ThreadMessages)
 	memory.directMessages = cloneMessages(state.DirectMessages)
 	memory.directMembers = cloneMembers(state.DirectMembers)
+	memory.agents = cloneAgents(state.Agents)
 	memory.messageIDs = collectMessageIDs(memory.roomMessages, memory.threadMessages, memory.directMessages)
 	return memory
 }

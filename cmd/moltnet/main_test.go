@@ -169,6 +169,50 @@ func TestRunAttachmentHelpCommand(t *testing.T) {
 	}
 }
 
+func TestRunBridgeCommand(t *testing.T) {
+	path := writeAttachmentConfig(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := run(ctx, []string{"bridge", "run", path}, "test"); err != nil {
+		t.Fatalf("run() bridge run error = %v", err)
+	}
+}
+
+func TestRunBridgeCommandWithoutSubcommand(t *testing.T) {
+	path := writeAttachmentConfig(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := run(ctx, []string{"bridge", path}, "test"); err != nil {
+		t.Fatalf("run() bridge direct path error = %v", err)
+	}
+}
+
+func TestRunBridgeHelpCommand(t *testing.T) {
+	output := captureStdout(t, func() {
+		if err := run(context.Background(), []string{"bridge", "help"}, "test"); err != nil {
+			t.Fatalf("run() bridge help error = %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "moltnet bridge run") {
+		t.Fatalf("expected bridge help output, got %q", output)
+	}
+}
+
+func TestRunBridgeCommandErrorsWithoutPath(t *testing.T) {
+	err := run(context.Background(), []string{"bridge"}, "test")
+	if err == nil {
+		t.Fatal("expected missing bridge path error")
+	}
+	if !strings.Contains(err.Error(), "bridge runner config path required") {
+		t.Fatalf("unexpected error %v", err)
+	}
+}
+
 func TestRunAttachmentCommandErrorsWithoutPath(t *testing.T) {
 	err := run(context.Background(), []string{"attachment"}, "test")
 	if err == nil {

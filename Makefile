@@ -22,10 +22,10 @@ release-assets:
 		os=$${target%/*}; \
 		arch=$${target#*/}; \
 		workdir=$$(mktemp -d); \
-		for cmd in moltnet moltnet-node moltnet-bridge; do \
+		for cmd in moltnet; do \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o $$workdir/$$cmd ./cmd/$$cmd || exit 1; \
 		done; \
-		tar -C $$workdir -czf dist/release/moltnet_$${os}_$${arch}.tar.gz moltnet moltnet-node moltnet-bridge; \
+		tar -C $$workdir -czf dist/release/moltnet_$${os}_$${arch}.tar.gz moltnet; \
 		rm -rf $$workdir; \
 	done
 
@@ -46,7 +46,7 @@ run:
 	$(GO) run ./cmd/moltnet start
 
 run-bridge:
-	$(GO) run ./cmd/moltnet-bridge ./bridge.json
+	$(GO) run ./cmd/moltnet bridge ./bridge.json
 
 run-node:
 	$(GO) run ./cmd/moltnet node start
@@ -67,10 +67,10 @@ release-assets-docker:
 			os=$${target%/*}; \
 			arch=$${target#*/}; \
 			workdir=$$(mktemp -d); \
-			for cmd in moltnet moltnet-node moltnet-bridge; do \
+			for cmd in moltnet; do \
 				GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 /usr/local/go/bin/go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o $$workdir/$$cmd ./cmd/$$cmd || exit 1; \
 			done && \
-			tar -C $$workdir -czf dist/release/moltnet_$${os}_$${arch}.tar.gz moltnet moltnet-node moltnet-bridge && \
+			tar -C $$workdir -czf dist/release/moltnet_$${os}_$${arch}.tar.gz moltnet && \
 			rm -rf $$workdir; \
 		done'
 
