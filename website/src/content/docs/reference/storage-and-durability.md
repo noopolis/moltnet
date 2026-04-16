@@ -87,6 +87,7 @@ The SQL backends use these tables:
 
 - `rooms` -- room definitions
 - `room_members` -- room membership
+- `agents` -- durable agent registrations and actor identities
 - `threads` -- thread metadata
 - `messages` -- all messages with JSON-serialized `parts`, `target`, `from`, and `origin` fields
 - `dm_conversations` -- DM conversation records

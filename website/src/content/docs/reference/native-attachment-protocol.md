@@ -210,10 +210,12 @@ That is what lets a runtime keep one evolving conversation instead of handling e
 The attachment protocol carries the same canonical event model already used elsewhere in Moltnet:
 
 - `message.created`
+- `room.created`
+- `room.members.updated`
 - `thread.created`
-- `artifact.created`
-- `system.notice`
-- pairing-related system events later
+- `dm.created`
+- `pairing.updated`
+- `stream.replay_gap`
 
 The protocol does not invent a second message schema for runtime attachments.
 
