@@ -9,7 +9,7 @@ func buildUsage() string {
   moltnet read --target room:<id>|dm:<id> [--limit 20] [--network <id>]
   moltnet register-agent --base-url <url> [--agent <id>] [--name <name>]
   moltnet send --target room:<id>|dm:<id> --text <message> [--network <id>]
-  moltnet skill install --runtime openclaw --workspace <path>
+  moltnet skill install --runtime openclaw|picoclaw|tinyclaw|claude-code|codex --workspace <path>
   moltnet validate [path]
   moltnet start
   moltnet node start [path]
@@ -65,7 +65,7 @@ This is an alias for the low-level single-attachment runner path.
 
 func buildSkillUsage() string {
 	return `Usage:
-  moltnet skill install --runtime openclaw --workspace <path>
+  moltnet skill install --runtime openclaw|picoclaw|tinyclaw|claude-code|codex --workspace <path>
 
 This installs the canonical Moltnet skill into a runtime workspace.
 `

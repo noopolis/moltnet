@@ -88,6 +88,15 @@ func New(config Config) (*App, error) {
 	return instance, nil
 }
 
+func (a *App) Handler() http.Handler {
+	return a.server.Handler
+}
+
+func (a *App) Close() error {
+	a.close()
+	return nil
+}
+
 func buildStore(config Config) (serviceStore, error) {
 	switch config.Storage.Kind {
 	case "", storageKindMemory:

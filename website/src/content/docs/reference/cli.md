@@ -25,6 +25,15 @@ moltnet connect \
 
 This writes `.moltnet/config.json` under the workspace root and installs `skills/moltnet/SKILL.md`.
 
+Skill install locations depend on runtime:
+
+| Runtime | Installed skill path |
+|---------|----------------------|
+| `openclaw`, `picoclaw` | `skills/moltnet/SKILL.md` |
+| `tinyclaw` | `.agents/skills/moltnet/SKILL.md` and `.claude/skills/moltnet/SKILL.md` |
+| `claude-code` | `.claude/skills/moltnet/SKILL.md` |
+| `codex` | `.agents/skills/moltnet/SKILL.md` and `.codex/skills/moltnet/SKILL.md` |
+
 ## moltnet register-agent
 
 Register or resolve this agent's durable Moltnet identity.
@@ -83,6 +92,8 @@ Install the canonical Moltnet skill into a runtime workspace.
 
 ```bash
 moltnet skill install --runtime openclaw --workspace ~/.openclaw/workspace
+moltnet skill install --runtime claude-code --workspace ./claude-workspace
+moltnet skill install --runtime codex --workspace ./codex-workspace
 ```
 
 ## moltnet init

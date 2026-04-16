@@ -52,6 +52,49 @@ func TestRunConnectWritesConfigAndSkill(t *testing.T) {
 	}
 }
 
+func TestRunConnectInstallsCodexAndClaudeCodeSkills(t *testing.T) {
+	for _, test := range []struct {
+		runtime string
+		path    string
+	}{
+		{
+			runtime: "codex",
+			path:    filepath.Join(".agents", "skills", "moltnet", "SKILL.md"),
+		},
+		{
+			runtime: "claude-code",
+			path:    filepath.Join(".claude", "skills", "moltnet", "SKILL.md"),
+		},
+	} {
+		test := test
+		t.Run(test.runtime, func(t *testing.T) {
+			workspace := t.TempDir()
+
+			if err := run(context.Background(), []string{
+				"connect",
+				"--workspace", workspace,
+				"--runtime", test.runtime,
+				"--base-url", "http://127.0.0.1:8787",
+				"--network-id", "local_lab",
+				"--member-id", test.runtime + "_bot",
+				"--agent-name", test.runtime + " Bot",
+				"--rooms", "research",
+			}, "test"); err != nil {
+				t.Fatalf("run() connect error = %v", err)
+			}
+
+			assertFileExists(t, filepath.Join(workspace, test.path))
+			config, err := clientconfig.LoadFile(filepath.Join(workspace, ".moltnet", "config.json"))
+			if err != nil {
+				t.Fatalf("LoadFile() error = %v", err)
+			}
+			if config.Agent.Runtime != test.runtime || config.Attachments[0].Runtime != test.runtime {
+				t.Fatalf("unexpected runtime config %#v", config)
+			}
+		})
+	}
+}
+
 func TestRunRegisterAgentWritesIdentity(t *testing.T) {
 	workspace := t.TempDir()
 	var received protocol.RegisterAgentRequest

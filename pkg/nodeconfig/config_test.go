@@ -44,6 +44,55 @@ attachments:
 	}
 }
 
+func TestLoadFileYAMLWithCLIBackedAttachments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DefaultPath)
+	writeNodeConfig(t, path, `
+version: moltnet.node.v1
+moltnet:
+  base_url: http://127.0.0.1:8787
+  network_id: local
+attachments:
+  - agent:
+      id: codex_bot
+      name: Codex Bot
+    runtime:
+      kind: codex
+      command: ./bin/codex
+      workspace_path: ./codex-workspace
+      session_store_path: ./codex-workspace/.moltnet/sessions.json
+    rooms:
+      - id: research
+        read: mentions
+        reply: auto
+  - agent:
+      id: claude_bot
+      name: Claude Bot
+    runtime:
+      kind: claude-code
+      command: ./bin/claude
+      workspace_path: ./claude-workspace
+    rooms:
+      - id: research
+        read: mentions
+        reply: auto
+`)
+
+	config, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	bridgeConfigs := config.BridgeConfigs()
+	if len(bridgeConfigs) != 2 {
+		t.Fatalf("expected two bridge configs, got %#v", bridgeConfigs)
+	}
+	if bridgeConfigs[0].Runtime.Kind != bridgeconfig.RuntimeCodex ||
+		bridgeConfigs[0].Runtime.WorkspacePath != "./codex-workspace" ||
+		bridgeConfigs[1].Runtime.Kind != bridgeconfig.RuntimeClaudeCode ||
+		bridgeConfigs[1].Runtime.WorkspacePath != "./claude-workspace" {
+		t.Fatalf("unexpected bridge configs %#v", bridgeConfigs)
+	}
+}
+
 func TestLoadFileRejectsUnknownField(t *testing.T) {
 	path := filepath.Join(t.TempDir(), DefaultPath)
 	writeNodeConfig(t, path, `

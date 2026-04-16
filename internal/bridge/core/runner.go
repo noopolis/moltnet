@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/noopolis/moltnet/internal/bridge/claudecode"
+	"github.com/noopolis/moltnet/internal/bridge/codex"
 	"github.com/noopolis/moltnet/internal/bridge/openclaw"
 	"github.com/noopolis/moltnet/internal/bridge/picoclaw"
 	"github.com/noopolis/moltnet/internal/bridge/tinyclaw"
@@ -54,6 +56,10 @@ func selectAdapter(kind string) (RuntimeAdapter, error) {
 		return openclaw.New(), nil
 	case bridgeconfig.RuntimePicoClaw:
 		return picoclaw.New(), nil
+	case bridgeconfig.RuntimeClaudeCode:
+		return claudecode.New(), nil
+	case bridgeconfig.RuntimeCodex:
+		return codex.New(), nil
 	default:
 		return nil, fmt.Errorf("unsupported runtime adapter %q", kind)
 	}

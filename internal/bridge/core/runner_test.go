@@ -29,6 +29,8 @@ func TestSelectAdapter(t *testing.T) {
 		bridgeconfig.RuntimeTinyClaw,
 		bridgeconfig.RuntimeOpenClaw,
 		bridgeconfig.RuntimePicoClaw,
+		bridgeconfig.RuntimeClaudeCode,
+		bridgeconfig.RuntimeCodex,
 	} {
 		runtimeKind := runtimeKind
 		t.Run(runtimeKind, func(t *testing.T) {

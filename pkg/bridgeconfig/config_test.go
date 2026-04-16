@@ -89,6 +89,59 @@ func TestConfigValidate(t *testing.T) {
 			},
 		},
 		{
+			name: "claude code accepts workspace path",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind:          RuntimeClaudeCode,
+					Command:       "/usr/local/bin/claude",
+					WorkspacePath: "/tmp/claude-workspace",
+				},
+			},
+			ok: true,
+		},
+		{
+			name: "codex accepts workspace path",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind:             RuntimeCodex,
+					Command:          "/usr/local/bin/codex",
+					WorkspacePath:    "/tmp/codex-workspace",
+					SessionStorePath: "/tmp/codex-workspace/.moltnet/sessions.json",
+				},
+			},
+			ok: true,
+		},
+		{
+			name: "codex requires workspace path",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind: RuntimeCodex,
+				},
+			},
+		},
+		{
+			name: "claude code rejects control url",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind:          RuntimeClaudeCode,
+					WorkspacePath: "/tmp/claude-workspace",
+					ControlURL:    "http://127.0.0.1:9000/control",
+				},
+			},
+		},
+		{
 			name: "picoclaw rejects invalid events url scheme",
 			config: Config{
 				Version: VersionV1,

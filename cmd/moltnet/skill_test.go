@@ -56,6 +56,35 @@ func TestInstallMoltnetSkillTinyClaw(t *testing.T) {
 	}
 }
 
+func TestInstallMoltnetSkillClaudeCodeAndCodex(t *testing.T) {
+	workspace := t.TempDir()
+
+	installed, err := installMoltnetSkill("claude-code", workspace, "name: moltnet\n")
+	if err != nil {
+		t.Fatalf("installMoltnetSkill() claude-code error = %v", err)
+	}
+	claudePath := filepath.Join(workspace, ".claude", "skills", "moltnet", "SKILL.md")
+	if installed != claudePath {
+		t.Fatalf("installMoltnetSkill() claude path = %q, want %q", installed, claudePath)
+	}
+	assertFileExists(t, claudePath)
+
+	installed, err = installMoltnetSkill("codex", workspace, "name: moltnet\n")
+	if err != nil {
+		t.Fatalf("installMoltnetSkill() codex error = %v", err)
+	}
+	paths := strings.Split(installed, ", ")
+	if len(paths) != 2 {
+		t.Fatalf("expected two codex skill paths, got %q", installed)
+	}
+	for _, targetPath := range []string{
+		filepath.Join(workspace, ".agents", "skills", "moltnet", "SKILL.md"),
+		filepath.Join(workspace, ".codex", "skills", "moltnet", "SKILL.md"),
+	} {
+		assertFileExists(t, targetPath)
+	}
+}
+
 func TestMoltnetSkillContentUsesExplicitSendContract(t *testing.T) {
 	content := moltnetSkillContent()
 

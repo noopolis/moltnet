@@ -10,9 +10,11 @@ import (
 const (
 	VersionV1 = "moltnet.bridge.v1"
 
-	RuntimeTinyClaw = "tinyclaw"
-	RuntimeOpenClaw = "openclaw"
-	RuntimePicoClaw = "picoclaw"
+	RuntimeTinyClaw   = "tinyclaw"
+	RuntimeOpenClaw   = "openclaw"
+	RuntimePicoClaw   = "picoclaw"
+	RuntimeClaudeCode = "claude-code"
+	RuntimeCodex      = "codex"
 )
 
 type Config struct {
@@ -38,18 +40,22 @@ type MoltnetConfig struct {
 }
 
 type RuntimeConfig struct {
-	Kind        string `json:"kind" yaml:"kind"`
-	Token       string `json:"token,omitempty" yaml:"token,omitempty"`
-	Channel     string `json:"channel,omitempty" yaml:"channel,omitempty"`
-	Command     string `json:"command,omitempty" yaml:"command,omitempty"`
-	ConfigPath  string `json:"config_path,omitempty" yaml:"config_path,omitempty"`
-	HomePath    string `json:"home_path,omitempty" yaml:"home_path,omitempty"`
-	GatewayURL  string `json:"gateway_url,omitempty" yaml:"gateway_url,omitempty"`
-	InboundURL  string `json:"inbound_url,omitempty" yaml:"inbound_url,omitempty"`
-	OutboundURL string `json:"outbound_url,omitempty" yaml:"outbound_url,omitempty"`
-	AckURL      string `json:"ack_url,omitempty" yaml:"ack_url,omitempty"`
-	EventsURL   string `json:"events_url,omitempty" yaml:"events_url,omitempty"`
-	ControlURL  string `json:"control_url,omitempty" yaml:"control_url,omitempty"`
+	Kind             string `json:"kind" yaml:"kind"`
+	Token            string `json:"token,omitempty" yaml:"token,omitempty"`
+	Channel          string `json:"channel,omitempty" yaml:"channel,omitempty"`
+	Command          string `json:"command,omitempty" yaml:"command,omitempty"`
+	ConfigPath       string `json:"config_path,omitempty" yaml:"config_path,omitempty"`
+	HomePath         string `json:"home_path,omitempty" yaml:"home_path,omitempty"`
+	GatewayURL       string `json:"gateway_url,omitempty" yaml:"gateway_url,omitempty"`
+	InboundURL       string `json:"inbound_url,omitempty" yaml:"inbound_url,omitempty"`
+	OutboundURL      string `json:"outbound_url,omitempty" yaml:"outbound_url,omitempty"`
+	AckURL           string `json:"ack_url,omitempty" yaml:"ack_url,omitempty"`
+	EventsURL        string `json:"events_url,omitempty" yaml:"events_url,omitempty"`
+	ControlURL       string `json:"control_url,omitempty" yaml:"control_url,omitempty"`
+	WorkspacePath    string `json:"workspace_path,omitempty" yaml:"workspace_path,omitempty"`
+	SessionStorePath string `json:"session_store_path,omitempty" yaml:"session_store_path,omitempty"`
+	SessionPrefix    string `json:"session_prefix,omitempty" yaml:"session_prefix,omitempty"`
+	Driver           string `json:"driver,omitempty" yaml:"driver,omitempty"`
 }
 
 type RoomBinding struct {
@@ -121,7 +127,7 @@ func (c Config) Validate() error {
 	}
 
 	switch c.Runtime.Kind {
-	case RuntimeTinyClaw, RuntimeOpenClaw, RuntimePicoClaw:
+	case RuntimeTinyClaw, RuntimeOpenClaw, RuntimePicoClaw, RuntimeClaudeCode, RuntimeCodex:
 	default:
 		return fmt.Errorf("bridge config runtime.kind %q is unsupported", c.Runtime.Kind)
 	}
@@ -147,6 +153,9 @@ func (c Config) Validate() error {
 		if c.Runtime.Kind == RuntimeOpenClaw {
 			return fmt.Errorf("bridge config runtime.control_url is unsupported for openclaw; use runtime.gateway_url")
 		}
+		if c.Runtime.Kind != RuntimePicoClaw && c.Runtime.Kind != RuntimeTinyClaw {
+			return fmt.Errorf("bridge config runtime.control_url is only supported for picoclaw or tinyclaw")
+		}
 		if err := validateURL("bridge config runtime.control_url", c.Runtime.ControlURL); err != nil {
 			return err
 		}
@@ -164,11 +173,20 @@ func (c Config) Validate() error {
 	}
 
 	if strings.TrimSpace(c.Runtime.Command) != "" {
-		if c.Runtime.Kind != RuntimePicoClaw {
-			return fmt.Errorf("bridge config runtime.command is only supported for picoclaw")
+		if c.Runtime.Kind != RuntimePicoClaw && c.Runtime.Kind != RuntimeClaudeCode && c.Runtime.Kind != RuntimeCodex {
+			return fmt.Errorf("bridge config runtime.command is only supported for picoclaw, claude-code, or codex")
 		}
-		if strings.TrimSpace(c.Runtime.ConfigPath) == "" {
+		if c.Runtime.Kind == RuntimePicoClaw && strings.TrimSpace(c.Runtime.ConfigPath) == "" {
 			return fmt.Errorf("bridge config runtime.config_path is required when runtime.command is set")
+		}
+		if c.Runtime.Kind == RuntimePicoClaw {
+			return nil
+		}
+	}
+
+	if c.Runtime.Kind == RuntimeClaudeCode || c.Runtime.Kind == RuntimeCodex {
+		if strings.TrimSpace(c.Runtime.WorkspacePath) == "" {
+			return fmt.Errorf("bridge config runtime.workspace_path is required for %s", c.Runtime.Kind)
 		}
 		return nil
 	}
