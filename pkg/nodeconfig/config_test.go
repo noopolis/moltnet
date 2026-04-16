@@ -21,7 +21,6 @@ attachments:
       name: Alpha
     runtime:
       kind: openclaw
-      gateway_url: ws://127.0.0.1:9100/gateway
     rooms:
       - id: research
         read: all
@@ -41,6 +40,10 @@ attachments:
 	}
 	if len(config.Attachments) != 1 || config.Attachments[0].Agent.ID != "alpha" {
 		t.Fatalf("unexpected attachments %#v", config.Attachments)
+	}
+	bridgeConfigs := config.BridgeConfigs()
+	if bridgeConfigs[0].Runtime.GatewayURL != bridgeconfig.DefaultOpenClawGatewayURL {
+		t.Fatalf("expected default gateway URL, got %#v", bridgeConfigs[0].Runtime)
 	}
 }
 
@@ -211,8 +214,7 @@ func TestBridgeConfigs(t *testing.T) {
 			{
 				Agent: bridgeconfig.AgentConfig{ID: "alpha"},
 				Runtime: bridgeconfig.RuntimeConfig{
-					Kind:       bridgeconfig.RuntimeOpenClaw,
-					GatewayURL: "ws://127.0.0.1:9100/gateway",
+					Kind: bridgeconfig.RuntimeOpenClaw,
 				},
 			},
 		},
@@ -224,6 +226,9 @@ func TestBridgeConfigs(t *testing.T) {
 	}
 	if configs[0].Version != bridgeconfig.VersionV1 || configs[0].Moltnet.Token != "secret" {
 		t.Fatalf("unexpected bridge config %#v", configs[0])
+	}
+	if configs[0].Runtime.GatewayURL != bridgeconfig.DefaultOpenClawGatewayURL {
+		t.Fatalf("expected normalized runtime defaults, got %#v", configs[0].Runtime)
 	}
 }
 

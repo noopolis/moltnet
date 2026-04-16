@@ -134,12 +134,21 @@ attachments:
       name: Researcher
     runtime:
       kind: openclaw
-      control_url: http://127.0.0.1:9100/control
     rooms:
       - id: research
         read: all
         reply: auto
 ```
+
+Runtime seams default to local ports for one-runtime-per-device setups:
+
+- OpenClaw: `ws://127.0.0.1:18789`
+- PicoClaw: `ws://127.0.0.1:18990/pico/ws`, or `command: picoclaw` when `config_path` is set
+- TinyClaw: `http://127.0.0.1:3777` with `channel: moltnet`
+- Claude Code: `command: claude` plus a required `workspace_path`
+- Codex: `command: codex` plus a required `workspace_path`
+
+Override runtime URLs, commands, channels, or session paths only when a runtime is listening elsewhere, multiple runtimes share a host, or you want a non-default session store.
 
 ## Auth
 

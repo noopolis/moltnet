@@ -93,6 +93,9 @@ func TestNew(t *testing.T) {
 	if runner.adapter == nil {
 		t.Fatal("expected adapter")
 	}
+	if runner.config.Runtime.GatewayURL != bridgeconfig.DefaultOpenClawGatewayURL {
+		t.Fatalf("expected normalized runtime config, got %#v", runner.config.Runtime)
+	}
 
 	config.Runtime.Kind = "bad"
 	if _, err := New(config); err == nil {

@@ -27,6 +27,16 @@ func TestConfigValidate(t *testing.T) {
 		ok     bool
 	}{
 		{name: "valid tinyclaw", config: validTinyClaw, ok: true},
+		{
+			name: "tinyclaw accepts default local api urls",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{Kind: RuntimeTinyClaw},
+			},
+			ok: true,
+		},
 		{name: "missing version", config: Config{}, ok: false},
 		{
 			name: "unsupported runtime",
@@ -51,6 +61,18 @@ func TestConfigValidate(t *testing.T) {
 			ok: true,
 		},
 		{
+			name: "openclaw accepts default local gateway url",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind: RuntimeOpenClaw,
+				},
+			},
+			ok: true,
+		},
+		{
 			name: "openclaw rejects legacy control url",
 			config: Config{
 				Version: VersionV1,
@@ -58,6 +80,19 @@ func TestConfigValidate(t *testing.T) {
 				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
 				Runtime: RuntimeConfig{
 					Kind:       RuntimeOpenClaw,
+					ControlURL: "http://127.0.0.1:9100/team/message",
+				},
+			},
+		},
+		{
+			name: "openclaw rejects conflicting control url even with gateway",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind:       RuntimeOpenClaw,
+					GatewayURL: "ws://127.0.0.1:18789",
 					ControlURL: "http://127.0.0.1:9100/team/message",
 				},
 			},
@@ -71,6 +106,31 @@ func TestConfigValidate(t *testing.T) {
 				Runtime: RuntimeConfig{
 					Kind:       RuntimePicoClaw,
 					Command:    "/usr/local/bin/picoclaw",
+					ConfigPath: "/var/lib/spawnfile/instances/picoclaw/agent-researcher/picoclaw/config.json",
+				},
+			},
+			ok: true,
+		},
+		{
+			name: "picoclaw accepts default local event socket",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind: RuntimePicoClaw,
+				},
+			},
+			ok: true,
+		},
+		{
+			name: "picoclaw defaults command when config path is present",
+			config: Config{
+				Version: VersionV1,
+				Agent:   AgentConfig{ID: "researcher"},
+				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+				Runtime: RuntimeConfig{
+					Kind:       RuntimePicoClaw,
 					ConfigPath: "/var/lib/spawnfile/instances/picoclaw/agent-researcher/picoclaw/config.json",
 				},
 			},
@@ -154,7 +214,7 @@ func TestConfigValidate(t *testing.T) {
 			},
 		},
 		{
-			name: "tinyclaw missing ack url",
+			name: "tinyclaw rejects invalid ack url",
 			config: Config{
 				Version: VersionV1,
 				Agent:   AgentConfig{ID: "researcher"},
@@ -163,6 +223,7 @@ func TestConfigValidate(t *testing.T) {
 					Kind:        RuntimeTinyClaw,
 					InboundURL:  "http://127.0.0.1:3777/api/message",
 					OutboundURL: "http://127.0.0.1:3777/api/responses/pending?channel=moltnet",
+					AckURL:      "unix:///tmp/tinyclaw.sock",
 				},
 			},
 		},
@@ -233,10 +294,7 @@ func TestLoadFile(t *testing.T) {
   "agent":{"id":"researcher"},
   "moltnet":{"base_url":"http://127.0.0.1:8787","network_id":"local"},
   "runtime":{
-    "kind":"tinyclaw",
-    "inbound_url":"http://127.0.0.1:3777/api/message",
-    "outbound_url":"http://127.0.0.1:3777/api/responses/pending?channel=moltnet",
-    "ack_url":"http://127.0.0.1:3777/api/responses"
+    "kind":"tinyclaw"
   }
 }`), 0o600); err != nil {
 		t.Fatal(err)
@@ -249,6 +307,11 @@ func TestLoadFile(t *testing.T) {
 
 	if config.Agent.ID != "researcher" {
 		t.Fatalf("unexpected agent id %q", config.Agent.ID)
+	}
+	if config.Runtime.InboundURL != "http://127.0.0.1:3777/api/message" ||
+		config.Runtime.OutboundURL != "http://127.0.0.1:3777/api/responses/pending?channel=moltnet" ||
+		config.Runtime.AckURL != "http://127.0.0.1:3777/api/responses" {
+		t.Fatalf("runtime defaults were not applied: %#v", config.Runtime)
 	}
 
 	invalidPath := filepath.Join(dir, "invalid.json")
@@ -316,7 +379,7 @@ func TestConfigValidateBaseFieldErrors(t *testing.T) {
   "version":"moltnet.bridge.v1",
   "agent":{"id":"researcher"},
   "moltnet":{"base_url":"http://127.0.0.1:8787","network_id":"local"},
-  "runtime":{"kind":"tinyclaw"}
+  "runtime":{"kind":"unknown"}
 }`), 0o600); err != nil {
 		t.Fatal(err)
 	}

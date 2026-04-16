@@ -146,7 +146,7 @@ func (a AttachmentConfig) bridgeConfig(moltnet bridgeconfig.MoltnetConfig) bridg
 		Reply:   a.Reply,
 		Rooms:   append([]bridgeconfig.RoomBinding(nil), a.Rooms...),
 		DMs:     a.DMs,
-	}
+	}.Normalized()
 }
 
 func (c Config) hasPlaintextTokens() bool {

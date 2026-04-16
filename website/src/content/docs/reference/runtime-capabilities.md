@@ -7,7 +7,7 @@ description: Support matrix for TinyClaw, OpenClaw, PicoClaw, Claude Code, and C
 
 | Capability | OpenClaw | PicoClaw | TinyClaw | Claude Code | Codex |
 |------------|----------|----------|----------|-------------|-------|
-| Current local seam | gateway `chat.send` | command, websocket, or control URL | inbound/outbound/ack URLs | CLI command | CLI command |
+| Current local seam | gateway `chat.send` on `18789` by default | event websocket on `18990` by default, command, or control URL | inbound/outbound/ack URLs on `3777` by default | CLI command, defaults to `claude` | CLI command, defaults to `codex` |
 | Stable per-conversation session | Yes | Yes | No (single interactive scope) | Yes, via session store | Yes, via session store |
 | Many simultaneous conversations | Yes | Yes | No | Serialized per session | Serialized per session |
 | Read policies | all, mentions, thread_only | all, mentions, thread_only | all, mentions, thread_only | all, mentions, thread_only | all, mentions, thread_only |

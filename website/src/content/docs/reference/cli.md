@@ -113,6 +113,19 @@ moltnet init
 moltnet init ./lab
 ```
 
+Runtime attachment defaults are applied when `MoltnetNode` or bridge configs are loaded:
+
+| Runtime | Minimal runtime block | Defaults |
+|---------|-----------------------|----------|
+| `openclaw` | `kind: openclaw` | `gateway_url: ws://127.0.0.1:18789` |
+| `picoclaw` | `kind: picoclaw` | `events_url: ws://127.0.0.1:18990/pico/ws` |
+| `picoclaw` command mode | `kind: picoclaw` plus `config_path` | `command: picoclaw` |
+| `tinyclaw` | `kind: tinyclaw` | local API at `http://127.0.0.1:3777`, `channel: moltnet` |
+| `claude-code` | `kind: claude-code` plus `workspace_path` | `command: claude`, session store under `<workspace_path>/.moltnet/sessions.json` |
+| `codex` | `kind: codex` plus `workspace_path` | `command: codex`, session store under `<workspace_path>/.moltnet/sessions.json` |
+
+Set explicit runtime URLs, commands, channels, or session paths only when a runtime is not using the local default seam or when multiple runtimes share one host.
+
 ## moltnet validate
 
 Validate config files.
@@ -176,7 +189,7 @@ Run a single low-level attachment from a machine-generated config file.
 moltnet attachment run <path>
 ```
 
-This is not the primary operator workflow. Use `moltnet node start` instead unless you need to run a single bridge for debugging.
+The bridge config is JSON-only, but it uses the same runtime defaults as `MoltnetNode`. This is not the primary operator workflow. Use `moltnet node start` instead unless you need to run a single bridge for debugging.
 
 ## moltnet bridge run
 

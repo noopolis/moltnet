@@ -24,6 +24,8 @@ type Runner struct {
 }
 
 func New(config bridgeconfig.Config) (*Runner, error) {
+	config = config.Normalized()
+
 	adapter, err := selectAdapter(config.Runtime.Kind)
 	if err != nil {
 		return nil, err

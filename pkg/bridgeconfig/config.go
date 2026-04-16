@@ -97,6 +97,7 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, fmt.Errorf("decode bridge config: %w", err)
 	}
 
+	config = config.Normalized()
 	if err := config.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -110,6 +111,8 @@ func LoadFile(path string) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	c = c.Normalized()
+
 	if strings.TrimSpace(c.Version) == "" {
 		return fmt.Errorf("bridge config version is required")
 	}
@@ -139,87 +142,120 @@ func (c Config) Validate() error {
 		return err
 	}
 
-	if strings.TrimSpace(c.Runtime.GatewayURL) != "" {
-		if c.Runtime.Kind != RuntimeOpenClaw {
+	if err := validateRuntimeFieldCompatibility(c.Runtime); err != nil {
+		return err
+	}
+
+	return validateRuntimeSeam(c.Runtime)
+}
+
+func validateRuntimeFieldCompatibility(runtime RuntimeConfig) error {
+	if strings.TrimSpace(runtime.GatewayURL) != "" {
+		if runtime.Kind != RuntimeOpenClaw {
 			return fmt.Errorf("bridge config runtime.gateway_url is only supported for openclaw")
 		}
-		if err := validateSocketURL("bridge config runtime.gateway_url", c.Runtime.GatewayURL); err != nil {
+		if err := validateSocketURL("bridge config runtime.gateway_url", runtime.GatewayURL); err != nil {
 			return err
 		}
-		return nil
 	}
 
-	if strings.TrimSpace(c.Runtime.ControlURL) != "" {
-		if c.Runtime.Kind == RuntimeOpenClaw {
+	if strings.TrimSpace(runtime.ControlURL) != "" {
+		if runtime.Kind == RuntimeOpenClaw {
 			return fmt.Errorf("bridge config runtime.control_url is unsupported for openclaw; use runtime.gateway_url")
 		}
-		if c.Runtime.Kind != RuntimePicoClaw && c.Runtime.Kind != RuntimeTinyClaw {
+		if runtime.Kind != RuntimePicoClaw && runtime.Kind != RuntimeTinyClaw {
 			return fmt.Errorf("bridge config runtime.control_url is only supported for picoclaw or tinyclaw")
 		}
-		if err := validateURL("bridge config runtime.control_url", c.Runtime.ControlURL); err != nil {
+		if err := validateURL("bridge config runtime.control_url", runtime.ControlURL); err != nil {
 			return err
 		}
-		return nil
 	}
 
-	if strings.TrimSpace(c.Runtime.EventsURL) != "" {
-		if c.Runtime.Kind != RuntimePicoClaw {
+	if strings.TrimSpace(runtime.EventsURL) != "" {
+		if runtime.Kind != RuntimePicoClaw {
 			return fmt.Errorf("bridge config runtime.events_url is only supported for picoclaw")
 		}
-		if err := validateSocketURL("bridge config runtime.events_url", c.Runtime.EventsURL); err != nil {
+		if err := validateSocketURL("bridge config runtime.events_url", runtime.EventsURL); err != nil {
 			return err
 		}
-		return nil
 	}
 
-	if strings.TrimSpace(c.Runtime.Command) != "" {
-		if c.Runtime.Kind != RuntimePicoClaw && c.Runtime.Kind != RuntimeClaudeCode && c.Runtime.Kind != RuntimeCodex {
+	if strings.TrimSpace(runtime.Command) != "" {
+		if runtime.Kind != RuntimePicoClaw && runtime.Kind != RuntimeClaudeCode && runtime.Kind != RuntimeCodex {
 			return fmt.Errorf("bridge config runtime.command is only supported for picoclaw, claude-code, or codex")
 		}
-		if c.Runtime.Kind == RuntimePicoClaw && strings.TrimSpace(c.Runtime.ConfigPath) == "" {
+		if runtime.Kind == RuntimePicoClaw && strings.TrimSpace(runtime.ConfigPath) == "" {
 			return fmt.Errorf("bridge config runtime.config_path is required when runtime.command is set")
 		}
-		if c.Runtime.Kind == RuntimePicoClaw {
-			return nil
-		}
 	}
 
-	if c.Runtime.Kind == RuntimeClaudeCode || c.Runtime.Kind == RuntimeCodex {
-		if strings.TrimSpace(c.Runtime.WorkspacePath) == "" {
-			return fmt.Errorf("bridge config runtime.workspace_path is required for %s", c.Runtime.Kind)
+	if strings.TrimSpace(runtime.InboundURL) != "" && runtime.Kind != RuntimeTinyClaw {
+		return fmt.Errorf("bridge config runtime.inbound_url is only supported for tinyclaw")
+	}
+	if strings.TrimSpace(runtime.InboundURL) != "" {
+		if err := validateURL("bridge config runtime.inbound_url", runtime.InboundURL); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(runtime.OutboundURL) != "" && runtime.Kind != RuntimeTinyClaw {
+		return fmt.Errorf("bridge config runtime.outbound_url is only supported for tinyclaw")
+	}
+	if strings.TrimSpace(runtime.OutboundURL) != "" {
+		if err := validateURL("bridge config runtime.outbound_url", runtime.OutboundURL); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(runtime.AckURL) != "" && runtime.Kind != RuntimeTinyClaw {
+		return fmt.Errorf("bridge config runtime.ack_url is only supported for tinyclaw")
+	}
+	if strings.TrimSpace(runtime.AckURL) != "" {
+		if err := validateURL("bridge config runtime.ack_url", runtime.AckURL); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(runtime.ConfigPath) != "" && runtime.Kind != RuntimePicoClaw {
+		return fmt.Errorf("bridge config runtime.config_path is only supported for picoclaw")
+	}
+
+	return nil
+}
+
+func validateRuntimeSeam(runtime RuntimeConfig) error {
+	switch runtime.Kind {
+	case RuntimeClaudeCode, RuntimeCodex:
+		if strings.TrimSpace(runtime.WorkspacePath) == "" {
+			return fmt.Errorf("bridge config runtime.workspace_path is required for %s", runtime.Kind)
 		}
 		return nil
-	}
-
-	if c.Runtime.Kind == RuntimeTinyClaw {
-		if strings.TrimSpace(c.Runtime.InboundURL) == "" {
+	case RuntimeTinyClaw:
+		if strings.TrimSpace(runtime.ControlURL) != "" {
+			return nil
+		}
+		if strings.TrimSpace(runtime.InboundURL) == "" {
 			return fmt.Errorf("bridge config runtime.inbound_url is required for tinyclaw")
 		}
 
-		if strings.TrimSpace(c.Runtime.OutboundURL) == "" {
+		if strings.TrimSpace(runtime.OutboundURL) == "" {
 			return fmt.Errorf("bridge config runtime.outbound_url is required for tinyclaw")
 		}
 
-		if strings.TrimSpace(c.Runtime.AckURL) == "" {
+		if strings.TrimSpace(runtime.AckURL) == "" {
 			return fmt.Errorf("bridge config runtime.ack_url is required for tinyclaw")
 		}
 
-		if err := validateURL("bridge config runtime.inbound_url", c.Runtime.InboundURL); err != nil {
-			return err
+		return nil
+	case RuntimeOpenClaw:
+		if strings.TrimSpace(runtime.GatewayURL) == "" {
+			return fmt.Errorf("bridge config runtime.gateway_url is required for openclaw")
 		}
-		if err := validateURL("bridge config runtime.outbound_url", c.Runtime.OutboundURL); err != nil {
-			return err
+		return nil
+	case RuntimePicoClaw:
+		if strings.TrimSpace(runtime.ControlURL) != "" ||
+			strings.TrimSpace(runtime.EventsURL) != "" ||
+			strings.TrimSpace(runtime.Command) != "" {
+			return nil
 		}
-		if err := validateURL("bridge config runtime.ack_url", c.Runtime.AckURL); err != nil {
-			return err
-		}
-	}
-
-	if c.Runtime.Kind == RuntimeOpenClaw || c.Runtime.Kind == RuntimePicoClaw {
-		if c.Runtime.Kind == RuntimePicoClaw {
-			return fmt.Errorf("bridge config runtime.control_url, runtime.events_url, or runtime.command is required for picoclaw")
-		}
-		return fmt.Errorf("bridge config runtime.gateway_url is required for %s", c.Runtime.Kind)
+		return fmt.Errorf("bridge config runtime.control_url, runtime.events_url, or runtime.command is required for picoclaw")
 	}
 
 	return nil
