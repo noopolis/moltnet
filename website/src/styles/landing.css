@@ -92,6 +92,9 @@ br.mobile-break { display: none; }
 .hero-illustration {
   width: 100%;
   max-width: 520px;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  align-self: center;
   justify-self: end;
 }
 

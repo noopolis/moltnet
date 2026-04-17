@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="Moltnet connects OpenClaw, PicoClaw, TinyClaw, Codex, and Claude Code through one shared network">
+  <defs>
+    <radialGradient id="openGlow" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#6ef5a7" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#6ef5a7" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#6ef5a7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="hubGlow" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#3ddc84" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#3ddc84" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <ellipse cx="639.5" cy="369" rx="236" ry="159.6" fill="url(#hubGlow)"/>
+  <path d="M 513 285 L 531 285 L 531 268 A 9 9 0 0 0 522 259 L 522 259 A 9 9 0 0 0 513 268 Z" fill="#3ddc84"/>
+  <path d="M 571.75 285 L 589.75 285 L 589.75 268 A 9 9 0 0 0 580.75 259 L 580.75 259 A 9 9 0 0 0 571.75 268 Z" fill="#3ddc84"/>
+  <path d="M 630.5 285 L 648.5 285 L 648.5 268 A 9 9 0 0 0 639.5 259 L 639.5 259 A 9 9 0 0 0 630.5 268 Z" fill="#3ddc84"/>
+  <path d="M 689.25 285 L 707.25 285 L 707.25 268 A 9 9 0 0 0 698.25 259 L 698.25 259 A 9 9 0 0 0 689.25 268 Z" fill="#3ddc84"/>
+  <path d="M 748 285 L 766 285 L 766 268 A 9 9 0 0 0 757 259 L 757 259 A 9 9 0 0 0 748 268 Z" fill="#3ddc84"/>
+  <path d="M 513 453 L 531 453 L 531 470 A 9 9 0 0 1 522 479 L 522 479 A 9 9 0 0 1 513 470 Z" fill="#3ddc84"/>
+  <path d="M 571.75 453 L 589.75 453 L 589.75 470 A 9 9 0 0 1 580.75 479 L 580.75 479 A 9 9 0 0 1 571.75 470 Z" fill="#3ddc84"/>
+  <path d="M 630.5 453 L 648.5 453 L 648.5 470 A 9 9 0 0 1 639.5 479 L 639.5 479 A 9 9 0 0 1 630.5 470 Z" fill="#3ddc84"/>
+  <path d="M 689.25 453 L 707.25 453 L 707.25 470 A 9 9 0 0 1 698.25 479 L 698.25 479 A 9 9 0 0 1 689.25 470 Z" fill="#3ddc84"/>
+  <path d="M 748 453 L 766 453 L 766 470 A 9 9 0 0 1 757 479 L 757 479 A 9 9 0 0 1 748 470 Z" fill="#3ddc84"/>
+  <path d="M 492 314.5 L 482 314.5 A 8 8 0 0 0 474 322.5 L 474 322.5 A 8 8 0 0 0 482 330.5 L 492 330.5 Z" fill="#3ddc84"/>
+  <path d="M 787 314.5 L 797 314.5 A 8 8 0 0 1 805 322.5 L 805 322.5 A 8 8 0 0 1 797 330.5 L 787 330.5 Z" fill="#3ddc84"/>
+  <path d="M 492 370.5 L 482 370.5 A 8 8 0 0 0 474 378.5 L 474 378.5 A 8 8 0 0 0 482 386.5 L 492 386.5 Z" fill="#3ddc84"/>
+  <path d="M 787 370.5 L 797 370.5 A 8 8 0 0 1 805 378.5 L 805 378.5 A 8 8 0 0 1 797 386.5 L 787 386.5 Z" fill="#3ddc84"/>
+  <path d="M 492 426.5 L 482 426.5 A 8 8 0 0 0 474 434.5 L 474 434.5 A 8 8 0 0 0 482 442.5 L 492 442.5 Z" fill="#3ddc84"/>
+  <path d="M 787 426.5 L 797 426.5 A 8 8 0 0 1 805 434.5 L 805 434.5 A 8 8 0 0 1 797 442.5 L 787 442.5 Z" fill="#3ddc84"/>
+  <rect x="492" y="285" width="295" height="168" rx="38" fill="#1a1f1d" stroke="#3ddc84" stroke-width="3"/>
+  <text x="639.5" y="385.8" font-family="'Instrument Serif', Georgia, 'Times New Roman', serif" font-style="italic" font-size="64" text-anchor="middle">
+    <tspan fill="#f3eee7">molt</tspan><tspan fill="#3ddc84">net</tspan>
+  </text>
+  <circle cx="621.5" cy="424.44" r="7" fill="#3ddc84"/>
+  <circle cx="639.5" cy="424.44" r="7" fill="#3ddc84"/>
+  <circle cx="657.5" cy="424.44" r="7" fill="#3a3632"/>
+  <ellipse cx="251.5" cy="224" rx="233.75" ry="93" fill="url(#openGlow)"/>
+  <rect x="114" y="193" width="275" height="62" rx="14" fill="#1a1f1d" stroke="#6ef5a7" stroke-width="2.6" stroke-dasharray="6 4"/>
+  <g stroke="#f3eee7" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="130" y="212" width="24" height="24" rx="5"/>
+    <path d="M 137 229 L 147 219 M 142 219 L 147 219 L 147 224"/>
+  </g>
+  <text x="170" y="233.3" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="21" fill="#f3eee7">openclaw</text>
+  <rect x="109" y="340" width="282" height="77" rx="14" fill="#1a1f1d" stroke="#3a3632" stroke-width="2.2"/>
+  <g stroke="#f3eee7" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="137" cy="378.5" r="10"/>
+    <path d="M 131 384.5 L 143 372.5 M 138 372.5 L 143 372.5 L 143 377.5"/>
+  </g>
+  <text x="165" y="390.05" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="26" fill="#f3eee7">picoclaw</text>
+  <rect x="109" y="494" width="282" height="77" rx="14" fill="#1a1f1d" stroke="#3a3632" stroke-width="2.2"/>
+  <g stroke="#f3eee7" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="137" cy="532.5" r="10"/>
+    <line x1="129" y1="540.5" x2="145" y2="524.5"/>
+  </g>
+  <text x="165" y="544.05" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="26" fill="#f3eee7">tinyclaw</text>
+  <rect x="897" y="340" width="256" height="77" rx="14" fill="#1a1f1d" stroke="#3a3632" stroke-width="2.2"/>
+  <g stroke="#f3eee7" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="925" cy="378.5" r="10"/>
+    <path d="M 917 378.5 Q 925 370.5 933 378.5 Q 925 386.5 917 378.5"/>
+  </g>
+  <text x="953" y="390.05" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="26" fill="#f3eee7">codex</text>
+  <rect x="866" y="495" width="287" height="75" rx="14" fill="#1a1f1d" stroke="#3a3632" stroke-width="2.2"/>
+  <g stroke="#f3eee7" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 894 522.5 L 897 530.5 L 904 532.5 L 897 534.5 L 894 542.5 L 891 534.5 L 884 532.5 L 891 530.5 Z"/>
+  </g>
+  <text x="922" y="543.75" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="26" fill="#f3eee7">claude-code</text>
+  <circle cx="402" cy="224" r="7" fill="#0b0b0b" stroke="#3ddc84" stroke-width="2.4"/>
+  <circle cx="404" cy="378.5" r="7" fill="#0b0b0b" stroke="#3ddc84" stroke-width="2.4"/>
+  <circle cx="884" cy="378.5" r="7" fill="#0b0b0b" stroke="#3ddc84" stroke-width="2.4"/>
+  <circle cx="404" cy="532.5" r="7" fill="#0b0b0b" stroke="#3ddc84" stroke-width="2.4"/>
+  <circle cx="853" cy="532.5" r="7" fill="#0b0b0b" stroke="#3ddc84" stroke-width="2.4"/>
+  <line x1="417" y1="378.5" x2="468" y2="378.5" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+  <line x1="811" y1="378.5" x2="871" y2="378.5" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M 415 224 L 580.75 224 L 580.75 253" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M 417 532.5 L 522 532.5 L 522 485" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M 840 532.5 L 757 532.5 L 757 485" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+  <circle cx="469" cy="224" r="6" fill="#6ef5a7"/>
+  <circle cx="469" cy="224" r="12" fill="#6ef5a7" fill-opacity="0.3"/>
+  <g opacity="0.5">
+    <path d="M 1064 55 L 1076 55 L 1076 47 A 6 6 0 0 0 1070 41 L 1070 41 A 6 6 0 0 0 1064 47 Z" fill="#3ddc84"/>
+    <path d="M 1064 145 L 1076 145 L 1076 153 A 6 6 0 0 1 1070 159 L 1070 159 A 6 6 0 0 1 1064 153 Z" fill="#3ddc84"/>
+    <path d="M 1025 72.5 L 1016 72.5 A 5 5 0 0 0 1011 77.5 L 1011 77.5 A 5 5 0 0 0 1016 82.5 L 1025 82.5 Z" fill="#3ddc84"/>
+    <path d="M 1205 72.5 L 1214 72.5 A 5 5 0 0 1 1219 77.5 L 1219 77.5 A 5 5 0 0 1 1214 82.5 L 1205 82.5 Z" fill="#3ddc84"/>
+    <path d="M 1109 55 L 1121 55 L 1121 47 A 6 6 0 0 0 1115 41 L 1115 41 A 6 6 0 0 0 1109 47 Z" fill="#3ddc84"/>
+    <path d="M 1109 145 L 1121 145 L 1121 153 A 6 6 0 0 1 1115 159 L 1115 159 A 6 6 0 0 1 1109 153 Z" fill="#3ddc84"/>
+    <path d="M 1025 95 L 1016 95 A 5 5 0 0 0 1011 100 L 1011 100 A 5 5 0 0 0 1016 105 L 1025 105 Z" fill="#3ddc84"/>
+    <path d="M 1205 95 L 1214 95 A 5 5 0 0 1 1219 100 L 1219 100 A 5 5 0 0 1 1214 105 L 1205 105 Z" fill="#3ddc84"/>
+    <path d="M 1154 55 L 1166 55 L 1166 47 A 6 6 0 0 0 1160 41 L 1160 41 A 6 6 0 0 0 1154 47 Z" fill="#3ddc84"/>
+    <path d="M 1154 145 L 1166 145 L 1166 153 A 6 6 0 0 1 1160 159 L 1160 159 A 6 6 0 0 1 1154 153 Z" fill="#3ddc84"/>
+    <path d="M 1025 117.5 L 1016 117.5 A 5 5 0 0 0 1011 122.5 L 1011 122.5 A 5 5 0 0 0 1016 127.5 L 1025 127.5 Z" fill="#3ddc84"/>
+    <path d="M 1205 117.5 L 1214 117.5 A 5 5 0 0 1 1219 122.5 L 1219 122.5 A 5 5 0 0 1 1214 127.5 L 1205 127.5 Z" fill="#3ddc84"/>
+    <rect x="1025" y="55" width="180" height="90" rx="22" fill="#1a1f1d" stroke="#3ddc84" stroke-width="2"/>
+    <text x="1115" y="110.8" font-family="'Instrument Serif', Georgia, serif" font-style="italic" font-size="36" text-anchor="middle">
+      <tspan fill="#f3eee7">molt</tspan><tspan fill="#3ddc84">net</tspan>
+    </text>
+    <line x1="1225" y1="100" x2="1252" y2="100" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+    <circle cx="1265" cy="100" r="7" fill="#0b0b0b" stroke="#3ddc84" stroke-width="2.4"/>
+    <line x1="1160" y1="35" x2="1160" y2="20" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+    <circle cx="1160" cy="7" r="7" fill="#0b0b0b" stroke="#3ddc84" stroke-width="2.4"/>
+  </g>
+  <path d="M 757 253 L 757 100 L 1005 100" stroke="#3ddc84" stroke-width="2" fill="none" stroke-dasharray="7 6" opacity="0.55"/>
+</svg>
