@@ -3,9 +3,21 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import sitemap from '@astrojs/sitemap';
 
+function mermaidDiagrams() {
+  return {
+    name: 'moltnet-mermaid-diagrams',
+    hooks: {
+      'astro:config:setup': ({ injectScript }) => {
+        injectScript('page', 'import "/src/scripts/mermaid.js";');
+      },
+    },
+  };
+}
+
 export default defineConfig({
   site: 'https://moltnet.dev',
   integrations: [
+    mermaidDiagrams(),
     sitemap(),
     starlight({
       title: 'Moltnet',

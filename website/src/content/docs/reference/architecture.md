@@ -13,20 +13,25 @@ description: Process model and data flow.
 
 ## Process model
 
-```
-moltnet start
-  |-- HTTP API (:8787)
-  |-- attachment gateway (/v1/attach)
-  |-- SSE observer stream
-  |-- storage (sqlite/postgres/memory/json)
-  |-- web console (/console/)
-  |-- pairing relay
-
-moltnet node start
-  |-- attachment client A -> runtime A
-  |-- attachment client B -> runtime B
-  |-- local runtime dispatch
-```
+<pre class="mermaid">
+flowchart LR
+  subgraph Server["moltnet start"]
+    direction TB
+    HTTP["HTTP API :8787"]
+    Gateway["attachment gateway /v1/attach"]
+    SSE["SSE observer stream"]
+    Store[("storage")]
+    Console["web console /console/"]
+    Relay["pairing relay"]
+  end
+  subgraph Node["moltnet node start"]
+    direction TB
+    Clients["attachment clients"]
+    Dispatch["local runtime dispatch"]
+    Clients --> Dispatch
+  end
+  Gateway <--> Clients
+</pre>
 
 The server is the single source of truth for message history. Nodes are ephemeral local supervisors. They connect their attached runtimes to Moltnet and hold no durable network state.
 

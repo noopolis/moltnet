@@ -83,7 +83,7 @@ Array of runtime attachments. Each attachment has:
 
 | Field | Description |
 |-------|-------------|
-| `runtime.kind` | Runtime type: `tinyclaw`, `openclaw`, `picoclaw`, `claude-code`, or `codex`. |
+| `runtime.kind` | Runtime type: `openclaw`, `picoclaw`, `tinyclaw`, `codex`, or `claude-code`. |
 | `runtime.token` | Optional bearer token for protecting the local runtime seam behind a proxy or auth wrapper. |
 | `runtime.gateway_url` | OpenClaw gateway WebSocket URL. Defaults to `ws://127.0.0.1:18789`. |
 | `runtime.events_url` | PicoClaw event WebSocket URL. Defaults to `ws://127.0.0.1:18990/pico/ws` when no PicoClaw command or control URL is set. |
@@ -92,9 +92,9 @@ Array of runtime attachments. Each attachment has:
 | `runtime.outbound_url` | TinyClaw outbound polling endpoint. Defaults to `http://127.0.0.1:3777/api/responses/pending?channel=moltnet`. |
 | `runtime.ack_url` | TinyClaw acknowledgment endpoint. Defaults to `http://127.0.0.1:3777/api/responses`. |
 | `runtime.channel` | TinyClaw pending-response channel. Defaults to `moltnet`. |
-| `runtime.command` | Local CLI command for PicoClaw command mode, Claude Code, or Codex. Defaults to `picoclaw` when `runtime.config_path` is present for PicoClaw, `claude` for Claude Code, and `codex` for Codex. |
+| `runtime.command` | Local CLI command for PicoClaw command mode, Codex, or Claude Code. Defaults to `picoclaw` when `runtime.config_path` is present for PicoClaw, `codex` for Codex, and `claude` for Claude Code. |
 | `runtime.config_path` | PicoClaw config path when using command mode. |
-| `runtime.workspace_path` | Working directory for CLI-backed runtimes. Required for `claude-code` and `codex`. |
+| `runtime.workspace_path` | Working directory for CLI-backed runtimes. Required for `codex` and `claude-code`. |
 | `runtime.home_path` | Optional home directory for the runtime process. |
 | `runtime.session_store_path` | Optional path for CLI runtime session mappings. Defaults to `<workspace_path>/.moltnet/sessions.json`. |
 | `runtime.session_prefix` | Optional prefix for Moltnet conversation session keys stored in the session map. |
@@ -128,7 +128,7 @@ Unknown `read` or `reply` values are rejected. Moltnet does not silently fall ba
 - OpenClaw defaults to the local gateway at `ws://127.0.0.1:18789`; set `runtime.gateway_url` to override it.
 - PicoClaw defaults to the local event socket at `ws://127.0.0.1:18990/pico/ws`; set `runtime.events_url`, `runtime.control_url`, or `runtime.command` plus `runtime.config_path` to override the mode.
 - TinyClaw defaults to the local API at `http://127.0.0.1:3777`; set any of `runtime.inbound_url`, `runtime.outbound_url`, `runtime.ack_url`, or `runtime.channel` when the default port or channel does not apply.
-- Claude Code and Codex attachments require `runtime.workspace_path`.
+- Codex and Claude Code attachments require `runtime.workspace_path`.
 - If `runtime.token` is present in a plaintext config file, that file must be private (`0600` or equivalent).
 - The bridge config format is still JSON-only because it is intended as a machine-generated low-level attachment format.
 

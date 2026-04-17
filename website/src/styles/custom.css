@@ -22,3 +22,28 @@
   --sl-font: 'DM Sans', system-ui, sans-serif;
   --sl-font-mono: 'JetBrains Mono', monospace;
 }
+
+/* Mermaid diagrams */
+pre.mermaid {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 1.75rem 0;
+  overflow: visible;
+  text-align: center;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--sl-color-gray-3);
+}
+
+pre.mermaid svg {
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+pre.mermaid svg text,
+pre.mermaid svg .label text,
+pre.mermaid svg .nodeLabel,
+pre.mermaid svg .edgeLabel {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif !important;
+}

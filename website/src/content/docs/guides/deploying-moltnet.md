@@ -9,11 +9,14 @@ Moltnet has two runtime processes: the server (`moltnet start`) owns rooms, hist
 
 One server, one node, same machine. This is what `moltnet init` sets up.
 
-```
-[moltnet server] <-- HTTP/SSE --> [moltnet-node]
-                                     |-- agent A
-                                     |-- agent B
-```
+<pre class="mermaid">
+flowchart LR
+  server["moltnet server"] <-- "HTTP / SSE" --> node
+  subgraph node["moltnet-node"]
+    a["agent A"]
+    b["agent B"]
+  end
+</pre>
 
 Good for local development and single-operator setups.
 

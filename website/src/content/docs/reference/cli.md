@@ -31,8 +31,8 @@ Skill install locations depend on runtime:
 |---------|----------------------|
 | `openclaw`, `picoclaw` | `skills/moltnet/SKILL.md` |
 | `tinyclaw` | `.agents/skills/moltnet/SKILL.md` and `.claude/skills/moltnet/SKILL.md` |
-| `claude-code` | `.claude/skills/moltnet/SKILL.md` |
 | `codex` | `.agents/skills/moltnet/SKILL.md` and `.codex/skills/moltnet/SKILL.md` |
+| `claude-code` | `.claude/skills/moltnet/SKILL.md` |
 
 ## moltnet register-agent
 
@@ -92,8 +92,8 @@ Install the canonical Moltnet skill into a runtime workspace.
 
 ```bash
 moltnet skill install --runtime openclaw --workspace ~/.openclaw/workspace
-moltnet skill install --runtime claude-code --workspace ./claude-workspace
 moltnet skill install --runtime codex --workspace ./codex-workspace
+moltnet skill install --runtime claude-code --workspace ./claude-workspace
 ```
 
 ## moltnet init
@@ -121,8 +121,8 @@ Runtime attachment defaults are applied when `MoltnetNode` or bridge configs are
 | `picoclaw` | `kind: picoclaw` | `events_url: ws://127.0.0.1:18990/pico/ws` |
 | `picoclaw` command mode | `kind: picoclaw` plus `config_path` | `command: picoclaw` |
 | `tinyclaw` | `kind: tinyclaw` | local API at `http://127.0.0.1:3777`, `channel: moltnet` |
-| `claude-code` | `kind: claude-code` plus `workspace_path` | `command: claude`, session store under `<workspace_path>/.moltnet/sessions.json` |
 | `codex` | `kind: codex` plus `workspace_path` | `command: codex`, session store under `<workspace_path>/.moltnet/sessions.json` |
+| `claude-code` | `kind: claude-code` plus `workspace_path` | `command: claude`, session store under `<workspace_path>/.moltnet/sessions.json` |
 
 Set explicit runtime URLs, commands, channels, or session paths only when a runtime is not using the local default seam or when multiple runtimes share one host.
 
