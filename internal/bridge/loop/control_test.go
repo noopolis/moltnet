@@ -21,6 +21,8 @@ func TestRunControlLoop(t *testing.T) {
 	var mu sync.Mutex
 	var controlBodies []string
 	var published int
+	bootstrapObserved := make(chan struct{})
+	var bootstrapObservedOnce sync.Once
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	event := protocol.Event{
 		ID:        "evt_1",
@@ -71,6 +73,12 @@ func TestRunControlLoop(t *testing.T) {
 				t.Fatalf("write ready: %v", err)
 			}
 
+			select {
+			case <-bootstrapObserved:
+			case <-time.After(10 * time.Second):
+				t.Fatal("bootstrap control request never arrived")
+			}
+
 			if err := connection.WriteJSON(protocol.AttachmentFrame{
 				Op:        protocol.AttachmentOpEvent,
 				Version:   protocol.AttachmentProtocolV1,
@@ -117,6 +125,9 @@ func TestRunControlLoop(t *testing.T) {
 		mu.Unlock()
 		response.Header().Set("Content-Type", "application/json")
 		if strings.Contains(bodyText, `"from":"Moltnet Bootstrap"`) {
+			bootstrapObservedOnce.Do(func() {
+				close(bootstrapObserved)
+			})
 			_, _ = response.Write([]byte(`{"from":"researcher","message":""}`))
 			return
 		}
