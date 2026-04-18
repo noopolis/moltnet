@@ -27,6 +27,24 @@ body {
 
 a { color: inherit; }
 
+/* === GitHub corner === */
+.github-corner {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 150;
+  line-height: 0;
+  color: var(--bg);
+}
+.github-corner svg { display: block; }
+.github-corner .octo-arm { transform-origin: 130px 106px; }
+.github-corner:hover .octo-arm { animation: octo-wave 0.56s ease-in-out; }
+@keyframes octo-wave {
+  0%, 100% { transform: rotate(0); }
+  20%, 60% { transform: rotate(-26deg); }
+  40%, 80% { transform: rotate(12deg); }
+}
+
 /* === NAV === */
 .nav {
   position: fixed; top: 0; width: 100%; z-index: 100;
@@ -49,7 +67,7 @@ a { color: inherit; }
 .mark .base { color: var(--ink); }
 .mark .accent { color: var(--green); }
 
-.nav-links { display: flex; gap: 1.5rem; }
+.nav-links { display: flex; gap: 1.5rem; margin-right: 3rem; }
 .nav-links a {
   font-size: 0.78rem; font-weight: 500;
   color: var(--mute); text-decoration: none;
