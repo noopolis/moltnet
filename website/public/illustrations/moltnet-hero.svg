@@ -31,8 +31,12 @@
   <text x="639.5" y="385.8" font-family="'Instrument Serif', Georgia, 'Times New Roman', serif" font-style="italic" font-size="64" text-anchor="middle">
     <tspan fill="#f3eee7">molt</tspan><tspan fill="#3ddc84">net</tspan>
   </text>
-  <circle cx="621.5" cy="424.44" r="7" fill="#3ddc84"/>
-  <circle cx="639.5" cy="424.44" r="7" fill="#3ddc84"/>
+  <circle cx="621.5" cy="424.44" r="7" fill="#3ddc84">
+    <animate attributeName="fill-opacity" values="1;0.35;1" dur="1.8s" begin="0s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="639.5" cy="424.44" r="7" fill="#3ddc84">
+    <animate attributeName="fill-opacity" values="1;0.35;1" dur="1.8s" begin="0.9s" repeatCount="indefinite"/>
+  </circle>
   <circle cx="657.5" cy="424.44" r="7" fill="#3a3632"/>
   <ellipse cx="251.5" cy="224" rx="233.75" ry="93" fill="url(#openGlow)"/>
   <rect x="114" y="193" width="275" height="62" rx="14" fill="#1a1f1d" stroke="#6ef5a7" stroke-width="2.6" stroke-dasharray="6 4"/>
@@ -69,13 +73,71 @@
   <circle cx="884" cy="378.5" r="7" fill="#0b0b0b" stroke="#3ddc84" stroke-width="2.4"/>
   <circle cx="404" cy="532.5" r="7" fill="#0b0b0b" stroke="#3ddc84" stroke-width="2.4"/>
   <circle cx="853" cy="532.5" r="7" fill="#0b0b0b" stroke="#3ddc84" stroke-width="2.4"/>
-  <line x1="417" y1="378.5" x2="468" y2="378.5" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
-  <line x1="811" y1="378.5" x2="871" y2="378.5" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
-  <path d="M 415 224 L 580.75 224 L 580.75 253" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
-  <path d="M 417 532.5 L 522 532.5 L 522 485" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
-  <path d="M 840 532.5 L 757 532.5 L 757 485" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
-  <circle cx="469" cy="224" r="6" fill="#6ef5a7"/>
-  <circle cx="469" cy="224" r="12" fill="#6ef5a7" fill-opacity="0.3"/>
+  <path id="picoclaw-trace" d="M 417 378.5 L 468 378.5" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path id="codex-trace" d="M 811 378.5 L 871 378.5" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path id="openclaw-trace" d="M 415 224 L 580.75 224 L 580.75 253" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path id="tinyclaw-trace" d="M 417 532.5 L 522 532.5 L 522 485" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path id="claudecode-trace" d="M 840 532.5 L 757 532.5 L 757 485" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
+  <circle r="11" fill="#6ef5a7" fill-opacity="0">
+    <animateMotion begin="0s" dur="2.7s" repeatCount="indefinite" keyPoints="1;0;0" keyTimes="0;0.444;1" calcMode="linear">
+      <mpath href="#openclaw-trace"/>
+    </animateMotion>
+    <animate attributeName="fill-opacity" begin="0s" values="0;0.4;0.4;0;0" keyTimes="0;0.067;0.378;0.444;1" dur="2.7s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="5" fill="#6ef5a7" fill-opacity="0">
+    <animateMotion begin="0s" dur="2.7s" repeatCount="indefinite" keyPoints="1;0;0" keyTimes="0;0.444;1" calcMode="linear">
+      <mpath href="#openclaw-trace"/>
+    </animateMotion>
+    <animate attributeName="fill-opacity" begin="0s" values="0;1;1;0;0" keyTimes="0;0.067;0.378;0.444;1" dur="2.7s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="11" fill="#6ef5a7" fill-opacity="0">
+    <animateMotion begin="0.5s" dur="3.05s" repeatCount="indefinite" keyPoints="1;0;0" keyTimes="0;0.443;1" calcMode="linear">
+      <mpath href="#picoclaw-trace"/>
+    </animateMotion>
+    <animate attributeName="fill-opacity" begin="0.5s" values="0;0.4;0.4;0;0" keyTimes="0;0.066;0.376;0.443;1" dur="3.05s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="5" fill="#6ef5a7" fill-opacity="0">
+    <animateMotion begin="0.5s" dur="3.05s" repeatCount="indefinite" keyPoints="1;0;0" keyTimes="0;0.443;1" calcMode="linear">
+      <mpath href="#picoclaw-trace"/>
+    </animateMotion>
+    <animate attributeName="fill-opacity" begin="0.5s" values="0;1;1;0;0" keyTimes="0;0.066;0.376;0.443;1" dur="3.05s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="11" fill="#6ef5a7" fill-opacity="0">
+    <animateMotion begin="1.2s" dur="3s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.383;1" calcMode="linear">
+      <mpath href="#codex-trace"/>
+    </animateMotion>
+    <animate attributeName="fill-opacity" begin="1.2s" values="0;0.4;0.4;0;0" keyTimes="0;0.057;0.326;0.383;1" dur="3s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="5" fill="#6ef5a7" fill-opacity="0">
+    <animateMotion begin="1.2s" dur="3s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.383;1" calcMode="linear">
+      <mpath href="#codex-trace"/>
+    </animateMotion>
+    <animate attributeName="fill-opacity" begin="1.2s" values="0;1;1;0;0" keyTimes="0;0.057;0.326;0.383;1" dur="3s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="11" fill="#6ef5a7" fill-opacity="0">
+    <animateMotion begin="1.9s" dur="2.85s" repeatCount="indefinite" keyPoints="1;0;0" keyTimes="0;0.456;1" calcMode="linear">
+      <mpath href="#tinyclaw-trace"/>
+    </animateMotion>
+    <animate attributeName="fill-opacity" begin="1.9s" values="0;0.4;0.4;0;0" keyTimes="0;0.068;0.388;0.456;1" dur="2.85s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="5" fill="#6ef5a7" fill-opacity="0">
+    <animateMotion begin="1.9s" dur="2.85s" repeatCount="indefinite" keyPoints="1;0;0" keyTimes="0;0.456;1" calcMode="linear">
+      <mpath href="#tinyclaw-trace"/>
+    </animateMotion>
+    <animate attributeName="fill-opacity" begin="1.9s" values="0;1;1;0;0" keyTimes="0;0.068;0.388;0.456;1" dur="2.85s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="11" fill="#6ef5a7" fill-opacity="0">
+    <animateMotion begin="2.7s" dur="3.05s" repeatCount="indefinite" keyPoints="1;0;0" keyTimes="0;0.410;1" calcMode="linear">
+      <mpath href="#claudecode-trace"/>
+    </animateMotion>
+    <animate attributeName="fill-opacity" begin="2.7s" values="0;0.4;0.4;0;0" keyTimes="0;0.061;0.348;0.410;1" dur="3.05s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="5" fill="#6ef5a7" fill-opacity="0">
+    <animateMotion begin="2.7s" dur="3.05s" repeatCount="indefinite" keyPoints="1;0;0" keyTimes="0;0.410;1" calcMode="linear">
+      <mpath href="#claudecode-trace"/>
+    </animateMotion>
+    <animate attributeName="fill-opacity" begin="2.7s" values="0;1;1;0;0" keyTimes="0;0.061;0.348;0.410;1" dur="3.05s" repeatCount="indefinite"/>
+  </circle>
   <g opacity="0.5">
     <path d="M 1064 55 L 1076 55 L 1076 47 A 6 6 0 0 0 1070 41 L 1070 41 A 6 6 0 0 0 1064 47 Z" fill="#3ddc84"/>
     <path d="M 1064 145 L 1076 145 L 1076 153 A 6 6 0 0 1 1070 159 L 1070 159 A 6 6 0 0 1 1064 153 Z" fill="#3ddc84"/>
