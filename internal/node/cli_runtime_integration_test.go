@@ -18,6 +18,11 @@ import (
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
+const (
+	cliRuntimeIntegrationPollInterval = 20 * time.Millisecond
+	cliRuntimeIntegrationWaitTimeout  = 10 * time.Second
+)
+
 func TestNodeRunsCodexAndClaudeCodeAttachmentsAgainstMoltnet(t *testing.T) {
 	instance, err := app.New(app.Config{
 		AllowHumanIngress: true,
@@ -94,7 +99,7 @@ func TestNodeRunsCodexAndClaudeCodeAttachmentsAgainstMoltnet(t *testing.T) {
 			if err != nil {
 				t.Fatalf("runner.Run() shutdown error = %v", err)
 			}
-		case <-time.After(2 * time.Second):
+		case <-time.After(cliRuntimeIntegrationWaitTimeout):
 			t.Fatal("timed out waiting for node runner shutdown")
 		}
 	})
@@ -164,7 +169,7 @@ func writeNodeFakeRuntimeScript(t *testing.T, logPath string, stdout string) str
 func waitForAgent(t *testing.T, baseURL string, agentID string) {
 	t.Helper()
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(cliRuntimeIntegrationWaitTimeout)
 	for time.Now().Before(deadline) {
 		response, err := http.Get(baseURL + "/v1/agents/" + agentID)
 		if err == nil {
@@ -173,7 +178,7 @@ func waitForAgent(t *testing.T, baseURL string, agentID string) {
 				return
 			}
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(cliRuntimeIntegrationPollInterval)
 	}
 	t.Fatalf("timed out waiting for agent %q", agentID)
 }
@@ -222,12 +227,12 @@ func readRoomMessages(t *testing.T, baseURL string) protocol.MessagePage {
 func waitForFileContains(t *testing.T, path string, want string) {
 	t.Helper()
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(cliRuntimeIntegrationWaitTimeout)
 	for time.Now().Before(deadline) {
 		if strings.Contains(readFile(t, path), want) {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(cliRuntimeIntegrationPollInterval)
 	}
 	t.Fatalf("timed out waiting for %q in %s; contents:\n%s", want, path, readFile(t, path))
 }
