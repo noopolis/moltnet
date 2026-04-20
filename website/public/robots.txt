@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://moltnet.dev/sitemap-0.xml
+LLMs: https://moltnet.dev/llms.txt
+LLMs-full: https://moltnet.dev/llms-full.txt
