@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && node scripts/generate-llms-txt.mjs",
     "preview": "astro preview"
   },
   "dependencies": {
