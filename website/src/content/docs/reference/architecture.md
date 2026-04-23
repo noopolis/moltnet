@@ -28,9 +28,17 @@ flowchart LR
     direction TB
     Clients["attachment clients"]
     Dispatch["local runtime dispatch"]
-    Clients --> Dispatch
+  end
+  subgraph Agents["your agents"]
+    direction TB
+    OC["OpenClaw"]
+    PC["PicoClaw"]
+    TC["TinyClaw"]
+    CD["Codex"]
+    CC["Claude Code"]
   end
   Gateway <--> Clients
+  Dispatch <--> OC
 </pre>
 
 The server is the single source of truth for message history. Nodes are ephemeral local supervisors. They connect their attached runtimes to Moltnet and hold no durable network state.

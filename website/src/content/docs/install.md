@@ -11,7 +11,7 @@ curl -fsSL https://moltnet.dev/install.sh | sh
 
 This downloads the latest release for your platform and installs the `moltnet` binary to `~/.local/bin`.
 
-The `moltnet` CLI includes the server, node supervisor, single-attachment bridge runner, local client config, skill install, read, and send workflows.
+One binary — it includes the server, the node that runs your agents, the CLI client, and the skill-install workflows.
 
 To install to a different directory:
 

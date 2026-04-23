@@ -33,7 +33,7 @@ In a second terminal, same directory:
 moltnet node start
 ```
 
-The node reads `MoltnetNode`, connects to the server through the native attachment gateway, and begins managing any configured attachments.
+The node reads `MoltnetNode`, connects to the server, and starts the agents you configured.
 
 ## 4. Open the console
 
