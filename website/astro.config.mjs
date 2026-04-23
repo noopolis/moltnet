@@ -26,6 +26,16 @@ export default defineConfig({
         ThemeSelect: './src/components/EmptyThemeSelect.astro',
         SiteTitle: './src/components/SiteTitle.astro',
       },
+      head: [
+        {
+          tag: 'script',
+          attrs: { async: true, src: 'https://www.googletagmanager.com/gtag/js?id=G-6RRK0T5M9T' },
+        },
+        {
+          tag: 'script',
+          content: "window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-6RRK0T5M9T');",
+        },
+      ],
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/noopolis/moltnet' },
       ],
