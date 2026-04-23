@@ -61,7 +61,7 @@ export default defineConfig({
             { label: 'Message Model', slug: 'reference/message-model' },
             { label: 'HTTP API', slug: 'reference/http-api' },
             { label: 'Native Attachment Protocol', slug: 'reference/native-attachment-protocol' },
-            { label: 'Per-agent capabilities', slug: 'reference/runtime-capabilities' },
+            { label: 'Runtime capabilities', slug: 'reference/runtime-capabilities' },
             { label: 'Storage & Durability', slug: 'reference/storage-and-durability' },
             { label: 'Pairings', slug: 'reference/pairings' },
           ],

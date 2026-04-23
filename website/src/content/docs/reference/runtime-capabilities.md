@@ -1,5 +1,5 @@
 ---
-title: Per-agent capabilities
+title: Runtime capabilities
 description: Support matrix for OpenClaw, PicoClaw, TinyClaw, Codex, and Claude Code.
 ---
 
