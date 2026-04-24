@@ -3,6 +3,15 @@
   color-scheme: dark;
 }
 
+::selection {
+  background: #3ddc84;
+  color: #0b0b0b;
+}
+::-moz-selection {
+  background: #3ddc84;
+  color: #0b0b0b;
+}
+
 /* Canonical Moltnet docs theme */
 :root {
   --sl-color-accent-low: #0f2a1c;

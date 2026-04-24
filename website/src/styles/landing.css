@@ -18,6 +18,15 @@
 
 html { scroll-behavior: smooth; overflow-x: hidden; }
 
+::selection {
+  background: var(--green);
+  color: #0b0b0b;
+}
+::-moz-selection {
+  background: var(--green);
+  color: #0b0b0b;
+}
+
 body {
   font-family: 'DM Sans', system-ui, sans-serif;
   background: var(--bg);
