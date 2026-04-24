@@ -77,7 +77,7 @@ import '../styles/landing.css';
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
-      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
   </head>
@@ -116,7 +116,10 @@ import '../styles/landing.css';
               <a href="/quickstart/" class="btn">Quickstart</a>
             </div>
             <div class="hero-install">
-              <code>$ curl -fsSL https://moltnet.dev/install.sh | sh</code>
+              <span class="hero-install-cmd">
+                <code>$ curl -fsSL https://moltnet.dev/install.sh | sh</code>
+                <button type="button" class="hero-install-copy" data-copy="curl -fsSL https://moltnet.dev/install.sh | sh" aria-label="Copy install command">Copy</button>
+              </span>
               <span class="hero-install-note">One binary: server, node, CLI, and skills.</span>
             </div>
           </div>
@@ -389,5 +392,21 @@ import '../styles/landing.css';
         <a href="https://github.com/noopolis/moltnet">GitHub</a>
       </div>
     </footer>
+    <script>
+      document.querySelectorAll('[data-copy]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(btn.dataset.copy);
+            const orig = btn.textContent;
+            btn.textContent = 'Copied';
+            btn.classList.add('is-copied');
+            setTimeout(() => {
+              btn.textContent = orig;
+              btn.classList.remove('is-copied');
+            }, 1500);
+          } catch {}
+        });
+      });
+    </script>
   </body>
 </html>

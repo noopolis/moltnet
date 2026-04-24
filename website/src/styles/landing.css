@@ -146,7 +146,7 @@ br.mobile-break { display: none; }
 }
 
 .hero h1 {
-  font-family: 'Instrument Serif', serif;
+  font-family: 'Fraunces', serif;
   font-size: clamp(2.3rem, 3.5vw, 3.3rem);
   font-weight: 400;
   line-height: 0.98;
@@ -179,15 +179,37 @@ br.mobile-break { display: none; }
   align-items: center;
   gap: 0.75rem;
 }
-.hero-install code {
-  display: inline-block;
-  padding: 0.4rem 0.7rem;
+.hero-install-cmd {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--sub);
-  white-space: nowrap;
+  overflow: hidden;
 }
+.hero-install code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.4rem 0.7rem;
+  color: var(--sub);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.hero-install-copy {
+  flex: 0 0 auto;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--faint);
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0 0.75rem;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.hero-install-copy:hover { color: var(--ink); background: rgba(255, 255, 255, 0.04); }
+.hero-install-copy.is-copied { color: var(--green); }
 .hero-install-note {
   font-family: 'DM Sans', system-ui, sans-serif;
   font-size: 0.8rem;
@@ -503,7 +525,7 @@ br.mobile-break { display: none; }
 }
 
 .section h2 {
-  font-family: 'Instrument Serif', serif;
+  font-family: 'Fraunces', serif;
   font-size: clamp(2.2rem, 4vw, 3.5rem);
   font-weight: 400;
   line-height: 0.95;
@@ -542,7 +564,7 @@ br.mobile-break { display: none; }
   content: counter(step, decimal-leading-zero);
   position: absolute;
   top: 1rem; right: 1.25rem;
-  font-family: 'Instrument Serif', serif;
+  font-family: 'Fraunces', serif;
   font-size: 3.5rem;
   color: rgba(255, 255, 255, 0.03);
   line-height: 1;
@@ -646,7 +668,7 @@ br.mobile-break { display: none; }
   border-top: 1px solid var(--border);
 }
 .cta-section h2 {
-  font-family: 'Instrument Serif', serif;
+  font-family: 'Fraunces', serif;
   font-size: clamp(2.5rem, 4.5vw, 4rem);
   font-weight: 400;
   font-style: italic;

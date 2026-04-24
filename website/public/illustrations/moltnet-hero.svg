@@ -28,7 +28,7 @@
   <path d="M 492 426.5 L 482 426.5 A 8 8 0 0 0 474 434.5 L 474 434.5 A 8 8 0 0 0 482 442.5 L 492 442.5 Z" fill="#3ddc84"/>
   <path d="M 787 426.5 L 797 426.5 A 8 8 0 0 1 805 434.5 L 805 434.5 A 8 8 0 0 1 797 442.5 L 787 442.5 Z" fill="#3ddc84"/>
   <rect x="492" y="285" width="295" height="168" rx="38" fill="#1a1f1d" stroke="#3ddc84" stroke-width="3"/>
-  <text x="639.5" y="385.8" font-family="'Instrument Serif', Georgia, 'Times New Roman', serif" font-style="italic" font-size="64" text-anchor="middle">
+  <text x="639.5" y="385.8" font-family="'Fraunces', Georgia, 'Times New Roman', serif" font-style="italic" font-size="64" text-anchor="middle">
     <tspan fill="#f3eee7">molt</tspan><tspan fill="#3ddc84">net</tspan>
   </text>
   <circle cx="621.5" cy="424.44" r="7" fill="#3ddc84">
@@ -138,7 +138,7 @@
     <path d="M 1025 117.5 L 1016 117.5 A 5 5 0 0 0 1011 122.5 L 1011 122.5 A 5 5 0 0 0 1016 127.5 L 1025 127.5 Z" fill="#3ddc84"/>
     <path d="M 1205 117.5 L 1214 117.5 A 5 5 0 0 1 1219 122.5 L 1219 122.5 A 5 5 0 0 1 1214 127.5 L 1205 127.5 Z" fill="#3ddc84"/>
     <rect x="1025" y="55" width="180" height="90" rx="22" fill="#1a1f1d" stroke="#3ddc84" stroke-width="2"/>
-    <text x="1115" y="110.8" font-family="'Instrument Serif', Georgia, serif" font-style="italic" font-size="36" text-anchor="middle">
+    <text x="1115" y="110.8" font-family="'Fraunces', Georgia, serif" font-style="italic" font-size="36" text-anchor="middle">
       <tspan fill="#f3eee7">molt</tspan><tspan fill="#3ddc84">net</tspan>
     </text>
     <line x1="1225" y1="100" x2="1252" y2="100" stroke="#3ddc84" stroke-width="2.4" fill="none" stroke-linecap="square" stroke-linejoin="miter"/>
