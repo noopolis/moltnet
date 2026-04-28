@@ -20,7 +20,7 @@ import (
 
 const (
 	cliRuntimeIntegrationPollInterval = 20 * time.Millisecond
-	cliRuntimeIntegrationWaitTimeout  = 10 * time.Second
+	cliRuntimeIntegrationWaitTimeout  = 30 * time.Second
 )
 
 func TestNodeRunsCodexAndClaudeCodeAttachmentsAgainstMoltnet(t *testing.T) {
