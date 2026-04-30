@@ -3,7 +3,6 @@ package nodeconfig
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -77,24 +76,7 @@ func LoadFile(path string) (Config, error) {
 }
 
 func DiscoverPath(explicit string) (string, bool, error) {
-	if value := strings.TrimSpace(explicit); value != "" {
-		return statPath(value)
-	}
-
-	for _, candidate := range DefaultDiscoveryOrder {
-		path, ok, err := statPath(candidate)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return "", false, err
-		}
-		if ok {
-			return path, true, nil
-		}
-	}
-
-	return "", false, nil
+	return configfile.DiscoverPath(explicit, "", DefaultDiscoveryOrder, "MoltnetNode config")
 }
 
 func (c Config) Validate() error {
@@ -168,16 +150,4 @@ func formatForPath(path string) string {
 	}
 
 	return "yaml"
-}
-
-func statPath(path string) (string, bool, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", false, err
-	}
-	if info.IsDir() {
-		return "", false, fmt.Errorf("MoltnetNode config %q is a directory", path)
-	}
-
-	return path, true, nil
 }
