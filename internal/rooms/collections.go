@@ -10,42 +10,22 @@ import (
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
-type roomItem struct{ protocol.Room }
-type agentItem struct{ protocol.AgentSummary }
-type threadItem struct{ protocol.Thread }
-type directConversationItem struct{ protocol.DirectConversation }
-type pairingItem struct{ protocol.Pairing }
-
-func (r roomItem) GetID() string               { return r.Room.ID }
-func (a agentItem) GetID() string              { return a.AgentSummary.ID }
-func (t threadItem) GetID() string             { return t.Thread.ID }
-func (d directConversationItem) GetID() string { return d.DirectConversation.ID }
-func (p pairingItem) GetID() string            { return p.Pairing.ID }
-
 func (s *Service) ListRoomsContext(ctx context.Context, page protocol.PageRequest) (protocol.RoomPage, error) {
 	rooms, err := s.listRooms(ctx)
 	if err != nil {
 		return protocol.RoomPage{}, err
 	}
 
-	items := make([]roomItem, 0, len(rooms))
-	for _, room := range rooms {
-		items = append(items, roomItem{Room: room})
-	}
-	selected, info, err := paginate(items, page)
+	selected, info, err := paginateRooms(rooms, page)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalidCursor) {
 			return protocol.RoomPage{}, invalidCursorReasonError(cursorForPage(page))
 		}
 		return protocol.RoomPage{}, err
 	}
-	values := make([]protocol.Room, 0, len(selected))
-	for _, item := range selected {
-		values = append(values, item.Room)
-	}
 
 	return protocol.RoomPage{
-		Rooms: values,
+		Rooms: selected,
 		Page:  info,
 	}, nil
 }
@@ -94,85 +74,40 @@ func membersEqual(left []string, right []string) bool {
 	return slices.Equal(protocol.SortedUniqueTrimmedStrings(left), protocol.SortedUniqueTrimmedStrings(right))
 }
 
-type pageable interface {
-	GetID() string
-}
-
-func paginate[T pageable](values []T, page protocol.PageRequest) ([]T, protocol.PageInfo, error) {
-	if err := protocol.ValidatePageRequest(page); err != nil {
-		return nil, protocol.PageInfo{}, store.ErrInvalidCursor
-	}
-
-	limit := page.Limit
-	if limit <= 0 {
-		limit = len(values)
-	}
-
-	start := 0
-	end := len(values)
-	if page.After != "" {
-		value, ok := indexAfter(values, page.After)
-		if !ok {
-			return nil, protocol.PageInfo{}, store.ErrInvalidCursor
-		}
-		start = value
-	}
-	if page.Before != "" {
-		value, ok := indexBefore(values, page.Before)
-		if !ok {
-			return nil, protocol.PageInfo{}, store.ErrInvalidCursor
-		}
-		end = value
-	}
-	if end < start {
-		end = start
-	}
-
-	windowStart := start
-	windowEnd := end
-	if windowEnd-windowStart > limit {
-		if page.Before != "" && page.After == "" {
-			windowStart = windowEnd - limit
-		} else {
-			windowEnd = windowStart + limit
-		}
-	}
-
-	selected := append([]T(nil), values[windowStart:windowEnd]...)
-	info := protocol.PageInfo{
-		HasMore: windowStart > 0 || windowEnd < len(values),
-	}
-	if windowStart > 0 && len(selected) > 0 {
-		info.NextBefore = selected[0].GetID()
-	}
-	if windowEnd < len(values) && len(selected) > 0 {
-		info.NextAfter = selected[len(selected)-1].GetID()
-	}
-
-	return selected, info, nil
-}
-
-func indexAfter[T pageable](values []T, after string) (int, bool) {
-	for index, value := range values {
-		if value.GetID() == after {
-			return index + 1, true
-		}
-	}
-	return 0, false
-}
-
-func indexBefore[T pageable](values []T, before string) (int, bool) {
-	for index, value := range values {
-		if value.GetID() == before {
-			return index, true
-		}
-	}
-	return len(values), false
-}
-
 func cursorForPage(page protocol.PageRequest) string {
 	if page.After != "" {
 		return page.After
 	}
 	return page.Before
+}
+
+func paginateRooms(rooms []protocol.Room, page protocol.PageRequest) ([]protocol.Room, protocol.PageInfo, error) {
+	return paginateByID(rooms, page, func(room protocol.Room) string { return room.ID })
+}
+
+func paginateAgentValues(agents []protocol.AgentSummary, page protocol.PageRequest) ([]protocol.AgentSummary, protocol.PageInfo, error) {
+	return paginateByID(agents, page, func(agent protocol.AgentSummary) string { return agent.ID })
+}
+
+func paginateThreads(threads []protocol.Thread, page protocol.PageRequest) ([]protocol.Thread, protocol.PageInfo, error) {
+	return paginateByID(threads, page, func(thread protocol.Thread) string { return thread.ID })
+}
+
+func paginateDirectConversations(
+	conversations []protocol.DirectConversation,
+	page protocol.PageRequest,
+) ([]protocol.DirectConversation, protocol.PageInfo, error) {
+	return paginateByID(conversations, page, func(conversation protocol.DirectConversation) string { return conversation.ID })
+}
+
+func paginatePairings(pairings []protocol.Pairing, page protocol.PageRequest) ([]protocol.Pairing, protocol.PageInfo, error) {
+	return paginateByID(pairings, page, func(pairing protocol.Pairing) string { return pairing.ID })
+}
+
+func paginateByID[T any](values []T, page protocol.PageRequest, id func(T) string) ([]T, protocol.PageInfo, error) {
+	selected, info, err := protocol.PaginateByID(values, page, id)
+	if err != nil {
+		return nil, protocol.PageInfo{}, store.ErrInvalidCursor
+	}
+	return selected, info, nil
 }

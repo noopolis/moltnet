@@ -8,6 +8,13 @@ type PageRequest struct {
 	Limit  int    `json:"limit,omitempty"`
 }
 
+type PageHasMoreMode int
+
+const (
+	PageHasMoreAnyDirection PageHasMoreMode = iota
+	PageHasMoreCursorDirection
+)
+
 func ValidatePageRequest(page PageRequest) error {
 	if page.Before != "" && page.After != "" {
 		return fmt.Errorf("before and after cannot both be set")
@@ -23,6 +30,95 @@ func ValidatePageRequest(page PageRequest) error {
 		}
 	}
 	return nil
+}
+
+func PaginateByID[T any](values []T, page PageRequest, id func(T) string) ([]T, PageInfo, error) {
+	return PaginateByIDWithMode(values, page, id, PageHasMoreAnyDirection)
+}
+
+func PaginateByIDWithMode[T any](
+	values []T,
+	page PageRequest,
+	id func(T) string,
+	hasMoreMode PageHasMoreMode,
+) ([]T, PageInfo, error) {
+	if err := ValidatePageRequest(page); err != nil {
+		return nil, PageInfo{}, err
+	}
+
+	limit := page.Limit
+	if limit <= 0 {
+		limit = len(values)
+	}
+
+	start := 0
+	end := len(values)
+	if page.After != "" {
+		value, ok := indexAfter(values, page.After, id)
+		if !ok {
+			return nil, PageInfo{}, fmt.Errorf("invalid cursor %q", page.After)
+		}
+		start = value
+	}
+	if page.Before != "" {
+		value, ok := indexBefore(values, page.Before, id)
+		if !ok {
+			return nil, PageInfo{}, fmt.Errorf("invalid cursor %q", page.Before)
+		}
+		end = value
+	}
+	if end < start {
+		end = start
+	}
+
+	windowStart := start
+	windowEnd := end
+	if windowEnd-windowStart > limit {
+		if page.Before != "" && page.After == "" {
+			windowStart = windowEnd - limit
+		} else {
+			windowEnd = windowStart + limit
+		}
+	}
+
+	selected := append([]T(nil), values[windowStart:windowEnd]...)
+	info := PageInfo{HasMore: pageHasMore(hasMoreMode, page, windowStart, windowEnd, len(values))}
+	if windowStart > 0 && len(selected) > 0 {
+		info.NextBefore = id(selected[0])
+	}
+	if windowEnd < len(values) && len(selected) > 0 {
+		info.NextAfter = id(selected[len(selected)-1])
+	}
+
+	return selected, info, nil
+}
+
+func pageHasMore(mode PageHasMoreMode, page PageRequest, windowStart int, windowEnd int, valueCount int) bool {
+	if mode != PageHasMoreCursorDirection {
+		return windowStart > 0 || windowEnd < valueCount
+	}
+	if page.After != "" {
+		return windowEnd < valueCount
+	}
+	return windowStart > 0
+}
+
+func indexAfter[T any](values []T, after string, id func(T) string) (int, bool) {
+	for index, value := range values {
+		if id(value) == after {
+			return index + 1, true
+		}
+	}
+	return 0, false
+}
+
+func indexBefore[T any](values []T, before string, id func(T) string) (int, bool) {
+	for index, value := range values {
+		if id(value) == before {
+			return index, true
+		}
+	}
+	return len(values), false
 }
 
 type RoomPage struct {

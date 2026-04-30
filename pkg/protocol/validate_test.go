@@ -94,6 +94,38 @@ func TestValidatePageRequest(t *testing.T) {
 	}
 }
 
+func TestPaginateByIDSupportsBeforeAndAfter(t *testing.T) {
+	t.Parallel()
+
+	rooms := []Room{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+
+	beforeValues, beforeInfo, err := PaginateByID(rooms, PageRequest{Before: "c", Limit: 1}, func(room Room) string {
+		return room.ID
+	})
+	if err != nil {
+		t.Fatalf("PaginateByID() before error = %v", err)
+	}
+	if len(beforeValues) != 1 || beforeValues[0].ID != "b" {
+		t.Fatalf("unexpected before values %#v", beforeValues)
+	}
+	if !beforeInfo.HasMore || beforeInfo.NextBefore != "b" || beforeInfo.NextAfter != "b" {
+		t.Fatalf("unexpected before page info %#v", beforeInfo)
+	}
+
+	afterValues, afterInfo, err := PaginateByID(rooms, PageRequest{After: "a", Limit: 1}, func(room Room) string {
+		return room.ID
+	})
+	if err != nil {
+		t.Fatalf("PaginateByID() after error = %v", err)
+	}
+	if len(afterValues) != 1 || afterValues[0].ID != "b" {
+		t.Fatalf("unexpected after values %#v", afterValues)
+	}
+	if !afterInfo.HasMore || afterInfo.NextBefore != "b" || afterInfo.NextAfter != "b" {
+		t.Fatalf("unexpected after page info %#v", afterInfo)
+	}
+}
+
 func TestValidateMemberID(t *testing.T) {
 	t.Parallel()
 

@@ -10,33 +10,33 @@ import (
 func TestPaginateByIDSupportsBeforeAndAfter(t *testing.T) {
 	t.Parallel()
 
-	rooms := []roomItem{
-		{Room: protocol.Room{ID: "a"}},
-		{Room: protocol.Room{ID: "b"}},
-		{Room: protocol.Room{ID: "c"}},
+	messages := []protocol.Message{
+		{ID: "a"},
+		{ID: "b"},
+		{ID: "c"},
 	}
-	afterValues, afterInfo, err := paginateByID(rooms, protocol.PageRequest{
+	afterValues, afterInfo, err := paginateMessages(messages, protocol.PageRequest{
 		After: "a",
 		Limit: 1,
 	})
 	if err != nil {
-		t.Fatalf("paginateByID() after error = %v", err)
+		t.Fatalf("paginateMessages() after error = %v", err)
 	}
-	if len(afterValues) != 1 || afterValues[0].GetID() != "b" {
+	if len(afterValues) != 1 || afterValues[0].ID != "b" {
 		t.Fatalf("unexpected after values %#v", afterValues)
 	}
 	if !afterInfo.HasMore || afterInfo.NextAfter != "b" || afterInfo.NextBefore != "b" {
 		t.Fatalf("unexpected after page info %#v", afterInfo)
 	}
 
-	beforeValues, beforeInfo, err := paginateByID(rooms, protocol.PageRequest{
+	beforeValues, beforeInfo, err := paginateMessages(messages, protocol.PageRequest{
 		Before: "c",
 		Limit:  1,
 	})
 	if err != nil {
-		t.Fatalf("paginateByID() before error = %v", err)
+		t.Fatalf("paginateMessages() before error = %v", err)
 	}
-	if len(beforeValues) != 1 || beforeValues[0].GetID() != "b" {
+	if len(beforeValues) != 1 || beforeValues[0].ID != "b" {
 		t.Fatalf("unexpected before values %#v", beforeValues)
 	}
 	if !beforeInfo.HasMore || beforeInfo.NextBefore != "b" || beforeInfo.NextAfter != "b" {
@@ -47,12 +47,12 @@ func TestPaginateByIDSupportsBeforeAndAfter(t *testing.T) {
 func TestPaginateByIDRejectsUnknownCursor(t *testing.T) {
 	t.Parallel()
 
-	rooms := []roomItem{
-		{Room: protocol.Room{ID: "a"}},
-		{Room: protocol.Room{ID: "b"}},
+	messages := []protocol.Message{
+		{ID: "a"},
+		{ID: "b"},
 	}
 
-	afterValues, afterInfo, err := paginateByID(rooms, protocol.PageRequest{
+	afterValues, afterInfo, err := paginateMessages(messages, protocol.PageRequest{
 		After: "missing",
 		Limit: 1,
 	})
@@ -63,7 +63,7 @@ func TestPaginateByIDRejectsUnknownCursor(t *testing.T) {
 		t.Fatalf("unexpected after result %#v %#v", afterValues, afterInfo)
 	}
 
-	beforeValues, beforeInfo, err := paginateByID(rooms, protocol.PageRequest{
+	beforeValues, beforeInfo, err := paginateMessages(messages, protocol.PageRequest{
 		Before: "missing",
 		Limit:  1,
 	})
@@ -72,20 +72,6 @@ func TestPaginateByIDRejectsUnknownCursor(t *testing.T) {
 	}
 	if len(beforeValues) != 0 || beforeInfo != (protocol.PageInfo{}) {
 		t.Fatalf("unexpected before result %#v %#v", beforeValues, beforeInfo)
-	}
-}
-
-func TestItemGetIDHelpers(t *testing.T) {
-	t.Parallel()
-
-	if got := (roomItem{Room: protocol.Room{ID: "room"}}).GetID(); got != "room" {
-		t.Fatalf("unexpected room id %q", got)
-	}
-	if got := (agentItem{AgentSummary: protocol.AgentSummary{ID: "agent"}}).GetID(); got != "agent" {
-		t.Fatalf("unexpected agent id %q", got)
-	}
-	if got := (dmItem{DirectConversation: protocol.DirectConversation{ID: "dm"}}).GetID(); got != "dm" {
-		t.Fatalf("unexpected dm id %q", got)
 	}
 }
 

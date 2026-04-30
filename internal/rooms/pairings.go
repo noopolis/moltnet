@@ -24,24 +24,16 @@ func (s *Service) ListPairingsContext(_ context.Context, page protocol.PageReque
 		return strings.Compare(left.ID, right.ID)
 	})
 
-	items := make([]pairingItem, 0, len(pairings))
-	for _, pairing := range pairings {
-		items = append(items, pairingItem{Pairing: pairing})
-	}
-	selected, info, err := paginate(items, page)
+	selected, info, err := paginatePairings(pairings, page)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalidCursor) {
 			return protocol.PairingPage{}, invalidCursorReasonError(cursorForPage(page))
 		}
 		return protocol.PairingPage{}, err
 	}
-	values := make([]protocol.Pairing, 0, len(selected))
-	for _, item := range selected {
-		values = append(values, item.Pairing)
-	}
 
 	return protocol.PairingPage{
-		Pairings: values,
+		Pairings: selected,
 		Page:     info,
 	}, nil
 }
@@ -88,24 +80,16 @@ func (s *Service) PairingRoomsContext(ctx context.Context, pairingID string, pag
 	}
 	s.setPairingStatus(pairing.ID, "connected")
 
-	items := make([]roomItem, 0, len(rooms))
-	for _, room := range rooms {
-		items = append(items, roomItem{Room: room})
-	}
-	selected, info, err := paginate(items, page)
+	selected, info, err := paginateRooms(rooms, page)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalidCursor) {
 			return protocol.RoomPage{}, invalidCursorReasonError(cursorForPage(page))
 		}
 		return protocol.RoomPage{}, err
 	}
-	values := make([]protocol.Room, 0, len(selected))
-	for _, item := range selected {
-		values = append(values, item.Room)
-	}
 
 	return protocol.RoomPage{
-		Rooms: values,
+		Rooms: selected,
 		Page:  info,
 	}, nil
 }
@@ -134,24 +118,16 @@ func (s *Service) PairingAgentsContext(ctx context.Context, pairingID string, pa
 	}
 	s.setPairingStatus(pairing.ID, "connected")
 
-	items := make([]agentItem, 0, len(agents))
-	for _, agent := range agents {
-		items = append(items, agentItem{AgentSummary: agent})
-	}
-	selected, info, err := paginate(items, page)
+	selected, info, err := paginateAgentValues(agents, page)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalidCursor) {
 			return protocol.AgentPage{}, invalidCursorReasonError(cursorForPage(page))
 		}
 		return protocol.AgentPage{}, err
 	}
-	values := make([]protocol.AgentSummary, 0, len(selected))
-	for _, item := range selected {
-		values = append(values, item.AgentSummary)
-	}
 
 	return protocol.AgentPage{
-		Agents: values,
+		Agents: selected,
 		Page:   info,
 	}, nil
 }
