@@ -74,7 +74,7 @@ func loadFileConfig(path string) (rawConfigFile, error) {
 	}
 
 	var config rawConfigFile
-	switch configFormat(path) {
+	switch configfile.FormatForPath(path) {
 	case "json":
 		err = decodeJSONConfig(contents, &config)
 	default:

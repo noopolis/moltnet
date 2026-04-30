@@ -1,7 +1,6 @@
 package app
 
 import (
-	"path/filepath"
 	"strings"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
@@ -181,13 +180,4 @@ func mergeEnvStorage(storage StorageConfig) StorageConfig {
 
 func DiscoverPath(explicit string) (string, bool, error) {
 	return configfile.DiscoverPath(explicit, "MOLTNET_CONFIG", DefaultDiscoveryOrder, "Moltnet config")
-}
-
-func configFormat(path string) string {
-	extension := strings.ToLower(filepath.Ext(path))
-	if extension == ".json" {
-		return "json"
-	}
-
-	return "yaml"
 }

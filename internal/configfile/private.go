@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -59,4 +60,12 @@ func ValidatePrivateMode(path string, label string, symlinkReason string, modeRe
 	}
 
 	return nil
+}
+
+func FormatForPath(path string) string {
+	if strings.EqualFold(filepath.Ext(path), ".json") {
+		return "json"
+	}
+
+	return "yaml"
 }

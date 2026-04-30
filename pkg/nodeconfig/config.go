@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/noopolis/moltnet/internal/configfile"
@@ -50,7 +49,7 @@ func LoadFile(path string) (Config, error) {
 	}
 
 	var config Config
-	if formatForPath(path) == "json" {
+	if configfile.FormatForPath(path) == "json" {
 		decoder := json.NewDecoder(bytes.NewReader(contents))
 		decoder.DisallowUnknownFields()
 		err = decoder.Decode(&config)
@@ -142,12 +141,4 @@ func (c Config) hasPlaintextTokens() bool {
 		}
 	}
 	return false
-}
-
-func formatForPath(path string) string {
-	if strings.EqualFold(filepath.Ext(path), ".json") {
-		return "json"
-	}
-
-	return "yaml"
 }

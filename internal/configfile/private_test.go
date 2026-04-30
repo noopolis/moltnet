@@ -46,3 +46,20 @@ func TestValidatePrivateMode(t *testing.T) {
 		t.Fatalf("expected symlink rejection, got %v", err)
 	}
 }
+
+func TestFormatForPath(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"config.json": "json",
+		"config.JSON": "json",
+		"config.yaml": "yaml",
+		"config.yml":  "yaml",
+		"config":      "yaml",
+	}
+	for path, want := range tests {
+		if got := FormatForPath(path); got != want {
+			t.Fatalf("FormatForPath(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
