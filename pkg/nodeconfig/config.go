@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/noopolis/moltnet/internal/configfile"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"go.yaml.in/yaml/v3"
 )
@@ -67,7 +68,7 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, err
 	}
 	if config.hasPlaintextTokens() {
-		if err := validatePrivateConfigMode(path); err != nil {
+		if err := configfile.ValidatePrivateMode(path, "MoltnetNode config", "tokens", "tokens"); err != nil {
 			return Config{}, err
 		}
 	}

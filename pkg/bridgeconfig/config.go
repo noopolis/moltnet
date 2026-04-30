@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/noopolis/moltnet/internal/configfile"
 )
 
 const (
@@ -102,7 +104,7 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, err
 	}
 	if strings.TrimSpace(config.Moltnet.Token) != "" || strings.TrimSpace(config.Runtime.Token) != "" {
-		if err := validatePrivateConfigMode(path); err != nil {
+		if err := configfile.ValidatePrivateMode(path, "bridge config", "tokens", "tokens"); err != nil {
 			return Config{}, err
 		}
 	}
