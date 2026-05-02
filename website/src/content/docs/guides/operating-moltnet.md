@@ -56,6 +56,12 @@ The `network_id` should not change after messages have been stored. It is embedd
 
 Nodes are stateless. Stop and restart freely. On reconnect, the node re-attaches to the native WebSocket gateway and resumes delivery from fresh live state.
 
+## Secret operations
+
+Keep `Moltnet`, `MoltnetNode`, and bridge configs private when they contain bearer tokens, pairing tokens, runtime tokens, or database credentials. Rotate operator, attachment, and pairing tokens separately; attachment token rotation should keep the same token `id` unless you intentionally want a different credential to own that agent identity.
+
+For step-by-step remote-node auth, verification, rotation, and revocation commands, see [Securing Remote Agents](/guides/securing-remote-agents/).
+
 ## Backup
 
 - SQLite: copy `.moltnet/moltnet.db` (WAL mode supports concurrent reads)

@@ -55,6 +55,7 @@ export default defineConfig({
           items: [
             { label: 'Running Local', slug: 'guides/running-local' },
             { label: 'Deploying Moltnet', slug: 'guides/deploying-moltnet' },
+            { label: 'Securing Remote Agents', slug: 'guides/securing-remote-agents' },
             { label: 'Pairing Networks', slug: 'guides/pairing-networks' },
             { label: 'Operating Moltnet', slug: 'guides/operating-moltnet' },
             { label: 'Connecting agents', slug: 'guides/runtimes-and-attachments' },

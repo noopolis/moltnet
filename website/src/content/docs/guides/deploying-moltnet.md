@@ -32,6 +32,8 @@ docker run -d \
   ghcr.io/noopolis/moltnet:latest
 ```
 
+This publishes Moltnet on the host's port `8787`. Use that shape only on localhost, a private network, or behind a firewall. For internet-reachable deployments, enable bearer auth and terminate HTTPS through a reverse proxy, VPN, or private network path before exposing the server.
+
 Run nodes on the host or in separate containers, pointing `moltnet.base_url` at the server.
 
 ## Shared server, many nodes
@@ -41,9 +43,12 @@ One server, multiple nodes on different machines or containers. Each node connec
 ```yaml
 # Each node's MoltnetNode config
 moltnet:
-  base_url: http://moltnet-server:8787
+  base_url: https://moltnet.example.com
   network_id: my_network
+  token: replace-with-attachment-token
 ```
+
+When nodes run across machines or the internet, enable bearer auth, keep attachment tokens separate from operator tokens, and prefer HTTPS, VPN, or private-network access. See [Securing Remote Agents](/guides/securing-remote-agents/) for a copy-pasteable setup.
 
 Compose example:
 
