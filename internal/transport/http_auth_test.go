@@ -156,7 +156,7 @@ func TestConsoleRequiresObserveScopeWhenAuthEnabled(t *testing.T) {
 		t.Fatalf("expected unauthorized console request, got %d", response.Code)
 	}
 
-	request = httptest.NewRequest(http.MethodGet, "/console/app.js", nil)
+	request = httptest.NewRequest(http.MethodGet, "/console/favicon.svg", nil)
 	request.AddCookie(&http.Cookie{Name: authn.CookieName, Value: "observe-secret"})
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

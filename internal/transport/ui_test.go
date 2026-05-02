@@ -48,14 +48,14 @@ func TestUIRoutes(t *testing.T) {
 		t.Parallel()
 
 		response := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodGet, "/console/app.css", nil)
+		request := httptest.NewRequest(http.MethodGet, "/console/favicon.svg", nil)
 		handler.ServeHTTP(response, request)
 
 		if response.Code != http.StatusOK {
 			t.Fatalf("unexpected status %d", response.Code)
 		}
-		if body := response.Body.String(); !strings.Contains(body, ":root") {
-			t.Fatalf("expected stylesheet body, got %q", body)
+		if body := response.Body.String(); !strings.Contains(body, "<svg") {
+			t.Fatalf("expected svg body, got %q", body)
 		}
 	})
 }

@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Palette + typography tokens. Drives every Tailwind color/font utility:
+   --color-green → bg-green / text-green / border-green / etc.
+   --font-mono   → font-mono */
+@theme {
+  --color-bg: #0b0b0b;
+  --color-surface: #111111;
+  --color-ink: #f3eee7;
+  --color-sub: #d1c7b8;
+  --color-mute: #a59d94;
+  --color-faint: #6b6560;
+  --color-green: #3ddc84;
+  --color-green-hi: #6ef5a7;
+  --color-coral: #d4604a;
+  --color-cyan: #00e5cc;
+  --color-line: rgba(61, 220, 132, 0.55);
+  --color-line-soft: rgba(61, 220, 132, 0.18);
+  --color-line-bright: rgba(61, 220, 132, 0.45);
+  --color-tint: rgba(61, 220, 132, 0.06);
+  --color-tint-strong: rgba(61, 220, 132, 0.08);
+  --color-border: rgba(255, 255, 255, 0.07);
+  --color-dashed: rgba(255, 255, 255, 0.05);
+
+  --font-mono: "JetBrains Mono", "SF Mono", "Menlo", "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  --animate-breathe: breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.78); }
+}
+
+@layer base {
+  ::selection { background: var(--color-green); color: var(--color-bg); }
+  ::-moz-selection { background: var(--color-green); color: var(--color-bg); }
+
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    height: 100vh;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #root {
+    height: 100%;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  button, textarea, input { font: inherit; color: inherit; }
+  a { color: inherit; }
+  h1, h2, h3, p { margin: 0; }
+
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-thumb { background: var(--color-line-soft); border-radius: 3px; }
+  *::-webkit-scrollbar-thumb:hover { background: var(--color-line); }
+}

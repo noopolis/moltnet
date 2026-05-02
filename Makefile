@@ -1,12 +1,23 @@
 GO ?= go
 GOFMT ?= gofmt
+NPM ?= npm
 DOCKER_GO_IMAGE ?= golang:1.24
 VERSION ?= 0.0.0-dev
 
 .PHONY: build build-bridge build-node release-assets fmt test vet cover run run-bridge run-node \
+	console-install console-build console-typecheck \
 	build-docker build-bridge-docker build-node-docker release-assets-docker fmt-docker test-docker vet-docker cover-docker
 
-build:
+console-install:
+	cd web && $(NPM) install --no-audit --no-fund
+
+console-build:
+	cd web && $(NPM) run build
+
+console-typecheck:
+	cd web && $(NPM) run typecheck
+
+build: console-build
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/moltnet ./cmd/moltnet
 
 build-bridge:
@@ -15,7 +26,7 @@ build-bridge:
 build-node:
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/moltnet-node ./cmd/moltnet-node
 
-release-assets:
+release-assets: console-build
 	rm -rf dist/release
 	mkdir -p dist/release
 	for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do \

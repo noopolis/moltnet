@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Moltnet">
+  <rect width="64" height="64" rx="12" fill="#0b0f13"/>
+  <circle cx="16" cy="20" r="6" fill="#a7fff5"/>
+  <circle cx="48" cy="20" r="6" fill="#2dd4bf"/>
+  <circle cx="32" cy="44" r="6" fill="#69e9dc"/>
+  <path d="M16 20 L48 20 L32 44 Z" fill="none" stroke="#d8fff9" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+
