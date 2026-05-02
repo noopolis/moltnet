@@ -115,7 +115,7 @@ func TestRelayMessageSelection(t *testing.T) {
 	service := NewService(ServiceConfig{
 		NetworkID: "net_a",
 		Pairings: []protocol.Pairing{
-			{ID: "pair_b", RemoteNetworkID: "net_b", RemoteBaseURL: "http://remote-b", Status: "connected"},
+			{ID: "pair_b", RemoteNetworkID: "net_b", RemoteBaseURL: "http://remote-b", Token: "pair-secret", Status: "connected"},
 			{ID: "pair_c", RemoteNetworkID: "net_c", RemoteBaseURL: "http://remote-c", Status: "disconnected"},
 			{ID: "pair_d", RemoteNetworkID: "net_d"},
 		},
@@ -141,6 +141,16 @@ func TestRelayMessageSelection(t *testing.T) {
 	if len(calls) != 1 || calls[0].ID != "pair_b" {
 		t.Fatalf("unexpected relay calls %#v", calls)
 	}
+	if calls[0].Token != "pair-secret" {
+		t.Fatalf("expected relay to preserve pairing token, got %#v", calls[0])
+	}
+	pairings, err := service.ListPairings()
+	if err != nil {
+		t.Fatalf("ListPairings() error = %v", err)
+	}
+	if len(pairings) == 0 || pairings[0].Token != "" {
+		t.Fatalf("expected public pairing list to redact tokens, got %#v", pairings)
+	}
 
 	client.resetCalls()
 	dmMessage := protocol.Message{
@@ -158,7 +168,7 @@ func TestRelayMessageSelection(t *testing.T) {
 		t.Fatal("expected matching dm pairing")
 	}
 	service.setPairingStatus("pair_b", "error")
-	pairings, err := service.ListPairings()
+	pairings, err = service.ListPairings()
 	if err != nil {
 		t.Fatalf("ListPairings() error = %v", err)
 	}

@@ -52,7 +52,7 @@ func (s *Service) relayMessage(message protocol.Message) {
 		return
 	}
 
-	for _, pairing := range s.snapshotPairings() {
+	for _, pairing := range s.snapshotRelayPairings() {
 		if !s.shouldRelayToPairing(pairing, message) {
 			continue
 		}
@@ -91,7 +91,7 @@ func (s *Service) relayMessage(message protocol.Message) {
 }
 
 func (s *Service) shouldRelayMessage(message protocol.Message) bool {
-	if len(s.snapshotPairings()) == 0 || s.pairingClient == nil {
+	if len(s.snapshotRelayPairings()) == 0 || s.pairingClient == nil {
 		return false
 	}
 

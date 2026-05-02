@@ -173,12 +173,22 @@ func (s *Service) findPairing(pairingID string) (protocol.Pairing, error) {
 }
 
 func (s *Service) snapshotPairings() []protocol.Pairing {
+	return s.snapshotPairingsWithTokenPolicy(false)
+}
+
+func (s *Service) snapshotRelayPairings() []protocol.Pairing {
+	return s.snapshotPairingsWithTokenPolicy(true)
+}
+
+func (s *Service) snapshotPairingsWithTokenPolicy(includeTokens bool) []protocol.Pairing {
 	s.pairingsMu.RLock()
 	defer s.pairingsMu.RUnlock()
 
 	pairings := make([]protocol.Pairing, 0, len(s.pairings))
 	for _, pairing := range s.pairings {
-		pairing.Token = ""
+		if !includeTokens {
+			pairing.Token = ""
+		}
 		pairing.Status = s.pairingStatuses[pairing.ID].value
 		pairings = append(pairings, pairing)
 	}

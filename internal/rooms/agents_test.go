@@ -3,6 +3,8 @@ package rooms
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
@@ -82,6 +84,26 @@ func TestRegisteredSenderCredentialIsEnforced(t *testing.T) {
 	}); !errors.Is(err, ErrAgentConflict) {
 		t.Fatalf("expected sender identity conflict, got %v", err)
 	}
+
+	writeOnlyCtx := authContextForScope(t, "writer", authn.ScopeWrite)
+	if _, err := service.SendMessageContext(writeOnlyCtx, protocol.SendMessageRequest{
+		Origin: protocol.MessageOrigin{NetworkID: "remote", MessageID: "msg_remote_1"},
+		Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+		From:   protocol.Actor{Type: "agent", ID: "director", NetworkID: "remote"},
+		Parts:  []protocol.Part{{Kind: protocol.PartKindText, Text: "hello"}},
+	}); !errors.Is(err, ErrAgentConflict) {
+		t.Fatalf("expected remote-origin sender without pair scope to conflict, got %v", err)
+	}
+
+	pairCtx := authContextForScope(t, "pair", authn.ScopePair)
+	if _, err := service.SendMessageContext(pairCtx, protocol.SendMessageRequest{
+		Origin: protocol.MessageOrigin{NetworkID: "remote", MessageID: "msg_remote_2"},
+		Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+		From:   protocol.Actor{Type: "agent", ID: "director", NetworkID: "remote"},
+		Parts:  []protocol.Part{{Kind: protocol.PartKindText, Text: "hello"}},
+	}); err != nil {
+		t.Fatalf("expected pair-scoped remote-origin sender to bypass local collision, got %v", err)
+	}
 }
 
 func TestRegisterAgentGeneratesHandle(t *testing.T) {
@@ -128,4 +150,28 @@ func newAgentRegistryTestService() *Service {
 		Messages:          memory,
 		Broker:            events.NewBroker(),
 	})
+}
+
+func authContextForScope(t *testing.T, tokenID string, scope authn.Scope) context.Context {
+	t.Helper()
+
+	const tokenValue = "test-token"
+	policy, err := authn.NewPolicy(authn.Config{
+		Mode: authn.ModeBearer,
+		Tokens: []authn.TokenConfig{{
+			ID:     tokenID,
+			Value:  tokenValue,
+			Scopes: []authn.Scope{scope},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewPolicy() error = %v", err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.Header.Set("Authorization", "Bearer "+tokenValue)
+	claims, err := policy.AuthenticateRequest(request, scope)
+	if err != nil {
+		t.Fatalf("AuthenticateRequest() error = %v", err)
+	}
+	return authn.WithClaims(context.Background(), claims)
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -19,7 +20,7 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	if request.From.Type == "human" && !s.allowHumanIngress {
 		return protocol.MessageAccepted{}, humanIngressDisabledError()
 	}
-	if err := s.validateSenderIdentity(ctx, request.From); err != nil {
+	if err := s.validateSenderIdentity(ctx, request.From, request.Origin); err != nil {
 		return protocol.MessageAccepted{}, err
 	}
 
@@ -134,8 +135,11 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	}, nil
 }
 
-func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Actor) error {
+func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Actor, origin protocol.MessageOrigin) error {
 	if s.agentRegistry == nil || strings.TrimSpace(actor.Type) == "human" {
+		return nil
+	}
+	if s.isPairedRemoteOriginActor(ctx, actor, origin) {
 		return nil
 	}
 	agentID := strings.TrimSpace(actor.ID)
@@ -154,6 +158,34 @@ func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Act
 		return agentConflictError(agentID)
 	}
 	return nil
+}
+
+func (s *Service) isPairedRemoteOriginActor(ctx context.Context, actor protocol.Actor, origin protocol.MessageOrigin) bool {
+	originNetworkID := strings.TrimSpace(origin.NetworkID)
+	if originNetworkID == "" || originNetworkID == s.networkID {
+		return false
+	}
+	claims, ok := authn.ClaimsFromContext(ctx)
+	if !ok || !claims.Allows(authn.ScopePair) {
+		return false
+	}
+	return explicitActorNetworkID(actor) == originNetworkID
+}
+
+func explicitActorNetworkID(actor protocol.Actor) string {
+	if networkID := strings.TrimSpace(actor.NetworkID); networkID != "" {
+		return networkID
+	}
+	if networkID, _, ok := protocol.ParseAgentFQID(actor.FQID); ok {
+		return networkID
+	}
+	if networkID, _, ok := protocol.ParseScopedAgentID(actor.ID); ok {
+		return networkID
+	}
+	if networkID, _, ok := protocol.ParseAgentFQID(actor.ID); ok {
+		return networkID
+	}
+	return ""
 }
 
 func (s *Service) Subscribe(ctx context.Context) <-chan protocol.Event {

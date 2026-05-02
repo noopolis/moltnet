@@ -1,12 +1,14 @@
 package rooms
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/internal/events"
 	"github.com/noopolis/moltnet/internal/pairings"
 	"github.com/noopolis/moltnet/internal/store"
@@ -82,6 +84,49 @@ func TestServiceRelaysRoomMessagesAcrossPairings(t *testing.T) {
 	}
 }
 
+func TestServiceRelaysRoomMessagesWithPairingToken(t *testing.T) {
+	t.Parallel()
+
+	serviceA, serverA := newRelayTestService(t, "net_a", "Net A")
+	defer serverA.Close()
+	serviceB, serverB := newRelayTestServiceWithBearer(t, "net_b", "Net B", "pair-secret")
+	defer serverB.Close()
+	if _, err := serviceB.RegisterAgentContext(
+		authn.WithClaims(context.Background(), authn.Claims{TokenID: "local-alpha"}),
+		protocol.RegisterAgentRequest{RequestedAgentID: "alpha", Name: "Local Alpha"},
+	); err != nil {
+		t.Fatalf("RegisterAgentContext() local collision setup error = %v", err)
+	}
+
+	serviceA.pairings = []protocol.Pairing{{
+		ID:              "pair_b",
+		RemoteNetworkID: "net_b",
+		RemoteBaseURL:   serverB.URL,
+		Token:           "pair-secret",
+		Status:          "connected",
+	}}
+
+	for _, service := range []*Service{serviceA, serviceB} {
+		if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research", Members: []string{"alpha", "beta"}}); err != nil {
+			t.Fatalf("CreateRoom() error = %v", err)
+		}
+	}
+
+	accepted, err := serviceA.SendMessage(protocol.SendMessageRequest{
+		Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+		From:   protocol.Actor{Type: "agent", ID: "alpha"},
+		Parts:  []protocol.Part{{Kind: "text", Text: "relay with auth"}},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+
+	pageB := waitForRoomMessage(t, serviceB, "research")
+	if pageB.Messages[0].ID != accepted.MessageID {
+		t.Fatalf("expected relayed message id %q, got %#v", accepted.MessageID, pageB.Messages[0])
+	}
+}
+
 func TestServiceRelaysScopedDirectMessagesAcrossPairings(t *testing.T) {
 	t.Parallel()
 
@@ -139,6 +184,10 @@ func TestServiceRelaysScopedDirectMessagesAcrossPairings(t *testing.T) {
 }
 
 func newRelayTestService(t *testing.T, networkID string, networkName string) (*Service, *httptest.Server) {
+	return newRelayTestServiceWithBearer(t, networkID, networkName, "")
+}
+
+func newRelayTestServiceWithBearer(t *testing.T, networkID string, networkName string, expectedBearer string) (*Service, *httptest.Server) {
 	t.Helper()
 
 	memory := store.NewMemoryStore()
@@ -153,14 +202,18 @@ func newRelayTestService(t *testing.T, networkID string, networkName string) (*S
 		PairingClient:     pairings.NewClient(),
 	})
 
-	server := httptest.NewServer(newRelayTestHandler(service))
+	server := httptest.NewServer(newRelayTestHandler(service, expectedBearer))
 	return service, server
 }
 
-func newRelayTestHandler(service *Service) http.Handler {
+func newRelayTestHandler(service *Service, expectedBearer string) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodPost || request.URL.Path != "/v1/messages" {
 			http.NotFound(response, request)
+			return
+		}
+		if expectedBearer != "" && request.Header.Get("Authorization") != "Bearer "+expectedBearer {
+			http.Error(response, "authorization required", http.StatusUnauthorized)
 			return
 		}
 
@@ -169,8 +222,29 @@ func newRelayTestHandler(service *Service) http.Handler {
 			http.Error(response, err.Error(), http.StatusBadRequest)
 			return
 		}
+		ctx := request.Context()
+		if expectedBearer != "" {
+			policy, err := authn.NewPolicy(authn.Config{
+				Mode: authn.ModeBearer,
+				Tokens: []authn.TokenConfig{{
+					ID:     "pair-relay",
+					Value:  expectedBearer,
+					Scopes: []authn.Scope{authn.ScopePair},
+				}},
+			})
+			if err != nil {
+				http.Error(response, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			claims, err := policy.AuthenticateRequest(request, authn.ScopePair)
+			if err != nil {
+				http.Error(response, err.Error(), http.StatusUnauthorized)
+				return
+			}
+			ctx = authn.WithClaims(ctx, claims)
+		}
 
-		accepted, err := service.SendMessageContext(request.Context(), payload)
+		accepted, err := service.SendMessageContext(ctx, payload)
 		if err != nil {
 			http.Error(response, err.Error(), http.StatusBadGateway)
 			return
