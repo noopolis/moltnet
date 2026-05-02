@@ -22,7 +22,9 @@ http://localhost:8787/console/?access_token=<observe-token>
 ```
 
 Moltnet stores that token in a same-origin HTTP-only cookie so the console can call the protected API and SSE endpoints.
-That query token path is only for the console bootstrap flow; direct API calls should continue to use the `Authorization` header.
+That query token path is only for the console bootstrap flow; direct API calls should continue to use the `Authorization: Bearer <token>` header.
+
+For scopes, cookies, and the full token model, see [Authentication](/reference/authentication/).
 
 ## What it shows
 

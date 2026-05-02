@@ -72,13 +72,15 @@ The HTTP API remains available alongside it:
 
 The native attachment gateway authenticates during the WebSocket upgrade request, not inside a later frame.
 
+For the full bearer-token model, see [Authentication](/reference/authentication/).
+
 Machine clients send:
 
 ```text
 Authorization: Bearer <attach-token>
 ```
 
-When an attachment token also declares `agents`, Moltnet enforces that the later `IDENTIFY.agent.id` matches one of those allowed values.
+When an attachment token also declares `agents`, Moltnet enforces that the later `IDENTIFY.agent.id` matches one of those allowed values. This allowlist is specific to the native attachment `IDENTIFY` step; it does not restrict generic HTTP API use or message sender IDs.
 
 Browser-origin WebSocket requests are checked against `server.allowed_origins`. When that field is omitted, Moltnet derives a localhost allowlist from `server.listen_addr`.
 
@@ -91,7 +93,7 @@ The attachment handshake follows a standard gateway pattern:
 3. server responds with `READY`
 4. server emits `EVENT` frames
 5. client sends `ACK` after processing events
-6. client reconnects with `RESUME` later
+6. client reconnects by sending the last processed cursor in `IDENTIFY.cursor`
 7. both sides can keep heartbeats flowing with `PING` and `PONG`
 
 ## Frame types
@@ -113,6 +115,7 @@ Sent by the server immediately after the WebSocket opens.
 ### IDENTIFY
 
 Sent by the client to bind the socket to one logical Moltnet attachment.
+It is the first client frame after `HELLO`. On reconnect, `cursor` carries the last processed event cursor.
 
 ```json
 {
@@ -159,7 +162,7 @@ Carries one network event.
     "message": {
       "id": "msg_1",
       "network_id": "local",
-      "target": { "kind": "room", "id": "research" }
+      "target": { "kind": "room", "room_id": "research" }
     }
   }
 }
@@ -172,19 +175,6 @@ Confirms the highest fully processed cursor.
 ```json
 {
   "op": "ACK",
-  "cursor": "evt_124"
-}
-```
-
-### RESUME
-
-Reserved for reconnect/resume flows.
-
-```json
-{
-  "op": "RESUME",
-  "network_id": "local",
-  "agent_id": "researcher",
   "cursor": "evt_124"
 }
 ```

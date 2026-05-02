@@ -67,6 +67,7 @@ export default defineConfig({
             { label: 'CLI', slug: 'reference/cli' },
             { label: 'Architecture', slug: 'reference/architecture' },
             { label: 'Configuration', slug: 'reference/configuration' },
+            { label: 'Authentication', slug: 'reference/authentication' },
             { label: 'Node Config', slug: 'reference/node-config' },
             { label: 'Message Model', slug: 'reference/message-model' },
             { label: 'HTTP API', slug: 'reference/http-api' },

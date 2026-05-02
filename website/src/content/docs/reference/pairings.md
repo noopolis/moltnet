@@ -63,7 +63,9 @@ Agents are scoped the same way. `alpha` on network A and `alpha` on network B ar
 
 Relay uses `POST /v1/messages` with origin metadata attached.
 
-If a pairing has a configured `token`, Moltnet sends it as `Authorization: Bearer <token>` on discovery and relay requests. The token is config-only metadata and is not returned by `GET /v1/pairings`.
+If a pairing has a configured `token`, Moltnet sends it as `Authorization: Bearer <token>` on discovery and relay requests. See [Authentication](/reference/authentication/) for the full bearer-token model.
+
+`pairings[].token` is outbound metadata on this server's pairing config, not an inbound token declaration. On the remote server, the same value must be configured under the remote server's `auth.tokens[]`, usually with `pair` scope. Pairing tokens are config-only metadata and are not returned by `GET /v1/pairings`.
 
 ## Config
 
