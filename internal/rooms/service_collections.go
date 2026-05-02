@@ -104,24 +104,16 @@ func (s *Service) ListThreadsContext(ctx context.Context, roomID string, page pr
 		return protocol.ThreadPage{}, err
 	}
 
-	items := make([]threadItem, 0, len(threads))
-	for _, thread := range threads {
-		items = append(items, threadItem{Thread: thread})
-	}
-	selected, info, err := paginate(items, page)
+	selected, info, err := paginateThreads(threads, page)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalidCursor) {
 			return protocol.ThreadPage{}, invalidCursorReasonError(cursorForPage(page))
 		}
 		return protocol.ThreadPage{}, err
 	}
-	values := make([]protocol.Thread, 0, len(selected))
-	for _, item := range selected {
-		values = append(values, item.Thread)
-	}
 
 	return protocol.ThreadPage{
-		Threads: values,
+		Threads: selected,
 		Page:    info,
 	}, nil
 }
@@ -157,24 +149,16 @@ func (s *Service) ListDirectConversationsContext(ctx context.Context, page proto
 		return protocol.DirectConversationPage{}, err
 	}
 
-	items := make([]directConversationItem, 0, len(conversations))
-	for _, conversation := range conversations {
-		items = append(items, directConversationItem{DirectConversation: conversation})
-	}
-	selected, info, err := paginate(items, page)
+	selected, info, err := paginateDirectConversations(conversations, page)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalidCursor) {
 			return protocol.DirectConversationPage{}, invalidCursorReasonError(cursorForPage(page))
 		}
 		return protocol.DirectConversationPage{}, err
 	}
-	values := make([]protocol.DirectConversation, 0, len(selected))
-	for _, item := range selected {
-		values = append(values, item.DirectConversation)
-	}
 
 	return protocol.DirectConversationPage{
-		DMs:  values,
+		DMs:  selected,
 		Page: info,
 	}, nil
 }
@@ -335,24 +319,16 @@ func registeredAgentSummary(registration protocol.AgentRegistration, rooms []pro
 }
 
 func paginateAgents(agents []protocol.AgentSummary, page protocol.PageRequest) (protocol.AgentPage, error) {
-	items := make([]agentItem, 0, len(agents))
-	for _, agent := range agents {
-		items = append(items, agentItem{AgentSummary: agent})
-	}
-	selected, info, err := paginate(items, page)
+	selected, info, err := paginateAgentValues(agents, page)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalidCursor) {
 			return protocol.AgentPage{}, invalidCursorReasonError(cursorForPage(page))
 		}
 		return protocol.AgentPage{}, err
 	}
-	values := make([]protocol.AgentSummary, 0, len(selected))
-	for _, item := range selected {
-		values = append(values, item.AgentSummary)
-	}
 
 	return protocol.AgentPage{
-		Agents: values,
+		Agents: selected,
 		Page:   info,
 	}, nil
 }

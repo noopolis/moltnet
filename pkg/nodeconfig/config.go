@@ -3,12 +3,11 @@ package nodeconfig
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/noopolis/moltnet/internal/configfile"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"go.yaml.in/yaml/v3"
 )
@@ -50,7 +49,7 @@ func LoadFile(path string) (Config, error) {
 	}
 
 	var config Config
-	if formatForPath(path) == "json" {
+	if configfile.FormatForPath(path) == "json" {
 		decoder := json.NewDecoder(bytes.NewReader(contents))
 		decoder.DisallowUnknownFields()
 		err = decoder.Decode(&config)
@@ -67,7 +66,7 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, err
 	}
 	if config.hasPlaintextTokens() {
-		if err := validatePrivateConfigMode(path); err != nil {
+		if err := configfile.ValidatePrivateMode(path, "MoltnetNode config", "tokens", "tokens"); err != nil {
 			return Config{}, err
 		}
 	}
@@ -76,24 +75,7 @@ func LoadFile(path string) (Config, error) {
 }
 
 func DiscoverPath(explicit string) (string, bool, error) {
-	if value := strings.TrimSpace(explicit); value != "" {
-		return statPath(value)
-	}
-
-	for _, candidate := range DefaultDiscoveryOrder {
-		path, ok, err := statPath(candidate)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return "", false, err
-		}
-		if ok {
-			return path, true, nil
-		}
-	}
-
-	return "", false, nil
+	return configfile.DiscoverPath(explicit, "", DefaultDiscoveryOrder, "MoltnetNode config")
 }
 
 func (c Config) Validate() error {
@@ -159,24 +141,4 @@ func (c Config) hasPlaintextTokens() bool {
 		}
 	}
 	return false
-}
-
-func formatForPath(path string) string {
-	if strings.EqualFold(filepath.Ext(path), ".json") {
-		return "json"
-	}
-
-	return "yaml"
-}
-
-func statPath(path string) (string, bool, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", false, err
-	}
-	if info.IsDir() {
-		return "", false, fmt.Errorf("MoltnetNode config %q is a directory", path)
-	}
-
-	return path, true, nil
 }

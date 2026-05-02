@@ -39,10 +39,6 @@ func isArtifactPart(part protocol.Part) bool {
 	return part.Kind != protocol.PartKindText || part.URL != "" || part.Filename != "" || part.MediaType != ""
 }
 
-type artifactItem struct{ protocol.Artifact }
-
-func (a artifactItem) GetID() string { return a.Artifact.ID }
-
 func pageArtifactsResult(artifacts []protocol.Artifact, page protocol.PageRequest) (protocol.ArtifactPage, error) {
 	if page.Before == "" && page.After == "" {
 		limit := page.Limit
@@ -63,20 +59,17 @@ func pageArtifactsResult(artifacts []protocol.Artifact, page protocol.PageReques
 		}, nil
 	}
 
-	items := make([]artifactItem, 0, len(artifacts))
-	for _, artifact := range artifacts {
-		items = append(items, artifactItem{Artifact: artifact})
-	}
-	selected, info, err := paginateByID(items, page)
+	selected, info, err := protocol.PaginateByIDWithMode(
+		artifacts,
+		page,
+		func(artifact protocol.Artifact) string { return artifact.ID },
+		protocol.PageHasMoreCursorDirection,
+	)
 	if err != nil {
-		return protocol.ArtifactPage{}, err
-	}
-	values := make([]protocol.Artifact, 0, len(selected))
-	for _, item := range selected {
-		values = append(values, item.Artifact)
+		return protocol.ArtifactPage{}, ErrInvalidCursor
 	}
 	return protocol.ArtifactPage{
-		Artifacts: values,
+		Artifacts: selected,
 		Page:      info,
 	}, nil
 }

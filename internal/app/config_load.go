@@ -1,13 +1,10 @@
 package app
 
 import (
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
+	"github.com/noopolis/moltnet/internal/configfile"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -182,48 +179,5 @@ func mergeEnvStorage(storage StorageConfig) StorageConfig {
 }
 
 func DiscoverPath(explicit string) (string, bool, error) {
-	if value := strings.TrimSpace(explicit); value != "" {
-		return explicitConfigPath(value)
-	}
-	if value, ok := envValue("MOLTNET_CONFIG"); ok {
-		return explicitConfigPath(value)
-	}
-
-	for _, candidate := range DefaultDiscoveryOrder {
-		info, err := os.Stat(candidate)
-		if err == nil && !info.IsDir() {
-			return candidate, true, nil
-		}
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", false, fmt.Errorf("inspect Moltnet config %q: %w", candidate, err)
-		}
-	}
-
-	return "", false, nil
-}
-
-func explicitConfigPath(value string) (string, bool, error) {
-	path := strings.TrimSpace(value)
-	if path == "" {
-		return "", false, nil
-	}
-
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", false, fmt.Errorf("stat Moltnet config %q: %w", path, err)
-	}
-	if info.IsDir() {
-		return "", false, fmt.Errorf("moltnet config %q is a directory", path)
-	}
-
-	return path, true, nil
-}
-
-func configFormat(path string) string {
-	extension := strings.ToLower(filepath.Ext(path))
-	if extension == ".json" {
-		return "json"
-	}
-
-	return "yaml"
+	return configfile.DiscoverPath(explicit, "MOLTNET_CONFIG", DefaultDiscoveryOrder, "Moltnet config")
 }

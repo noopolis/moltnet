@@ -3,12 +3,12 @@ package clientconfig
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/noopolis/moltnet/internal/configfile"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -74,27 +74,7 @@ func LoadFile(path string) (Config, error) {
 }
 
 func DiscoverPath(explicit string) (string, bool, error) {
-	if value := strings.TrimSpace(explicit); value != "" {
-		return statPath(value)
-	}
-	if value := strings.TrimSpace(os.Getenv("MOLTNET_CLIENT_CONFIG")); value != "" {
-		return statPath(value)
-	}
-
-	for _, candidate := range DefaultDiscoveryOrder {
-		path, ok, err := statPath(candidate)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return "", false, err
-		}
-		if ok {
-			return path, true, nil
-		}
-	}
-
-	return "", false, nil
+	return configfile.DiscoverPath(explicit, "MOLTNET_CLIENT_CONFIG", DefaultDiscoveryOrder, "moltnet client config")
 }
 
 func (c Config) Validate() error {
@@ -194,18 +174,6 @@ func (c Config) ResolveAttachment(networkID string) (AttachmentConfig, error) {
 	}
 
 	return AttachmentConfig{}, fmt.Errorf("no Moltnet attachment configured for network %q", networkID)
-}
-
-func statPath(path string) (string, bool, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", false, err
-	}
-	if info.IsDir() {
-		return "", false, fmt.Errorf("moltnet client config %q is a directory", path)
-	}
-
-	return path, true, nil
 }
 
 func DefaultPathForWorkspace(workspace string) string {

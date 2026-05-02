@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
+	"github.com/noopolis/moltnet/internal/configfile"
 	"github.com/noopolis/moltnet/pkg/protocol"
 	"go.yaml.in/yaml/v3"
 )
@@ -73,7 +74,7 @@ func loadFileConfig(path string) (rawConfigFile, error) {
 	}
 
 	var config rawConfigFile
-	switch configFormat(path) {
+	switch configfile.FormatForPath(path) {
 	case "json":
 		err = decodeJSONConfig(contents, &config)
 	default:
@@ -87,7 +88,7 @@ func loadFileConfig(path string) (rawConfigFile, error) {
 		return rawConfigFile{}, fmt.Errorf("validate Moltnet config %q: %w", path, err)
 	}
 	if hasPlaintextPairingTokens(config.Pairings) || hasPlaintextAuthTokens(config.Auth) || hasSensitivePostgresConfig(config.Storage) {
-		if err := validatePrivateConfigMode(path); err != nil {
+		if err := configfile.ValidatePrivateMode(path, "moltnet config", "secrets", "tokens"); err != nil {
 			return rawConfigFile{}, err
 		}
 	}
