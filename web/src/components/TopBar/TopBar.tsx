@@ -5,10 +5,16 @@ export function TopBar() {
   const { data: network, isLoading, error } = useNetwork();
 
   const title = isLoading ? "loading…" : (network?.name || network?.id || "—");
+  const rawVersion = network?.version?.trim() || "";
+  const version = rawVersion
+    ? rawVersion.startsWith("v")
+      ? rawVersion
+      : `v${rawVersion}`
+    : "";
   const subtitle = error
     ? `failed to load network — ${(error as Error).message}`
     : network
-      ? `${network.id} · API ${network.version || "dev"}`
+      ? `network ${network.id}`
       : "connecting to control plane…";
 
   return (
@@ -23,6 +29,11 @@ export function TopBar() {
         <p className="text-[10px] tracking-[0.22em] text-green font-bold uppercase">
           MOLTNET
         </p>
+        {version ? (
+          <span className="text-[10px] tracking-[0.12em] text-mute font-bold">
+            {version}
+          </span>
+        ) : null}
         <span className="text-[10px] tracking-[0.22em] text-ink font-bold uppercase">
           {title}
         </span>

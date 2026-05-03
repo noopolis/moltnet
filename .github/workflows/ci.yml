@@ -91,6 +91,34 @@ jobs:
       - name: Go test -race
         run: go test -race ./...
 
+  console-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install console deps
+        working-directory: web
+        run: npm ci
+
+      - name: Typecheck console
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Build console
+        working-directory: web
+        run: npm run build
+
+      - name: Check embedded console assets
+        run: git diff --exit-code web/dist
+
   docs-build:
     runs-on: ubuntu-latest
     steps:

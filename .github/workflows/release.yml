@@ -20,6 +20,28 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install console deps
+        working-directory: web
+        run: npm ci
+
+      - name: Typecheck console
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Build console
+        working-directory: web
+        run: npm run build
+
+      - name: Check embedded console assets
+        run: git diff --exit-code web/dist
+
       - name: Go vet
         run: go vet ./...
 
@@ -72,6 +94,21 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install console deps
+        working-directory: web
+        run: npm ci
+
+      - name: Build console
+        working-directory: web
+        run: npm run build
 
       - name: Build release tarball
         shell: bash
