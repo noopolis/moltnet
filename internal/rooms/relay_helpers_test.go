@@ -37,6 +37,14 @@ func (r *recordingPairingClient) RelayMessage(
 	pairing protocol.Pairing,
 	request protocol.SendMessageRequest,
 ) (protocol.MessageAccepted, error) {
+	if r.done != nil {
+		defer func() {
+			select {
+			case r.done <- struct{}{}:
+			default:
+			}
+		}()
+	}
 	r.mu.Lock()
 	r.calls = append(r.calls, pairing)
 	r.mu.Unlock()
@@ -51,12 +59,6 @@ func (r *recordingPairingClient) RelayMessage(
 	}
 	if r.block {
 		<-ctx.Done()
-		if r.done != nil {
-			select {
-			case r.done <- struct{}{}:
-			default:
-			}
-		}
 		return protocol.MessageAccepted{}, ctx.Err()
 	}
 	return protocol.MessageAccepted{
@@ -110,7 +112,10 @@ func TestRelayHelpers(t *testing.T) {
 func TestRelayMessageSelection(t *testing.T) {
 	t.Parallel()
 
-	client := &recordingPairingClient{notify: make(chan struct{}, 8)}
+	client := &recordingPairingClient{
+		notify: make(chan struct{}, 8),
+		done:   make(chan struct{}, 8),
+	}
 	memory := store.NewMemoryStore()
 	service := NewService(ServiceConfig{
 		NetworkID: "net_a",
@@ -137,6 +142,7 @@ func TestRelayMessageSelection(t *testing.T) {
 	}
 	service.relayMessage(roomMessage)
 	waitForRelayCalls(t, client, 1)
+	waitForRelayDone(t, client)
 	calls := client.snapshotCalls()
 	if len(calls) != 1 || calls[0].ID != "pair_b" {
 		t.Fatalf("unexpected relay calls %#v", calls)
@@ -191,6 +197,7 @@ func TestRelayMessageSelection(t *testing.T) {
 	service.setPairingStatus("pair_b", "connected")
 	service.relayMessage(dmMessage)
 	waitForRelayCalls(t, client, 1)
+	waitForRelayDone(t, client)
 	calls = client.snapshotCalls()
 	if len(calls) != 1 || calls[0].ID != "pair_b" {
 		t.Fatalf("unexpected dm relay calls %#v", calls)
@@ -324,6 +331,16 @@ func waitForRelayCalls(t *testing.T, client *recordingPairingClient, want int) {
 		return
 	}
 	t.Fatalf("timed out waiting for %d relay calls", want)
+}
+
+func waitForRelayDone(t *testing.T, client *recordingPairingClient) {
+	t.Helper()
+
+	select {
+	case <-client.done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for relay completion")
+	}
 }
 
 func (r *recordingPairingClient) snapshotCalls() []protocol.Pairing {

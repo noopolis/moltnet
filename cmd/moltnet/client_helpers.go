@@ -38,10 +38,6 @@ func loadClientConfig(explicitPath string) (clientconfig.Config, string, error) 
 	return config, path, nil
 }
 
-func resolveClient(explicitPath string, networkID string) (clientconfig.Config, clientconfig.AttachmentConfig, *moltnetclient.Client, error) {
-	return resolveClientForMember(explicitPath, networkID, "")
-}
-
 func resolveClientForMember(
 	explicitPath string,
 	networkID string,
@@ -277,10 +273,10 @@ func validateClientConfigWriteTarget(path string) error {
 		return fmt.Errorf("stat Moltnet client config %q: %w", path, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("Moltnet client config %q must not be a symlink when writing tokens", path)
+		return fmt.Errorf("moltnet client config %q must not be a symlink when writing tokens", path)
 	}
 	if info.IsDir() {
-		return fmt.Errorf("Moltnet client config %q is a directory", path)
+		return fmt.Errorf("moltnet client config %q is a directory", path)
 	}
 	return nil
 }

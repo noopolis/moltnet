@@ -12,10 +12,6 @@ type agentTokenVerifier interface {
 	AuthenticateAgentTokenContext(ctx context.Context, token string) (authn.Claims, bool, error)
 }
 
-func authorized(policy *authn.Policy, scope authn.Scope, next http.HandlerFunc) http.HandlerFunc {
-	return authorizedAny(policy, []authn.Scope{scope}, next)
-}
-
 func authorizedAny(policy *authn.Policy, scopes []authn.Scope, next http.HandlerFunc) http.HandlerFunc {
 	return authorizedAnyWithVerifier(policy, nil, scopes, next)
 }

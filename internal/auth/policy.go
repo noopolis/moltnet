@@ -324,14 +324,6 @@ func newClaims(config TokenConfig) Claims {
 	return NewStaticClaims(config)
 }
 
-func bearerToken(request *http.Request) string {
-	token, ok, err := RequestToken(request)
-	if err != nil || !ok {
-		return ""
-	}
-	return token
-}
-
 func isSupportedScope(scope Scope) bool {
 	switch scope {
 	case ScopeObserve, ScopeWrite, ScopeAdmin, ScopeAttach, ScopePair:
