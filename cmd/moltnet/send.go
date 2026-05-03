@@ -14,6 +14,7 @@ func runSend(args []string) error {
 
 	var (
 		configPath = flags.String("config", "", "explicit Moltnet client config path")
+		memberID   = flags.String("member", "", "Moltnet member id when a network has multiple attachments")
 		networkID  = flags.String("network", "", "Moltnet network id when multiple attachments are configured")
 		targetArg  = flags.String("target", "", "explicit target in the form room:<id> or dm:<id>")
 		text       = flags.String("text", "", "plain text message content")
@@ -34,7 +35,7 @@ func runSend(args []string) error {
 		return fmt.Errorf("send requires --text")
 	}
 
-	_, attachment, client, err := resolveClient(*configPath, *networkID)
+	_, attachment, client, err := resolveClientForMember(*configPath, *networkID, *memberID)
 	if err != nil {
 		return err
 	}

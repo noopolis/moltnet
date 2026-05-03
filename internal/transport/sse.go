@@ -12,6 +12,7 @@ import (
 
 	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/internal/observability"
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 const (
@@ -81,6 +82,17 @@ func handleEventStream(service Service, limiter *streamLimiter) http.HandlerFunc
 }
 
 func newEventStreamHandler(service Service, limiter *streamLimiter, heartbeatInterval time.Duration) http.HandlerFunc {
+	return newFilteredEventStreamHandler(service, limiter, heartbeatInterval, nil)
+}
+
+type eventFilter func(protocol.Event) bool
+
+func newFilteredEventStreamHandler(
+	service Service,
+	limiter *streamLimiter,
+	heartbeatInterval time.Duration,
+	filter eventFilter,
+) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		flusher, ok := responseFlusher(response)
 		if !ok {
@@ -129,6 +141,9 @@ func newEventStreamHandler(service Service, limiter *streamLimiter, heartbeatInt
 				if !ok {
 					return
 				}
+				if filter != nil && !filter(event) {
+					continue
+				}
 
 				payload, err := json.Marshal(event)
 				if err != nil {
@@ -161,6 +176,36 @@ func newEventStreamHandler(service Service, limiter *streamLimiter, heartbeatInt
 				flusher.Flush()
 			}
 		}
+	}
+}
+
+func handlePublicOpenEventStream(service Service, limiter *streamLimiter) http.HandlerFunc {
+	return newFilteredEventStreamHandler(service, limiter, sseHeartbeatInterval, publicOpenEvent)
+}
+
+func publicOpenEvent(event protocol.Event) bool {
+	switch event.Type {
+	case protocol.EventTypeMessageCreated:
+		return event.Message != nil && publicOpenMessageTarget(event.Message.Target)
+	case protocol.EventTypeRoomCreated:
+		return event.Room != nil
+	case protocol.EventTypeThreadCreated:
+		return event.Thread != nil && strings.TrimSpace(event.Thread.RoomID) != ""
+	case protocol.EventTypeReplayGap:
+		return true
+	default:
+		return false
+	}
+}
+
+func publicOpenMessageTarget(target protocol.Target) bool {
+	switch target.Kind {
+	case protocol.TargetKindRoom:
+		return strings.TrimSpace(target.RoomID) != ""
+	case protocol.TargetKindThread:
+		return strings.TrimSpace(target.RoomID) != ""
+	default:
+		return false
 	}
 }
 

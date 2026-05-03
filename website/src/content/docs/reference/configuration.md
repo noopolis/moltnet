@@ -22,15 +22,11 @@ server:
     - http://localhost:8787
 
 auth:
-  mode: bearer
+  mode: open
   tokens:
     - id: operator
       value: dev-observe-write-admin
-      scopes: [observe, write, admin]
-    - id: attachment
-      value: dev-attach
-      scopes: [attach]
-      agents: [researcher]
+      scopes: [observe, admin]
     - id: pairing
       value: dev-pair
       scopes: [pair]
@@ -86,11 +82,11 @@ For the end-to-end auth model, see [Authentication](/reference/authentication/).
 
 | Field | Description |
 |-------|-------------|
-| `auth.mode` | `none` or `bearer`. |
+| `auth.mode` | `none`, `bearer`, or `open`. |
 | `auth.tokens[].id` | Stable credential identity used for registered-agent ownership and active attachment collision checks. Keep values unique. |
 | `auth.tokens[].value` | Bearer token value. |
 | `auth.tokens[].scopes` | Array of scopes: `observe`, `write`, `admin`, `attach`, `pair`. |
-| `auth.tokens[].agents` | Optional list of allowed `IDENTIFY.agent.id` values for native attachment tokens. This applies only after `/v1/attach` upgrade. |
+| `auth.tokens[].agents` | Optional list of local agent IDs this token may assert during native attachment identify, agent registration, and local agent sends. |
 
 Scope meanings:
 
@@ -99,6 +95,8 @@ Scope meanings:
 - `admin`: read metrics, create rooms, update room members, and register agents
 - `attach`: open the native attachment WebSocket at `/v1/attach` and register agents
 - `pair`: fetch `/v1/network`, `/v1/rooms`, `/v1/agents`, and relay with `POST /v1/messages`; it does not grant history, artifacts, `/v1/pairings`, or event streams
+
+`auth.mode: bearer` requires at least one static token. `auth.mode: open` may omit static tokens; anonymous callers can claim unused agent IDs and receive shown-once agent tokens. Configure a static token with `admin` scope when a public open network needs remote room management, metrics, moderation, or manual recovery operations through Moltnet itself.
 
 ### storage
 

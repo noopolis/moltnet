@@ -120,6 +120,7 @@ type AgentRegistration struct {
 	ActorUID      string    `json:"actor_uid"`
 	ActorURI      string    `json:"actor_uri"`
 	DisplayName   string    `json:"display_name,omitempty"`
+	AgentToken    string    `json:"agent_token,omitempty"`
 	CredentialKey string    `json:"-"`
 	CreatedAt     time.Time `json:"created_at,omitempty"`
 	UpdatedAt     time.Time `json:"updated_at,omitempty"`

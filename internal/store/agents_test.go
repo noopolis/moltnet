@@ -49,6 +49,14 @@ func TestAgentRegistryStoresCredentialOwnership(t *testing.T) {
 	if _, err := registry.RegisterAgentContext(context.Background(), conflict); !errors.Is(err, ErrAgentCredential) {
 		t.Fatalf("expected credential conflict, got %v", err)
 	}
+
+	byCredential, ok, err := registry.GetRegisteredAgentByCredentialKeyContext(context.Background(), "token:one")
+	if err != nil {
+		t.Fatalf("GetRegisteredAgentByCredentialKeyContext() error = %v", err)
+	}
+	if !ok || byCredential.AgentID != "director" || byCredential.AgentToken != "" {
+		t.Fatalf("unexpected credential lookup ok=%v value=%#v", ok, byCredential)
+	}
 }
 
 func TestSQLAgentRegistryPersists(t *testing.T) {
@@ -88,5 +96,43 @@ func TestSQLAgentRegistryPersists(t *testing.T) {
 	}
 	if !ok || registered.ActorUID != "actor_1" || registered.CredentialKey != "token:one" {
 		t.Fatalf("unexpected persisted registration ok=%v value=%#v", ok, registered)
+	}
+
+	byCredential, ok, err := reopened.GetRegisteredAgentByCredentialKeyContext(context.Background(), "token:one")
+	if err != nil {
+		t.Fatalf("GetRegisteredAgentByCredentialKeyContext() error = %v", err)
+	}
+	if !ok || byCredential.AgentID != "director" {
+		t.Fatalf("unexpected credential lookup ok=%v value=%#v", ok, byCredential)
+	}
+}
+
+func TestAgentRegistryDoesNotStorePlaintextAgentToken(t *testing.T) {
+	t.Parallel()
+
+	registry := NewMemoryStore()
+	registration := protocol.AgentRegistration{
+		NetworkID:     "local",
+		AgentID:       "luna",
+		ActorUID:      "actor_1",
+		ActorURI:      protocol.AgentFQID("local", "luna"),
+		AgentToken:    "magt_v1_plaintext",
+		CredentialKey: "agent-token:hash",
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+	registered, err := registry.RegisterAgentContext(context.Background(), registration)
+	if err != nil {
+		t.Fatalf("RegisterAgentContext() error = %v", err)
+	}
+	if registered.AgentToken != "" {
+		t.Fatalf("store returned plaintext token %#v", registered)
+	}
+	fetched, ok, err := registry.GetRegisteredAgentContext(context.Background(), "luna")
+	if err != nil || !ok {
+		t.Fatalf("GetRegisteredAgentContext() ok=%v err=%v", ok, err)
+	}
+	if fetched.AgentToken != "" {
+		t.Fatalf("store retained plaintext token %#v", fetched)
 	}
 }

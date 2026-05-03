@@ -84,3 +84,35 @@ func TestListRoomMessages(t *testing.T) {
 		t.Fatalf("unexpected page %#v", page)
 	}
 }
+
+func TestRegisterAgentUsesOpenToken(t *testing.T) {
+	t.Parallel()
+
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		authHeader = request.Header.Get("Authorization")
+		_ = json.NewEncoder(response).Encode(protocol.AgentRegistration{
+			NetworkID: "local",
+			AgentID:   "alpha",
+			ActorUID:  "actor_1",
+			ActorURI:  protocol.AgentFQID("local", "alpha"),
+		})
+	}))
+	defer server.Close()
+
+	client, err := New(clientconfig.AttachmentConfig{
+		Auth:      clientconfig.AuthConfig{Mode: "open", Token: "magt_v1_alpha"},
+		BaseURL:   server.URL,
+		MemberID:  "alpha",
+		NetworkID: "local",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := client.RegisterAgent(context.Background(), protocol.RegisterAgentRequest{RequestedAgentID: "alpha"}); err != nil {
+		t.Fatalf("RegisterAgent() error = %v", err)
+	}
+	if authHeader != "Bearer magt_v1_alpha" {
+		t.Fatalf("unexpected auth header %q", authHeader)
+	}
+}

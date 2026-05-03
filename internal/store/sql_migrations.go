@@ -244,4 +244,11 @@ var sqlMigrations = []migration{
 			)`,
 		},
 	},
+	{
+		Version: 6,
+		Name:    "agent_credential_index",
+		Statements: []string{
+			`CREATE INDEX IF NOT EXISTS idx_agents_credential_key ON agents (credential_key)`,
+		},
+	},
 }

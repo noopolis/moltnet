@@ -13,6 +13,7 @@ func runParticipants(args []string) error {
 
 	var (
 		configPath = flags.String("config", "", "explicit Moltnet client config path")
+		memberID   = flags.String("member", "", "Moltnet member id when a network has multiple attachments")
 		networkID  = flags.String("network", "", "Moltnet network id when multiple attachments are configured")
 		targetArg  = flags.String("target", "", "explicit target in the form room:<id> or dm:<id>")
 	)
@@ -29,7 +30,7 @@ func runParticipants(args []string) error {
 		return err
 	}
 
-	_, attachment, client, err := resolveClient(*configPath, *networkID)
+	_, attachment, client, err := resolveClientForMember(*configPath, *networkID, *memberID)
 	if err != nil {
 		return err
 	}

@@ -43,4 +43,5 @@ type ContextAgentRegistryStore interface {
 	RegisterAgentContext(ctx context.Context, registration protocol.AgentRegistration) (protocol.AgentRegistration, error)
 	ListRegisteredAgentsContext(ctx context.Context) ([]protocol.AgentRegistration, error)
 	GetRegisteredAgentContext(ctx context.Context, agentID string) (protocol.AgentRegistration, bool, error)
+	GetRegisteredAgentByCredentialKeyContext(ctx context.Context, credentialKey string) (protocol.AgentRegistration, bool, error)
 }

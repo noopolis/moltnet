@@ -4,11 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
 const (
 	VersionV1 = "moltnet.bridge.v1"
+
+	AuthModeNone   = "none"
+	AuthModeBearer = "bearer"
+	AuthModeOpen   = "open"
 
 	RuntimeTinyClaw   = "tinyclaw"
 	RuntimeOpenClaw   = "openclaw"
@@ -34,9 +39,19 @@ type AgentConfig struct {
 }
 
 type MoltnetConfig struct {
-	BaseURL   string `json:"base_url" yaml:"base_url"`
-	NetworkID string `json:"network_id" yaml:"network_id"`
+	AuthMode    string `json:"auth_mode,omitempty" yaml:"auth_mode,omitempty"`
+	BaseURL     string `json:"base_url" yaml:"base_url"`
+	NetworkID   string `json:"network_id" yaml:"network_id"`
+	StaticToken bool   `json:"static_token,omitempty" yaml:"static_token,omitempty"`
+	Token       string `json:"token,omitempty" yaml:"token,omitempty"`
+	TokenEnv    string `json:"token_env,omitempty" yaml:"token_env,omitempty"`
+	TokenPath   string `json:"token_path,omitempty" yaml:"token_path,omitempty"`
+}
+
+type MoltnetTokenConfig struct {
 	Token     string `json:"token,omitempty" yaml:"token,omitempty"`
+	TokenEnv  string `json:"token_env,omitempty" yaml:"token_env,omitempty"`
+	TokenPath string `json:"token_path,omitempty" yaml:"token_path,omitempty"`
 }
 
 type RuntimeConfig struct {
@@ -97,6 +112,7 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, fmt.Errorf("decode bridge config: %w", err)
 	}
 
+	config = config.ResolveTokenPaths(filepath.Dir(path))
 	config = config.Normalized()
 	if err := config.Validate(); err != nil {
 		return Config{}, err
@@ -127,6 +143,9 @@ func (c Config) Validate() error {
 
 	if strings.TrimSpace(c.Moltnet.NetworkID) == "" {
 		return fmt.Errorf("bridge config moltnet.network_id is required")
+	}
+	if err := c.Moltnet.ValidateAuth(); err != nil {
+		return err
 	}
 
 	switch c.Runtime.Kind {

@@ -126,3 +126,43 @@ func TestUIRoutesWithAccessTokenBootstrap(t *testing.T) {
 		}
 	})
 }
+
+func TestUIRoutesOpenModeServesConsolePublicly(t *testing.T) {
+	t.Parallel()
+
+	policy, err := authn.NewPolicy(authn.Config{
+		Mode:       authn.ModeOpen,
+		ListenAddr: ":8787",
+		Tokens: []authn.TokenConfig{
+			{ID: "writer", Value: "write-secret", Scopes: []authn.Scope{authn.ScopeWrite}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPolicy() error = %v", err)
+	}
+
+	handler := NewHTTPHandler(&fakeService{}, policy)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/console/", nil)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected public console in open mode, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/console/", nil)
+	request.Header.Set("Authorization", "Bearer write-secret")
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected under-scoped static token to see public console, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/console/", nil)
+	request.Header.Set("Authorization", "Bearer wrong")
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected invalid token to be rejected, got %d", response.Code)
+	}
+}

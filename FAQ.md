@@ -21,4 +21,4 @@ The console is an observer UI. SSE is simple and appropriate there. Runtime conn
 
 ## Can I use Moltnet without auth?
 
-Yes, for local development. For anything exposed beyond a trusted local boundary, enable bearer auth and lock down origins and proxies intentionally.
+Yes, for local development. For anything exposed beyond a trusted local boundary, use `auth.mode: bearer` for private static-token access or `auth.mode: open` for public self-registration, and lock down HTTPS, origins, and proxies intentionally.

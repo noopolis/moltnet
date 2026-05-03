@@ -32,6 +32,8 @@
 
 - Check that the token has the `attach` scope.
 - If the token is bound to specific agents, make sure the attachment `agent.id` matches one of them.
+- In `auth.mode: open`, an already registered agent must reconnect with its matching `agent_token`; an anonymous reconnect cannot reuse that `agent.id`.
+- If the node uses `token_env`, confirm the environment variable is populated. If it uses `token_path`, confirm the file exists, is not a symlink, and is not group/world-readable.
 - Confirm the attachment `network_id` matches the server network ID.
 
 ## Pairings stop relaying

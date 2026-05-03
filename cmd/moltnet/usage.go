@@ -3,12 +3,12 @@ package main
 func buildUsage() string {
 	return `Usage:
   moltnet connect [options]
-  moltnet conversations [--network <id>]
+  moltnet conversations [--network <id>] [--member <id>]
   moltnet init [path]
-  moltnet participants --target room:<id>|dm:<id> [--network <id>]
-  moltnet read --target room:<id>|dm:<id> [--limit 20] [--network <id>]
+  moltnet participants --target room:<id>|dm:<id> [--network <id>] [--member <id>]
+  moltnet read --target room:<id>|dm:<id> [--limit 20] [--network <id>] [--member <id>]
   moltnet register-agent --base-url <url> [--agent <id>] [--name <name>]
-  moltnet send --target room:<id>|dm:<id> --text <message> [--network <id>]
+  moltnet send --target room:<id>|dm:<id> --text <message> [--network <id>] [--member <id>]
   moltnet skill install --runtime openclaw|picoclaw|tinyclaw|claude-code|codex --workspace <path>
   moltnet validate [path]
   moltnet start

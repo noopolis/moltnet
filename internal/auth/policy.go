@@ -6,9 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -17,6 +15,7 @@ const CookieName = "moltnet_auth"
 const (
 	ModeNone   = "none"
 	ModeBearer = "bearer"
+	ModeOpen   = "open"
 )
 
 type Scope string
@@ -57,9 +56,10 @@ type tokenRecord struct {
 }
 
 type Claims struct {
-	TokenID string
-	scopes  map[Scope]struct{}
-	agents  map[string]struct{}
+	TokenID       string
+	CredentialKey string
+	scopes        map[Scope]struct{}
+	agents        map[string]struct{}
 }
 
 type Error struct {
@@ -72,6 +72,7 @@ func (e *Error) Error() string {
 }
 
 type claimsContextKey struct{}
+type modeContextKey struct{}
 
 func NewPolicy(config Config) (*Policy, error) {
 	mode := strings.TrimSpace(config.Mode)
@@ -80,7 +81,7 @@ func NewPolicy(config Config) (*Policy, error) {
 	}
 
 	switch mode {
-	case ModeNone, ModeBearer:
+	case ModeNone, ModeBearer, ModeOpen:
 	default:
 		return nil, fmt.Errorf("unsupported auth mode %q", mode)
 	}
@@ -100,7 +101,7 @@ func NewPolicy(config Config) (*Policy, error) {
 		return policy, nil
 	}
 
-	if len(config.Tokens) == 0 {
+	if mode == ModeBearer && len(config.Tokens) == 0 {
 		return nil, fmt.Errorf("bearer auth requires at least one token")
 	}
 
@@ -131,23 +132,49 @@ func NewPolicy(config Config) (*Policy, error) {
 }
 
 func (p *Policy) Enabled() bool {
+	return p != nil && p.mode != ModeNone
+}
+
+func (p *Policy) Mode() string {
+	if p == nil || strings.TrimSpace(p.mode) == "" {
+		return ModeNone
+	}
+	return p.mode
+}
+
+func (p *Policy) None() bool {
+	return p == nil || p.mode == ModeNone
+}
+
+func (p *Policy) Bearer() bool {
 	return p != nil && p.mode == ModeBearer
 }
 
+func (p *Policy) Open() bool {
+	return p != nil && p.mode == ModeOpen
+}
+
 func (p *Policy) AuthenticateRequest(request *http.Request, scope Scope) (Claims, error) {
-	if !p.Enabled() {
+	if p == nil || p.mode == ModeNone {
 		return Claims{}, nil
 	}
 
-	token := bearerToken(request)
-	if token == "" {
+	token, ok, err := RequestToken(request)
+	if err != nil {
+		return Claims{}, err
+	}
+	if !ok {
 		return Claims{}, &Error{
 			Status:  http.StatusUnauthorized,
 			Message: "authorization required",
 		}
 	}
 
-	config, ok := p.lookupToken(token)
+	return p.AuthenticateToken(token, scope)
+}
+
+func (p *Policy) AuthenticateToken(value string, scope Scope) (Claims, error) {
+	claims, ok := p.StaticClaimsForToken(value)
 	if !ok {
 		return Claims{}, &Error{
 			Status:  http.StatusUnauthorized,
@@ -155,7 +182,6 @@ func (p *Policy) AuthenticateRequest(request *http.Request, scope Scope) (Claims
 		}
 	}
 
-	claims := newClaims(config)
 	if !claims.Allows(scope) {
 		return Claims{}, &Error{
 			Status:  http.StatusForbidden,
@@ -164,6 +190,17 @@ func (p *Policy) AuthenticateRequest(request *http.Request, scope Scope) (Claims
 	}
 
 	return claims, nil
+}
+
+func (p *Policy) StaticClaimsForToken(value string) (Claims, bool) {
+	if p == nil || p.mode == ModeNone {
+		return Claims{}, false
+	}
+	config, ok := p.lookupToken(value)
+	if !ok {
+		return Claims{}, false
+	}
+	return NewStaticClaims(config), true
 }
 
 func (p *Policy) lookupToken(value string) (TokenConfig, bool) {
@@ -176,31 +213,6 @@ func (p *Policy) lookupToken(value string) (TokenConfig, bool) {
 	return TokenConfig{}, false
 }
 
-func (p *Policy) CheckOrigin(request *http.Request) bool {
-	origin := strings.TrimSpace(request.Header.Get("Origin"))
-	if origin == "" {
-		return true
-	}
-
-	normalized, ok := normalizeOrigin(origin)
-	if !ok {
-		return false
-	}
-
-	_, allowed := p.allowedOrigins[normalized]
-	return allowed
-}
-
-func (p *Policy) IsSecureRequest(request *http.Request) bool {
-	if request != nil && request.TLS != nil {
-		return true
-	}
-	if p == nil || !p.trustForwardedProto || request == nil {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(request.Header.Get("X-Forwarded-Proto")), "https")
-}
-
 func (c Claims) Allows(scope Scope) bool {
 	if len(c.scopes) == 0 {
 		return false
@@ -208,6 +220,15 @@ func (c Claims) Allows(scope Scope) bool {
 
 	_, ok := c.scopes[scope]
 	return ok
+}
+
+func (c Claims) AllowsAny(scopes []Scope) bool {
+	for _, scope := range scopes {
+		if c.Allows(scope) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c Claims) AllowsAgent(agentID string) bool {
@@ -219,6 +240,18 @@ func (c Claims) AllowsAgent(agentID string) bool {
 	return ok
 }
 
+func (c Claims) HasAgentRestriction() bool {
+	return len(c.agents) > 0
+}
+
+func (c Claims) StaticToken() bool {
+	return strings.HasPrefix(strings.TrimSpace(c.CredentialKey), "token:")
+}
+
+func (c Claims) AgentToken() bool {
+	return strings.HasPrefix(strings.TrimSpace(c.CredentialKey), "agent-token:")
+}
+
 func WithClaims(ctx context.Context, claims Claims) context.Context {
 	return context.WithValue(ctx, claimsContextKey{}, claims)
 }
@@ -228,12 +261,29 @@ func ClaimsFromContext(ctx context.Context) (Claims, bool) {
 	return claims, ok
 }
 
-func newClaims(config TokenConfig) Claims {
+func WithMode(ctx context.Context, mode string) context.Context {
+	return context.WithValue(ctx, modeContextKey{}, strings.TrimSpace(mode))
+}
+
+func ModeFromContext(ctx context.Context) string {
+	mode, ok := ctx.Value(modeContextKey{}).(string)
+	if !ok || strings.TrimSpace(mode) == "" {
+		return ModeNone
+	}
+	return strings.TrimSpace(mode)
+}
+
+func StaticCredentialKey(tokenID string) string {
+	return "token:" + strings.TrimSpace(tokenID)
+}
+
+func NewStaticClaims(config TokenConfig) Claims {
 	claims := Claims{
 		TokenID: strings.TrimSpace(config.ID),
 		scopes:  make(map[Scope]struct{}),
 		agents:  make(map[string]struct{}),
 	}
+	claims.CredentialKey = StaticCredentialKey(claims.TokenID)
 
 	for _, scope := range config.Scopes {
 		claims.scopes[scope] = struct{}{}
@@ -248,72 +298,38 @@ func newClaims(config TokenConfig) Claims {
 	return claims
 }
 
+func NewAgentTokenClaims(agentID string, credentialKey string) Claims {
+	trimmedAgentID := strings.TrimSpace(agentID)
+	claims := Claims{
+		CredentialKey: strings.TrimSpace(credentialKey),
+		scopes: map[Scope]struct{}{
+			ScopeWrite:  {},
+			ScopeAttach: {},
+		},
+		agents: make(map[string]struct{}),
+	}
+	if trimmedAgentID != "" {
+		claims.agents[trimmedAgentID] = struct{}{}
+	}
+	return claims
+}
+
+func NewCredentialClaims(credentialKey string) Claims {
+	return Claims{
+		CredentialKey: strings.TrimSpace(credentialKey),
+	}
+}
+
+func newClaims(config TokenConfig) Claims {
+	return NewStaticClaims(config)
+}
+
 func bearerToken(request *http.Request) string {
-	if header := strings.TrimSpace(request.Header.Get("Authorization")); header != "" {
-		const prefix = "Bearer "
-		if strings.HasPrefix(header, prefix) {
-			return strings.TrimSpace(strings.TrimPrefix(header, prefix))
-		}
+	token, ok, err := RequestToken(request)
+	if err != nil || !ok {
+		return ""
 	}
-	if cookie, err := request.Cookie(CookieName); err == nil && strings.TrimSpace(cookie.Value) != "" {
-		return strings.TrimSpace(cookie.Value)
-	}
-	if allowsQueryAccessToken(request) {
-		return strings.TrimSpace(request.URL.Query().Get("access_token"))
-	}
-	return ""
-}
-
-func allowsQueryAccessToken(request *http.Request) bool {
-	path := strings.TrimSpace(request.URL.Path)
-	return path == "/console" || strings.HasPrefix(path, "/console/")
-}
-
-func normalizeOrigins(origins []string, listenAddr string) []string {
-	var normalized []string
-	for _, origin := range origins {
-		if value, ok := normalizeOrigin(origin); ok {
-			normalized = append(normalized, value)
-		}
-	}
-	if len(normalized) > 0 {
-		return normalized
-	}
-	return defaultOrigins(listenAddr)
-}
-
-func normalizeOrigin(value string) (string, bool) {
-	parsed, err := url.Parse(strings.TrimSpace(value))
-	if err != nil {
-		return "", false
-	}
-	if parsed.Scheme == "" || parsed.Host == "" {
-		return "", false
-	}
-	if parsed.Path != "" && parsed.Path != "/" {
-		return "", false
-	}
-	return parsed.Scheme + "://" + parsed.Host, true
-}
-
-func defaultOrigins(listenAddr string) []string {
-	host, port, err := net.SplitHostPort(strings.TrimSpace(listenAddr))
-	if err != nil {
-		return nil
-	}
-
-	hosts := []string{"localhost", "127.0.0.1"}
-	trimmedHost := strings.TrimSpace(host)
-	if trimmedHost != "" && trimmedHost != "0.0.0.0" && trimmedHost != "::" {
-		hosts = append(hosts, strings.Trim(trimmedHost, "[]"))
-	}
-
-	var origins []string
-	for _, item := range hosts {
-		origins = append(origins, "http://"+net.JoinHostPort(item, port))
-		origins = append(origins, "https://"+net.JoinHostPort(item, port))
-	}
-	return origins
+	return token
 }
 
 func isSupportedScope(scope Scope) bool {

@@ -1,6 +1,10 @@
 package protocol
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestValidateTarget(t *testing.T) {
 	t.Parallel()
@@ -86,5 +90,28 @@ func TestUniqueParticipantIDs(t *testing.T) {
 	participants := UniqueTrimmedStrings([]string{" writer ", "researcher", "writer", "", "researcher"})
 	if len(participants) != 2 || participants[0] != "writer" || participants[1] != "researcher" {
 		t.Fatalf("unexpected participants %#v", participants)
+	}
+}
+
+func TestAgentRegistrationAgentTokenJSON(t *testing.T) {
+	t.Parallel()
+
+	payload, err := json.Marshal(AgentRegistration{
+		NetworkID:     "local",
+		AgentID:       "luna",
+		ActorUID:      "actor_1",
+		ActorURI:      AgentFQID("local", "luna"),
+		AgentToken:    "magt_v1_secret",
+		CredentialKey: "agent-token:hash",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	text := string(payload)
+	if !strings.Contains(text, `"agent_token":"magt_v1_secret"`) {
+		t.Fatalf("expected agent_token in JSON %s", text)
+	}
+	if strings.Contains(text, "credential") || strings.Contains(text, "agent-token:hash") {
+		t.Fatalf("credential key leaked in JSON %s", text)
 	}
 }

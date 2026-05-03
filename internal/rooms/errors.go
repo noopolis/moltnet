@@ -24,6 +24,8 @@ var (
 	ErrHumanIngressDisabled = errors.New("human ingress is disabled")
 	ErrRemotePairing        = errors.New("paired network request failed")
 	ErrAgentConflict        = errors.New("agent identity conflict")
+	ErrAgentUnauthorized    = errors.New("agent identity requires authentication")
+	ErrAgentForbidden       = errors.New("agent identity is forbidden")
 )
 
 func unknownRoomError(roomID string) error {
@@ -127,6 +129,46 @@ func agentConflictError(agentID string) error {
 		status: http.StatusConflict,
 		msg:    fmt.Sprintf("agent %q is already registered with different credentials", agentID),
 		cause:  ErrAgentConflict,
+	}
+}
+
+func agentRegisteredError(agentID string) error {
+	return &Error{
+		status: http.StatusConflict,
+		msg:    fmt.Sprintf("agent %q is already registered", agentID),
+		cause:  ErrAgentConflict,
+	}
+}
+
+func agentRequiresTokenError(agentID string) error {
+	return &Error{
+		status: http.StatusUnauthorized,
+		msg:    fmt.Sprintf("agent %q requires its agent token", agentID),
+		cause:  ErrAgentUnauthorized,
+	}
+}
+
+func agentTokenInvalidForAgentError(agentID string) error {
+	return &Error{
+		status: http.StatusConflict,
+		msg:    fmt.Sprintf("agent token is not valid for agent %q", agentID),
+		cause:  ErrAgentConflict,
+	}
+}
+
+func agentForbiddenError(message string) error {
+	return &Error{
+		status: http.StatusForbidden,
+		msg:    strings.TrimSpace(message),
+		cause:  ErrAgentForbidden,
+	}
+}
+
+func agentRegistrationRequiredError(agentID string) error {
+	return &Error{
+		status: http.StatusUnauthorized,
+		msg:    fmt.Sprintf("agent %q must be registered before sending", agentID),
+		cause:  ErrAgentUnauthorized,
 	}
 }
 

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,12 +39,20 @@ func loadClientConfig(explicitPath string) (clientconfig.Config, string, error) 
 }
 
 func resolveClient(explicitPath string, networkID string) (clientconfig.Config, clientconfig.AttachmentConfig, *moltnetclient.Client, error) {
+	return resolveClientForMember(explicitPath, networkID, "")
+}
+
+func resolveClientForMember(
+	explicitPath string,
+	networkID string,
+	memberID string,
+) (clientconfig.Config, clientconfig.AttachmentConfig, *moltnetclient.Client, error) {
 	config, _, err := loadClientConfig(explicitPath)
 	if err != nil {
 		return clientconfig.Config{}, clientconfig.AttachmentConfig{}, nil, err
 	}
 
-	attachment, err := config.ResolveAttachment(networkID)
+	attachment, err := config.ResolveAttachmentFor(networkID, memberID)
 	if err != nil {
 		return clientconfig.Config{}, clientconfig.AttachmentConfig{}, nil, err
 	}
@@ -53,6 +63,63 @@ func resolveClient(explicitPath string, networkID string) (clientconfig.Config, 
 	}
 
 	return config, attachment, client, nil
+}
+
+func flagWasSet(flags *flag.FlagSet, name string) bool {
+	wasSet := false
+	flags.Visit(func(flag *flag.Flag) {
+		if flag.Name == name {
+			wasSet = true
+		}
+	})
+	return wasSet
+}
+
+func mergeAuthFromConfig(
+	existing clientconfig.AuthConfig,
+	requested clientconfig.AuthConfig,
+	authModeSet bool,
+	sourceExplicit bool,
+) clientconfig.AuthConfig {
+	if sourceExplicit {
+		return requested
+	}
+	if !authModeSet {
+		return existing
+	}
+
+	requestedMode := authMode(requested)
+	existingMode := authMode(existing)
+	if requestedMode != existingMode && requestedMode != bridgeconfig.AuthModeOpen {
+		return requested
+	}
+	if !existing.HasTokenSource() {
+		return requested
+	}
+	requested.Token = existing.Token
+	requested.TokenEnv = existing.TokenEnv
+	requested.TokenPath = existing.TokenPath
+	return requested
+}
+
+func authMode(auth clientconfig.AuthConfig) string {
+	mode := strings.TrimSpace(auth.Mode)
+	if mode != "" {
+		return mode
+	}
+	if auth.HasTokenSource() {
+		return bridgeconfig.AuthModeBearer
+	}
+	return bridgeconfig.AuthModeNone
+}
+
+func applyAgentTokenToAuth(auth clientconfig.AuthConfig, token string) clientconfig.AuthConfig {
+	auth.Mode = bridgeconfig.AuthModeOpen
+	if strings.TrimSpace(auth.TokenEnv) != "" || strings.TrimSpace(auth.TokenPath) != "" {
+		return auth
+	}
+	auth.Token = strings.TrimSpace(token)
+	return auth
 }
 
 func printJSON(value any) error {
@@ -159,7 +226,12 @@ func writeClientConfig(path string, config clientconfig.Config) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := validateClientConfigWriteTarget(path); err != nil {
+		return err
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create Moltnet client config directory: %w", err)
 	}
 
@@ -168,10 +240,48 @@ func writeClientConfig(path string, config clientconfig.Config) error {
 		return fmt.Errorf("encode Moltnet client config: %w", err)
 	}
 
-	if err := os.WriteFile(path, append(payload, '\n'), 0o600); err != nil {
-		return fmt.Errorf("write Moltnet client config: %w", err)
+	temp, err := os.CreateTemp(dir, ".config-*.json")
+	if err != nil {
+		return fmt.Errorf("create temporary Moltnet client config: %w", err)
+	}
+	tempPath := temp.Name()
+	defer func() { _ = os.Remove(tempPath) }()
+
+	if err := temp.Chmod(0o600); err != nil {
+		_ = temp.Close()
+		return fmt.Errorf("chmod temporary Moltnet client config: %w", err)
+	}
+	if _, err := temp.Write(append(payload, '\n')); err != nil {
+		_ = temp.Close()
+		return fmt.Errorf("write temporary Moltnet client config: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("close temporary Moltnet client config: %w", err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("replace Moltnet client config: %w", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("chmod Moltnet client config: %w", err)
 	}
 
+	return nil
+}
+
+func validateClientConfigWriteTarget(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat Moltnet client config %q: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("Moltnet client config %q must not be a symlink when writing tokens", path)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("Moltnet client config %q is a directory", path)
+	}
 	return nil
 }
 

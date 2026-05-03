@@ -1,6 +1,10 @@
 package protocol
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestAttachmentFrameFields(t *testing.T) {
 	t.Parallel()
@@ -28,5 +32,23 @@ func TestAttachmentFrameFields(t *testing.T) {
 	}
 	if !frame.Capabilities.Rooms || !frame.Capabilities.Threads || !frame.Capabilities.DMs {
 		t.Fatalf("unexpected capabilities %#v", frame.Capabilities)
+	}
+}
+
+func TestAttachmentReadyAgentTokenJSON(t *testing.T) {
+	t.Parallel()
+
+	payload, err := json.Marshal(AttachmentFrame{
+		Op:         AttachmentOpReady,
+		Version:    AttachmentProtocolV1,
+		NetworkID:  "local",
+		AgentID:    "luna",
+		AgentToken: "magt_v1_secret",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if !strings.Contains(string(payload), `"agent_token":"magt_v1_secret"`) {
+		t.Fatalf("expected agent_token in READY JSON %s", payload)
 	}
 }

@@ -89,9 +89,15 @@ func handleAttachment(
 		Name:             agent.Name,
 	})
 	if err != nil {
+		message := err.Error()
+		if policy != nil && policy.Open() {
+			if _, ok := authn.ClaimsFromContext(request.Context()); !ok && strings.Contains(message, "already registered") {
+				message = fmt.Sprintf("agent %q requires its agent token", agent.ID)
+			}
+		}
 		_ = writer.write(protocol.AttachmentFrame{
 			Op:    protocol.AttachmentOpError,
-			Error: err.Error(),
+			Error: message,
 		})
 		return
 	}
@@ -101,7 +107,10 @@ func handleAttachment(
 	if agent.Name == "" {
 		agent.Name = registration.DisplayName
 	}
-	release, err := attachments.acquire(agent.ID, attachmentCredentialKey(request.Context()))
+	release, err := attachments.acquire(
+		agent.ID,
+		attachmentCredentialForRegistration(request.Context(), registration.CredentialKey),
+	)
 	if err != nil {
 		_ = writer.write(protocol.AttachmentFrame{
 			Op:    protocol.AttachmentOpError,
@@ -113,12 +122,13 @@ func handleAttachment(
 	session := newAttachmentSession(strings.TrimSpace(frame.Cursor))
 
 	if err := writer.write(protocol.AttachmentFrame{
-		Op:        protocol.AttachmentOpReady,
-		Version:   protocol.AttachmentProtocolV1,
-		NetworkID: service.Network().ID,
-		AgentID:   agent.ID,
-		ActorUID:  registration.ActorUID,
-		ActorURI:  registration.ActorURI,
+		Op:         protocol.AttachmentOpReady,
+		Version:    protocol.AttachmentProtocolV1,
+		NetworkID:  service.Network().ID,
+		AgentID:    agent.ID,
+		ActorUID:   registration.ActorUID,
+		ActorURI:   registration.ActorURI,
+		AgentToken: registration.AgentToken,
 	}); err != nil {
 		return
 	}
@@ -134,6 +144,7 @@ func handleAttachment(
 	heartbeatTicker := time.NewTicker(attachmentHeartbeatInterval() / 2)
 	defer heartbeatTicker.Stop()
 
+	filter := attachmentEventFilter(policy, request.Context(), service.Network().ID, agent.ID)
 	stream := service.SubscribeFrom(ctx, session.ResumeCursor())
 	for {
 		select {
@@ -155,6 +166,9 @@ func handleAttachment(
 		case event, ok := <-stream:
 			if !ok {
 				return
+			}
+			if filter != nil && !filter(event) {
+				continue
 			}
 			session.NoteSent(event.ID)
 
@@ -212,6 +226,55 @@ func identifiedAgent(frame protocol.AttachmentFrame, networkID string) (protocol
 	}
 
 	return agent, nil
+}
+
+func attachmentEventFilter(
+	policy *authn.Policy,
+	ctx context.Context,
+	networkID string,
+	agentID string,
+) eventFilter {
+	if policy == nil || !policy.Open() {
+		return nil
+	}
+	if claims, ok := authn.ClaimsFromContext(ctx); ok &&
+		(claims.Allows(authn.ScopeObserve) || claims.Allows(authn.ScopeAdmin)) {
+		return nil
+	}
+
+	return func(event protocol.Event) bool {
+		return publicOpenEvent(event) || attachedAgentEvent(event, networkID, agentID)
+	}
+}
+
+func attachedAgentEvent(event protocol.Event, networkID string, agentID string) bool {
+	switch event.Type {
+	case protocol.EventTypeMessageCreated:
+		return event.Message != nil && attachedAgentMessage(event.Message, networkID, agentID)
+	case protocol.EventTypeDMCreated:
+		return event.DM != nil && participantsIncludeAttachedAgent(event.DM.ParticipantIDs, networkID, agentID)
+	default:
+		return false
+	}
+}
+
+func attachedAgentMessage(message *protocol.Message, networkID string, agentID string) bool {
+	if message.Target.Kind != protocol.TargetKindDM {
+		return false
+	}
+	if participantsIncludeAttachedAgent(message.Target.ParticipantIDs, networkID, agentID) {
+		return true
+	}
+	return false
+}
+
+func participantsIncludeAttachedAgent(participants []string, networkID string, agentID string) bool {
+	for _, participantID := range participants {
+		if protocol.ActorMatches(networkID, agentID, participantID) {
+			return true
+		}
+	}
+	return false
 }
 
 func consumeAttachmentFrames(
@@ -302,13 +365,6 @@ func attachmentReadTimeout() time.Duration {
 	return attachmentHeartbeatInterval() * 2
 }
 
-type attachmentSession struct {
-	mu           sync.Mutex
-	resumeCursor string
-	pending      map[string]struct{}
-	order        []string
-}
-
 type attachmentFrameError struct {
 	message string
 	err     error
@@ -335,82 +391,4 @@ func attachmentFrameErrorMessage(err error) (string, bool) {
 		return "", false
 	}
 	return frameErr.message, true
-}
-
-func newAttachmentSession(resumeCursor string) *attachmentSession {
-	return &attachmentSession{
-		resumeCursor: strings.TrimSpace(resumeCursor),
-		pending:      make(map[string]struct{}),
-		order:        make([]string, 0, maxPendingAttachmentAcks),
-	}
-}
-
-func (s *attachmentSession) NoteSent(cursor string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cursor = strings.TrimSpace(cursor)
-	if cursor == "" {
-		return
-	}
-	if _, ok := s.pending[cursor]; ok {
-		return
-	}
-	s.pending[cursor] = struct{}{}
-	s.order = append(s.order, cursor)
-	s.compactPendingLocked()
-}
-
-func (s *attachmentSession) Ack(cursor string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cursor = strings.TrimSpace(cursor)
-	if cursor == "" {
-		return false
-	}
-	if _, ok := s.pending[cursor]; !ok {
-		return false
-	}
-
-	delete(s.pending, cursor)
-	s.resumeCursor = cursor
-	s.trimAckedPrefixLocked()
-	return true
-}
-
-func (s *attachmentSession) ResumeCursor() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.resumeCursor
-}
-
-func (s *attachmentSession) compactPendingLocked() {
-	for len(s.pending) > maxPendingAttachmentAcks && len(s.order) > 0 {
-		oldest := s.order[0]
-		s.order = s.order[1:]
-		if _, ok := s.pending[oldest]; !ok {
-			continue
-		}
-		delete(s.pending, oldest)
-		s.resumeCursor = oldest
-	}
-}
-
-func (s *attachmentSession) trimAckedPrefixLocked() {
-	trim := 0
-	for trim < len(s.order) {
-		if _, ok := s.pending[s.order[trim]]; ok {
-			break
-		}
-		trim++
-	}
-	if trim == 0 {
-		return
-	}
-	if trim >= len(s.order) {
-		s.order = make([]string, 0, maxPendingAttachmentAcks)
-		return
-	}
-	remaining := append(make([]string, 0, len(s.order)-trim), s.order[trim:]...)
-	s.order = remaining
 }

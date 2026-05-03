@@ -9,7 +9,7 @@ import (
 	web "github.com/noopolis/moltnet/web"
 )
 
-func attachUIRoutes(mux *http.ServeMux, policy *authn.Policy) {
+func attachUIRoutes(mux *http.ServeMux, policy *authn.Policy, verifier agentTokenVerifier) {
 	staticFiles, err := fs.Sub(web.Files, "dist")
 	if err != nil {
 		assetUnavailable := func(response http.ResponseWriter, request *http.Request) {
@@ -30,13 +30,13 @@ func attachUIRoutes(mux *http.ServeMux, policy *authn.Policy) {
 		}
 		http.Redirect(response, request, "/console/", http.StatusTemporaryRedirect)
 	})
-	mux.HandleFunc("GET /console/", authorizedConsole(policy, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /console/", authorizedConsole(policy, verifier, func(response http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/console/" && maybeSetConsoleAuthCookie(policy, response, request) {
 			return
 		}
 		http.StripPrefix("/console/", spa).ServeHTTP(response, request)
 	}))
-	mux.HandleFunc("GET /console", authorizedConsole(policy, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /console", authorizedConsole(policy, verifier, func(response http.ResponseWriter, request *http.Request) {
 		if maybeSetConsoleAuthCookie(policy, response, request) {
 			return
 		}

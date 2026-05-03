@@ -26,20 +26,23 @@ const (
 )
 
 type MoltnetClient struct {
-	baseURL string
-	client  *http.Client
-	dialer  *websocket.Dialer
-	token   string
-	mu      sync.Mutex
-	cursor  string
+	baseURL  string
+	client   *http.Client
+	dialer   *websocket.Dialer
+	token    string
+	tokenErr error
+	mu       sync.Mutex
+	cursor   string
 }
 
 func NewMoltnetClient(config bridgeconfig.Config) *MoltnetClient {
+	token, _, err := config.Moltnet.ResolveToken()
 	return &MoltnetClient{
-		baseURL: strings.TrimRight(config.Moltnet.BaseURL, "/"),
-		client:  &http.Client{Timeout: 15 * time.Second},
-		dialer:  websocket.DefaultDialer,
-		token:   config.Moltnet.Token,
+		baseURL:  strings.TrimRight(config.Moltnet.BaseURL, "/"),
+		client:   &http.Client{Timeout: 15 * time.Second},
+		dialer:   websocket.DefaultDialer,
+		token:    token,
+		tokenErr: err,
 	}
 }
 
@@ -78,7 +81,11 @@ func (c *MoltnetClient) StreamEventsReady(
 	if err := c.identify(connection, config); err != nil {
 		return err
 	}
-	if err := c.expectReady(connection, readTimeout); err != nil {
+	ready, err := c.expectReady(connection, readTimeout)
+	if err != nil {
+		return err
+	}
+	if err := c.applyReadyToken(config, ready.AgentToken); err != nil {
 		return err
 	}
 	if onReady != nil {
@@ -151,6 +158,10 @@ func (c *MoltnetClient) SendMessage(
 	ctx context.Context,
 	requestPayload protocol.SendMessageRequest,
 ) (protocol.MessageAccepted, error) {
+	if err := c.resolveTokenErr(); err != nil {
+		return protocol.MessageAccepted{}, err
+	}
+
 	body, err := json.Marshal(requestPayload)
 	if err != nil {
 		return protocol.MessageAccepted{}, fmt.Errorf("encode moltnet message: %w", err)
@@ -167,8 +178,8 @@ func (c *MoltnetClient) SendMessage(
 	}
 
 	request.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		request.Header.Set("Authorization", "Bearer "+c.token)
+	if token := c.currentToken(); token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	response, err := c.client.Do(request)
@@ -193,14 +204,21 @@ func (c *MoltnetClient) connect(
 	ctx context.Context,
 	config bridgeconfig.Config,
 ) (*websocket.Conn, *http.Response, error) {
+	if err := c.resolveTokenErr(); err != nil {
+		return nil, nil, err
+	}
+	if err := c.prepareOpenClaim(config); err != nil {
+		return nil, nil, err
+	}
+
 	endpoint, err := attachmentURL(c.baseURL)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	headers := http.Header{}
-	if c.token != "" {
-		headers.Set("Authorization", "Bearer "+c.token)
+	if token := c.currentToken(); token != "" {
+		headers.Set("Authorization", "Bearer "+token)
 	}
 
 	connection, response, err := c.dialer.DialContext(ctx, endpoint, headers)
@@ -243,18 +261,18 @@ func (c *MoltnetClient) identify(connection *websocket.Conn, config bridgeconfig
 	})
 }
 
-func (c *MoltnetClient) expectReady(connection *websocket.Conn, readTimeout time.Duration) error {
+func (c *MoltnetClient) expectReady(connection *websocket.Conn, readTimeout time.Duration) (protocol.AttachmentFrame, error) {
 	frame, err := c.readFrame(connection, readTimeout)
 	if err != nil {
-		return err
+		return protocol.AttachmentFrame{}, err
 	}
 	if frame.Op == protocol.AttachmentOpError {
-		return fmt.Errorf("attachment gateway error: %s", strings.TrimSpace(frame.Error))
+		return protocol.AttachmentFrame{}, fmt.Errorf("attachment gateway error: %s", strings.TrimSpace(frame.Error))
 	}
 	if frame.Op != protocol.AttachmentOpReady {
-		return fmt.Errorf("expected %s frame, got %s", protocol.AttachmentOpReady, frame.Op)
+		return protocol.AttachmentFrame{}, fmt.Errorf("expected %s frame, got %s", protocol.AttachmentOpReady, frame.Op)
 	}
-	return nil
+	return frame, nil
 }
 
 func (c *MoltnetClient) readFrame(

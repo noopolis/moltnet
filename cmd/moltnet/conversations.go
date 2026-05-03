@@ -15,6 +15,7 @@ func runConversations(args []string) error {
 
 	var (
 		configPath = flags.String("config", "", "explicit Moltnet client config path")
+		memberID   = flags.String("member", "", "Moltnet member id when a network has multiple attachments")
 		networkID  = flags.String("network", "", "Moltnet network id when multiple attachments are configured")
 	)
 
@@ -25,7 +26,7 @@ func runConversations(args []string) error {
 		return fmt.Errorf("conversations does not accept positional arguments")
 	}
 
-	_, attachment, client, err := resolveClient(*configPath, *networkID)
+	_, attachment, client, err := resolveClientForMember(*configPath, *networkID, *memberID)
 	if err != nil {
 		return err
 	}

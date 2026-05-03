@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -136,15 +137,40 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 }
 
 func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Actor, origin protocol.MessageOrigin) error {
-	if s.agentRegistry == nil || strings.TrimSpace(actor.Type) == "human" {
-		return nil
+	if s.remoteOriginRequiresPairCheck(ctx, actor, origin) {
+		return agentConflictError("remote origin actor")
+	}
+	if strings.TrimSpace(actor.Type) == "human" {
+		return s.validateHumanSender(ctx, origin)
 	}
 	if s.isPairedRemoteOriginActor(ctx, actor, origin) {
 		return nil
 	}
-	agentID := strings.TrimSpace(actor.ID)
+	agentID, local := s.agentCollisionID(actor)
 	if agentID == "" {
 		return nil
+	}
+	mode := authn.ModeFromContext(ctx)
+	claims, hasClaims := authn.ClaimsFromContext(ctx)
+	if mode == authn.ModeOpen && !local {
+		return agentForbiddenError(fmt.Sprintf("remote-origin agent %q requires pair scope", agentID))
+	}
+	if !local && hasClaims {
+		return agentConflictError(agentID)
+	}
+	if s.agentRegistry == nil {
+		return nil
+	}
+	if hasClaims {
+		if claims.Allows(authn.ScopePair) && !claims.Allows(authn.ScopeWrite) {
+			return agentForbiddenError("pair tokens cannot assert local agents")
+		}
+		if !claims.AllowsAgent(agentID) {
+			if claims.AgentToken() {
+				return agentTokenInvalidForAgentError(agentID)
+			}
+			return agentForbiddenError(fmt.Sprintf("agent %q is not allowed for this token", agentID))
+		}
 	}
 
 	registration, ok, err := s.registeredAgent(ctx, agentID)
@@ -152,10 +178,83 @@ func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Act
 		return err
 	}
 	if !ok {
+		if mode == authn.ModeOpen {
+			return agentRegistrationRequiredError(agentID)
+		}
 		return nil
 	}
-	if registration.CredentialKey != registrationCredentialKey(ctx) {
+	credentialKey := registrationCredentialKey(ctx)
+	if strings.TrimSpace(credentialKey) == "anonymous" {
+		if mode == authn.ModeOpen {
+			return agentRequiresTokenError(agentID)
+		}
+		if registration.CredentialKey == credentialKey {
+			return nil
+		}
+	}
+	if registration.CredentialKey == credentialKey {
+		if mode == authn.ModeOpen && (!hasClaims || !claims.Allows(authn.ScopeWrite)) {
+			return agentForbiddenError(fmt.Sprintf("agent %q requires write scope", agentID))
+		}
+		return nil
+	}
+	if mode == authn.ModeOpen && hasClaims && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite) {
+		return nil
+	}
+	if hasClaims && claims.AgentToken() {
+		return agentTokenInvalidForAgentError(agentID)
+	}
+	if mode == authn.ModeOpen && !hasClaims {
+		return agentRequiresTokenError(agentID)
+	}
+	if mode == authn.ModeOpen && hasClaims && !claims.Allows(authn.ScopeWrite) {
+		return agentForbiddenError(fmt.Sprintf("agent %q requires write scope", agentID))
+	}
+	if mode == authn.ModeOpen {
 		return agentConflictError(agentID)
+	}
+	if registration.CredentialKey != credentialKey {
+		return agentConflictError(agentID)
+	}
+	return nil
+}
+
+func (s *Service) remoteOriginRequiresPairCheck(
+	ctx context.Context,
+	actor protocol.Actor,
+	origin protocol.MessageOrigin,
+) bool {
+	originNetworkID := strings.TrimSpace(origin.NetworkID)
+	if originNetworkID == "" || originNetworkID == s.networkID {
+		return false
+	}
+	claims, ok := authn.ClaimsFromContext(ctx)
+	if !ok || !claims.Allows(authn.ScopePair) {
+		return false
+	}
+	return !actorHasExplicitConsistentNetworkID(actor, originNetworkID)
+}
+
+func (s *Service) validateHumanSender(ctx context.Context, origin protocol.MessageOrigin) error {
+	if originNetworkID := strings.TrimSpace(origin.NetworkID); originNetworkID != "" && originNetworkID != s.networkID {
+		claims, ok := authn.ClaimsFromContext(ctx)
+		if !ok || !claims.Allows(authn.ScopePair) {
+			return agentForbiddenError("remote-origin human sender requires pair scope")
+		}
+	}
+	if authn.ModeFromContext(ctx) != authn.ModeOpen {
+		return nil
+	}
+	claims, ok := authn.ClaimsFromContext(ctx)
+	if !ok {
+		return &Error{
+			status: http.StatusUnauthorized,
+			msg:    "human ingress requires a write token",
+			cause:  ErrAgentUnauthorized,
+		}
+	}
+	if claims.AgentToken() || !claims.Allows(authn.ScopeWrite) {
+		return agentForbiddenError("human ingress requires a static write token")
 	}
 	return nil
 }
@@ -169,23 +268,42 @@ func (s *Service) isPairedRemoteOriginActor(ctx context.Context, actor protocol.
 	if !ok || !claims.Allows(authn.ScopePair) {
 		return false
 	}
-	return explicitActorNetworkID(actor) == originNetworkID
+	return actorHasExplicitConsistentNetworkID(actor, originNetworkID)
 }
 
-func explicitActorNetworkID(actor protocol.Actor) string {
-	if networkID := strings.TrimSpace(actor.NetworkID); networkID != "" {
-		return networkID
+func (s *Service) agentCollisionID(actor protocol.Actor) (string, bool) {
+	if networkID, agentID, ok := protocol.ParseScopedAgentID(actor.ID); ok {
+		return strings.TrimSpace(agentID), strings.TrimSpace(networkID) == s.networkID
 	}
-	if networkID, _, ok := protocol.ParseAgentFQID(actor.FQID); ok {
-		return networkID
+	if networkID, agentID, ok := protocol.ParseAgentFQID(actor.ID); ok {
+		return strings.TrimSpace(agentID), strings.TrimSpace(networkID) == s.networkID
 	}
-	if networkID, _, ok := protocol.ParseScopedAgentID(actor.ID); ok {
-		return networkID
+	if networkID, _, ok := protocol.ParseAgentFQID(actor.FQID); ok && strings.TrimSpace(networkID) != s.networkID {
+		return strings.TrimSpace(actor.ID), false
 	}
-	if networkID, _, ok := protocol.ParseAgentFQID(actor.ID); ok {
-		return networkID
+	if networkID := strings.TrimSpace(actor.NetworkID); networkID != "" && networkID != s.networkID {
+		return strings.TrimSpace(actor.ID), false
 	}
-	return ""
+	return strings.TrimSpace(actor.ID), true
+}
+
+func actorHasExplicitConsistentNetworkID(actor protocol.Actor, networkID string) bool {
+	if strings.TrimSpace(actor.NetworkID) != networkID {
+		return false
+	}
+	if parsedNetworkID, _, ok := protocol.ParseAgentFQID(actor.FQID); ok &&
+		strings.TrimSpace(parsedNetworkID) != networkID {
+		return false
+	}
+	if parsedNetworkID, _, ok := protocol.ParseScopedAgentID(actor.ID); ok &&
+		strings.TrimSpace(parsedNetworkID) != networkID {
+		return false
+	}
+	if parsedNetworkID, _, ok := protocol.ParseAgentFQID(actor.ID); ok &&
+		strings.TrimSpace(parsedNetworkID) != networkID {
+		return false
+	}
+	return true
 }
 
 func (s *Service) Subscribe(ctx context.Context) <-chan protocol.Event {

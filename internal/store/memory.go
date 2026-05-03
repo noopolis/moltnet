@@ -127,11 +127,14 @@ func (s *MemoryStore) RegisterAgentContext(
 	_ context.Context,
 	registration protocol.AgentRegistration,
 ) (protocol.AgentRegistration, error) {
+	registration.AgentToken = ""
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	existing, ok := s.agents[registration.AgentID]
 	if ok {
+		existing.AgentToken = ""
 		if existing.CredentialKey != registration.CredentialKey {
 			return protocol.AgentRegistration{}, ErrAgentCredential
 		}
@@ -170,6 +173,26 @@ func (s *MemoryStore) GetRegisteredAgentContext(
 
 	agent, ok := s.agents[strings.TrimSpace(agentID)]
 	return agent, ok, nil
+}
+
+func (s *MemoryStore) GetRegisteredAgentByCredentialKeyContext(
+	_ context.Context,
+	credentialKey string,
+) (protocol.AgentRegistration, bool, error) {
+	trimmed := strings.TrimSpace(credentialKey)
+	if trimmed == "" {
+		return protocol.AgentRegistration{}, false, nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, agent := range s.agents {
+		if agent.CredentialKey == trimmed {
+			return agent, true, nil
+		}
+	}
+	return protocol.AgentRegistration{}, false, nil
 }
 
 func (s *MemoryStore) UpdateRoomMembers(roomID string, add []string, remove []string) (protocol.Room, error) {

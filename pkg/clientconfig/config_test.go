@@ -94,6 +94,26 @@ func TestResolveAttachment(t *testing.T) {
 	}
 }
 
+func TestResolveAttachmentRequiresMemberForSameNetwork(t *testing.T) {
+	config := Config{
+		Attachments: []AttachmentConfig{
+			{Auth: AuthConfig{Mode: "none"}, BaseURL: "http://127.0.0.1:8787", MemberID: "alpha", NetworkID: "local"},
+			{Auth: AuthConfig{Mode: "none"}, BaseURL: "http://127.0.0.1:8787", MemberID: "beta", NetworkID: "local"},
+		},
+	}
+
+	if _, err := config.ResolveAttachment("local"); err == nil || !strings.Contains(err.Error(), "--member") {
+		t.Fatalf("expected member selector error, got %v", err)
+	}
+	attachment, err := config.ResolveAttachmentFor("local", "beta")
+	if err != nil {
+		t.Fatalf("ResolveAttachmentFor() error = %v", err)
+	}
+	if attachment.MemberID != "beta" {
+		t.Fatalf("unexpected attachment %#v", attachment)
+	}
+}
+
 func TestResolveTokenFromEnv(t *testing.T) {
 	t.Setenv("MOLTNET_TOKEN", "secret")
 
@@ -112,6 +132,86 @@ func TestResolveTokenFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoadFileResolvesTokenPath(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, ".moltnet", "alpha.token")
+	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
+		t.Fatalf("mkdir token dir: %v", err)
+	}
+	if err := os.WriteFile(tokenPath, []byte("file-token\n"), 0o600); err != nil {
+		t.Fatalf("write token path: %v", err)
+	}
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version": "moltnet.client.v1",
+  "attachments": [
+    {
+      "auth": {"mode": "open", "token_path": ".moltnet/alpha.token"},
+      "base_url": "http://127.0.0.1:8787",
+      "member_id": "alpha",
+      "network_id": "local"
+    }
+  ]
+}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	config, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	token, err := config.Attachments[0].ResolveToken()
+	if err != nil {
+		t.Fatalf("ResolveToken() error = %v", err)
+	}
+	if token != "file-token" {
+		t.Fatalf("token = %q, want file-token", token)
+	}
+	if config.Attachments[0].Auth.TokenPath != tokenPath {
+		t.Fatalf("TokenPath = %q, want %q", config.Attachments[0].Auth.TokenPath, tokenPath)
+	}
+}
+
+func TestOpenAuthMayOmitToken(t *testing.T) {
+	attachment := AttachmentConfig{
+		Auth:      AuthConfig{Mode: "open"},
+		BaseURL:   "http://127.0.0.1:8787",
+		MemberID:  "alpha",
+		NetworkID: "local",
+	}
+	if err := attachment.Validate(); err != nil {
+		t.Fatalf("Validate() open error = %v", err)
+	}
+	token, err := attachment.ResolveToken()
+	if err != nil {
+		t.Fatalf("ResolveToken() open error = %v", err)
+	}
+	if token != "" {
+		t.Fatalf("unexpected open token %q", token)
+	}
+}
+
+func TestLoadFileRejectsPublicInlineOpenToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version": "moltnet.client.v1",
+  "attachments": [
+    {
+      "auth": {"mode": "open", "token": "magt_v1_secret"},
+      "base_url": "http://127.0.0.1:8787",
+      "member_id": "alpha",
+      "network_id": "local"
+    }
+  ]
+}`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "group/world readable") {
+		t.Fatalf("expected private mode error, got %v", err)
+	}
+}
+
 func TestValidateRejectsMissingBearerToken(t *testing.T) {
 	err := AttachmentConfig{
 		Auth:      AuthConfig{Mode: "bearer"},
@@ -119,7 +219,7 @@ func TestValidateRejectsMissingBearerToken(t *testing.T) {
 		MemberID:  "alpha",
 		NetworkID: "local",
 	}.Validate()
-	if err == nil || !strings.Contains(err.Error(), "auth.token or auth.token_env") {
+	if err == nil || !strings.Contains(err.Error(), "auth.token, auth.token_env, or auth.token_path") {
 		t.Fatalf("expected bearer auth error, got %v", err)
 	}
 }

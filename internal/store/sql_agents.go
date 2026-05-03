@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -12,6 +13,8 @@ func (s *SQLStore) RegisterAgentContext(
 	ctx context.Context,
 	registration protocol.AgentRegistration,
 ) (protocol.AgentRegistration, error) {
+	registration.AgentToken = ""
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return protocol.AgentRegistration{}, fmt.Errorf("begin register agent: %w", err)
@@ -57,6 +60,10 @@ func (s *SQLStore) RegisterAgentContext(
 		formatTime(registration.CreatedAt),
 		formatTime(registration.UpdatedAt),
 	); err != nil {
+		if isUniqueConstraintError(err) {
+			_ = tx.Rollback()
+			return s.RegisterAgentContext(ctx, registration)
+		}
 		return protocol.AgentRegistration{}, fmt.Errorf("insert agent %q: %w", registration.AgentID, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -98,6 +105,51 @@ func (s *SQLStore) GetRegisteredAgentContext(
 	agentID string,
 ) (protocol.AgentRegistration, bool, error) {
 	return s.getRegisteredAgentUsingQuerier(ctx, s.db, agentID)
+}
+
+func (s *SQLStore) GetRegisteredAgentByCredentialKeyContext(
+	ctx context.Context,
+	credentialKey string,
+) (protocol.AgentRegistration, bool, error) {
+	trimmed := strings.TrimSpace(credentialKey)
+	if trimmed == "" {
+		return protocol.AgentRegistration{}, false, nil
+	}
+
+	query := bindQuery(s.dialect, `
+		SELECT agent_id, network_id, actor_uid, actor_uri, display_name, credential_key, created_at, updated_at
+		FROM agents
+		WHERE credential_key = ?
+		ORDER BY agent_id ASC
+		LIMIT 1
+	`)
+	var (
+		agent          protocol.AgentRegistration
+		displayName    sql.NullString
+		createdAtValue any
+		updatedAtValue any
+	)
+	if err := s.db.QueryRowContext(ctx, query, trimmed).Scan(
+		&agent.AgentID,
+		&agent.NetworkID,
+		&agent.ActorUID,
+		&agent.ActorURI,
+		&displayName,
+		&agent.CredentialKey,
+		&createdAtValue,
+		&updatedAtValue,
+	); err != nil {
+		if isNoRows(err) {
+			return protocol.AgentRegistration{}, false, nil
+		}
+		return protocol.AgentRegistration{}, false, fmt.Errorf("get registered agent by credential: %w", err)
+	}
+	if displayName.Valid {
+		agent.DisplayName = displayName.String
+	}
+	agent.CreatedAt = parseTime(createdAtValue)
+	agent.UpdatedAt = parseTime(updatedAtValue)
+	return agent, true, nil
 }
 
 type agentQuerier interface {

@@ -35,9 +35,10 @@ type Delivery struct {
 }
 
 type eventStreamer interface {
-	StreamEvents(
+	StreamEventsReady(
 		ctx context.Context,
 		config bridgeconfig.Config,
+		onReady func(),
 		handle func(event protocol.Event) error,
 	) error
 }
@@ -96,28 +97,60 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
-		if !bootstrapped {
-			if err := r.sendBootstrapDeliveries(ctx); err != nil {
-				attempt++
-				observability.Logger(ctx, "bridge."+r.driver.Name(), "agent_id", r.config.Agent.ID, "error", err).
-					Warn("CLI bridge bootstrap error")
+		streamCtx, cancelStream := context.WithCancel(ctx)
+		bootstrapDone := make(chan error, 1)
+		bootstrapStarted := false
 
-				select {
-				case <-ctx.Done():
-					return nil
-				case <-time.After(r.backoff.Delay(attempt)):
-				}
-				continue
+		err := r.streamer.StreamEventsReady(streamCtx, r.config, func() {
+			if bootstrapped || bootstrapStarted {
+				return
 			}
-			bootstrapped = true
-		}
+			bootstrapStarted = true
 
-		err := r.streamer.StreamEvents(ctx, r.config, func(event protocol.Event) error {
+			go func() {
+				err := r.sendBootstrapDeliveries(streamCtx)
+				if err != nil {
+					bootstrapDone <- err
+					cancelStream()
+					return
+				}
+				bootstrapDone <- nil
+			}()
+		}, func(event protocol.Event) error {
+			if bootstrapErr, ok := readBootstrapResult(bootstrapDone); ok {
+				bootstrapStarted = false
+				if bootstrapErr != nil {
+					return bootstrapErr
+				}
+				bootstrapped = true
+				attempt = 0
+			}
+
 			if !loop.ShouldHandle(r.config, event) {
 				return nil
 			}
 			return r.sendEventDelivery(ctx, event)
 		})
+
+		if bootstrapStarted && err == nil {
+			bootstrapErr := <-bootstrapDone
+			bootstrapStarted = false
+			if bootstrapErr != nil {
+				err = bootstrapErr
+			} else {
+				bootstrapped = true
+				attempt = 0
+			}
+		} else if bootstrapErr, ok := readBootstrapResult(bootstrapDone); ok {
+			bootstrapStarted = false
+			if bootstrapErr != nil {
+				err = bootstrapErr
+			} else {
+				bootstrapped = true
+				attempt = 0
+			}
+		}
+		cancelStream()
 		if err == nil || ctx.Err() != nil {
 			return err
 		}
@@ -131,6 +164,15 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		case <-time.After(r.backoff.Delay(attempt)):
 		}
+	}
+}
+
+func readBootstrapResult(results <-chan error) (error, bool) {
+	select {
+	case err := <-results:
+		return err, true
+	default:
+		return nil, false
 	}
 }
 
@@ -167,6 +209,10 @@ func (r *Runner) sendEventDelivery(ctx context.Context, event protocol.Event) er
 }
 
 func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
+	if err := EnsureWorkspaceClientConfig(r.config); err != nil {
+		return err
+	}
+
 	contextKey := strings.TrimSpace(delivery.ContextKey)
 	if contextKey == "" {
 		contextKey = "main"

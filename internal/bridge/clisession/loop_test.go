@@ -16,7 +16,15 @@ type streamerStub struct {
 	events []protocol.Event
 }
 
-func (s streamerStub) StreamEvents(_ context.Context, _ bridgeconfig.Config, handle func(protocol.Event) error) error {
+func (s streamerStub) StreamEventsReady(
+	_ context.Context,
+	_ bridgeconfig.Config,
+	onReady func(),
+	handle func(protocol.Event) error,
+) error {
+	if onReady != nil {
+		onReady()
+	}
 	for _, event := range s.events {
 		if err := handle(event); err != nil {
 			return err

@@ -232,6 +232,81 @@ func TestBridgeConfigs(t *testing.T) {
 	}
 }
 
+func TestLoadFileResolvesPerAttachmentTokenPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, DefaultPath)
+	writeNodeConfig(t, path, `
+version: moltnet.node.v1
+moltnet:
+  base_url: http://127.0.0.1:8787
+  network_id: local
+  auth_mode: open
+attachments:
+  - agent:
+      id: alpha
+    moltnet:
+      token_path: .moltnet/alpha.token
+    runtime:
+      kind: openclaw
+`)
+
+	config, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	bridgeConfigs := config.BridgeConfigs()
+	want := filepath.Join(dir, ".moltnet", "alpha.token")
+	if bridgeConfigs[0].Moltnet.TokenPath != want {
+		t.Fatalf("TokenPath = %q, want %q", bridgeConfigs[0].Moltnet.TokenPath, want)
+	}
+	if bridgeConfigs[0].Moltnet.Token != "" {
+		t.Fatalf("generated open tokens must not be stored inline, got %#v", bridgeConfigs[0].Moltnet)
+	}
+}
+
+func TestAttachmentMoltnetTokenOverridesSharedToken(t *testing.T) {
+	config := Config{
+		Moltnet: bridgeconfig.MoltnetConfig{
+			BaseURL:   "http://127.0.0.1:8787",
+			NetworkID: "local",
+			Token:     "shared",
+		},
+		Attachments: []AttachmentConfig{
+			{
+				Agent:   bridgeconfig.AgentConfig{ID: "alpha"},
+				Moltnet: bridgeconfig.MoltnetTokenConfig{TokenEnv: "ALPHA_TOKEN"},
+				Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeOpenClaw},
+			},
+		},
+	}
+
+	bridgeConfigs := config.BridgeConfigs()
+	if bridgeConfigs[0].Moltnet.Token != "" || bridgeConfigs[0].Moltnet.TokenEnv != "ALPHA_TOKEN" {
+		t.Fatalf("attachment token source did not override shared token: %#v", bridgeConfigs[0].Moltnet)
+	}
+}
+
+func TestValidateRejectsSharedOpenAgentToken(t *testing.T) {
+	config := Config{
+		Moltnet: bridgeconfig.MoltnetConfig{
+			AuthMode:    bridgeconfig.AuthModeOpen,
+			BaseURL:     "http://127.0.0.1:8787",
+			NetworkID:   "local",
+			StaticToken: true,
+			Token:       "magt_v1_shared",
+		},
+		Attachments: []AttachmentConfig{
+			{
+				Agent:   bridgeconfig.AgentConfig{ID: "alpha"},
+				Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeOpenClaw},
+			},
+		},
+	}
+	if err := config.Validate(); err == nil {
+		t.Fatal("expected shared open agent token rejection")
+	}
+}
+
 func TestDiscoverPath(t *testing.T) {
 	directory := t.TempDir()
 	t.Chdir(directory)

@@ -32,18 +32,37 @@ func newAttachmentRegistry() *attachmentRegistry {
 
 func attachmentCredentialKey(ctx context.Context) attachmentCredential {
 	claims, ok := authn.ClaimsFromContext(ctx)
-	tokenID := ""
-	if ok {
-		tokenID = strings.TrimSpace(claims.TokenID)
-	}
-	if tokenID == "" {
+	if !ok {
 		return attachmentCredential{}
 	}
-
-	return attachmentCredential{
-		key:           "token:" + tokenID,
-		authenticated: true,
+	credentialKey := strings.TrimSpace(claims.CredentialKey)
+	if credentialKey == "" && strings.TrimSpace(claims.TokenID) != "" {
+		credentialKey = authn.StaticCredentialKey(claims.TokenID)
 	}
+	if credentialKey == "" {
+		return attachmentCredential{}
+	}
+	return attachmentCredential{key: credentialKey, authenticated: true}
+}
+
+func attachmentCredentialForRegistration(
+	ctx context.Context,
+	registrationCredentialKey string,
+) attachmentCredential {
+	credential := attachmentCredentialKey(ctx)
+	claims, ok := authn.ClaimsFromContext(ctx)
+	if ok && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeAttach) {
+		credential.key = strings.TrimSpace(registrationCredentialKey)
+		credential.authenticated = credential.key != ""
+	}
+	trimmedRegistrationKey := strings.TrimSpace(registrationCredentialKey)
+	if !credential.authenticated && trimmedRegistrationKey != "" && trimmedRegistrationKey != "anonymous" {
+		return attachmentCredential{
+			key:           trimmedRegistrationKey,
+			authenticated: true,
+		}
+	}
+	return credential
 }
 
 func (r *attachmentRegistry) acquire(agentID string, credential attachmentCredential) (func(), error) {

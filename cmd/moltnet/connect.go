@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
@@ -15,7 +16,7 @@ func runConnect(args []string) error {
 
 	var (
 		agentName    = flags.String("agent-name", "", "agent display name")
-		authMode     = flags.String("auth-mode", "none", "client auth mode: none or bearer")
+		authMode     = flags.String("auth-mode", "none", "client auth mode: none, bearer, or open")
 		baseURL      = flags.String("base-url", "", "Moltnet base URL")
 		enableDMs    = flags.Bool("enable-dms", false, "enable direct-message access in local config")
 		installSkill = flags.Bool("install-skill", true, "install the Moltnet skill into the runtime workspace")
@@ -25,6 +26,7 @@ func runConnect(args []string) error {
 		runtime      = flags.String("runtime", "openclaw", "runtime name")
 		token        = flags.String("token", "", "plain bearer token")
 		tokenEnv     = flags.String("token-env", "", "environment variable containing the bearer token")
+		tokenPath    = flags.String("token-path", "", "file containing the bearer token")
 		workspace    = flags.String("workspace", ".", "runtime workspace path")
 	)
 
@@ -36,6 +38,10 @@ func runConnect(args []string) error {
 	}
 
 	path := clientConfigPathForWorkspace(*workspace)
+	rollback, err := snapshotFile(path)
+	if err != nil {
+		return err
+	}
 	config, err := loadOrCreateClientConfig(path, *runtime, *agentName)
 	if err != nil {
 		return err
@@ -45,12 +51,15 @@ func runConnect(args []string) error {
 		return fmt.Errorf("connect requires --base-url, --network-id, and --member-id")
 	}
 
+	authModeSet := flagWasSet(flags, "auth-mode")
+	sourceExplicit := flagWasSet(flags, "token") || flagWasSet(flags, "token-env") || flagWasSet(flags, "token-path")
 	attachment := clientconfig.AttachmentConfig{
 		AgentName: *agentName,
 		Auth: clientconfig.AuthConfig{
-			Mode:     strings.TrimSpace(*authMode),
-			Token:    strings.TrimSpace(*token),
-			TokenEnv: strings.TrimSpace(*tokenEnv),
+			Mode:      strings.TrimSpace(*authMode),
+			Token:     strings.TrimSpace(*token),
+			TokenEnv:  strings.TrimSpace(*tokenEnv),
+			TokenPath: strings.TrimSpace(*tokenPath),
 		},
 		BaseURL:   strings.TrimSpace(*baseURL),
 		MemberID:  strings.TrimSpace(*memberID),
@@ -61,6 +70,9 @@ func runConnect(args []string) error {
 	if *enableDMs {
 		attachment.DMs = &bridgeconfig.DMConfig{Enabled: true}
 	}
+	if existing, err := config.ResolveAttachmentFor(attachment.NetworkID, attachment.MemberID); err == nil {
+		attachment.Auth = mergeAuthFromConfig(existing.Auth, attachment.Auth, authModeSet, sourceExplicit)
+	}
 
 	upsertAttachment(&config, attachment)
 	if config.Agent.Name == "" {
@@ -70,7 +82,29 @@ func runConnect(args []string) error {
 		config.Agent.Runtime = *runtime
 	}
 
-	if err := writeClientConfig(path, config); err != nil {
+	if strings.TrimSpace(attachment.Auth.Mode) == bridgeconfig.AuthModeOpen {
+		if _, err := attachment.ResolveToken(); err != nil {
+			return err
+		}
+		if err := writeClientConfig(path, config); err != nil {
+			return err
+		}
+		registration, err := registerAttachmentAgent(attachment)
+		if err != nil {
+			_ = rollback.restore(path)
+			return err
+		}
+		if strings.TrimSpace(registration.AgentToken) != "" {
+			attachment.Auth = applyAgentTokenToAuth(attachment.Auth, registration.AgentToken)
+			upsertAttachment(&config, attachment)
+			if err := writeClientConfig(path, config); err != nil {
+				return err
+			}
+		}
+		if err := writeIdentityFile(*workspace, registration); err != nil {
+			return err
+		}
+	} else if err := writeClientConfig(path, config); err != nil {
 		return err
 	}
 
@@ -84,4 +118,27 @@ func runConnect(args []string) error {
 
 	fmt.Fprintf(stdout, "wrote Moltnet client config %s\n", path)
 	return nil
+}
+
+type fileSnapshot struct {
+	contents []byte
+	exists   bool
+}
+
+func snapshotFile(path string) (fileSnapshot, error) {
+	contents, err := os.ReadFile(path)
+	if err == nil {
+		return fileSnapshot{contents: contents, exists: true}, nil
+	}
+	if os.IsNotExist(err) {
+		return fileSnapshot{}, nil
+	}
+	return fileSnapshot{}, fmt.Errorf("read existing Moltnet client config %q: %w", path, err)
+}
+
+func (s fileSnapshot) restore(path string) error {
+	if s.exists {
+		return os.WriteFile(path, s.contents, 0o600)
+	}
+	return os.Remove(path)
 }
