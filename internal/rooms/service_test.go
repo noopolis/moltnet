@@ -62,6 +62,7 @@ func TestServiceCreateRoomAndNetwork(t *testing.T) {
 	if network.Capabilities.EventStream != "sse" ||
 		network.Capabilities.AttachmentProtocol != "websocket" ||
 		!network.Capabilities.HumanIngress ||
+		!network.Capabilities.DirectMessages ||
 		network.Capabilities.MessagePagination != "cursor" {
 		t.Fatalf("unexpected network capabilities %#v", network.Capabilities)
 	}
@@ -539,6 +540,125 @@ func TestServiceRejectsHumanIngressWhenDisabledAndListsPairings(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidCursor) {
 		t.Fatalf("expected ErrInvalidCursor, got page=%#v err=%v", pairingPage, err)
+	}
+}
+
+func TestServiceRejectsDirectMessagesWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	memory := store.NewMemoryStore()
+	service := NewService(ServiceConfig{
+		AllowHumanIngress:     true,
+		DisableDirectMessages: true,
+		NetworkID:             "local",
+		NetworkName:           "Local",
+		Version:               "test",
+		Store:                 memory,
+		Messages:              memory,
+		Broker:                events.NewBroker(),
+	})
+
+	network := service.Network()
+	if network.Capabilities.DirectMessages {
+		t.Fatalf("expected direct messages disabled, got %#v", network.Capabilities)
+	}
+
+	_, err := service.SendMessage(protocol.SendMessageRequest{
+		Target: protocol.Target{
+			Kind:           protocol.TargetKindDM,
+			DMID:           "dm_alpha_beta",
+			ParticipantIDs: []string{"alpha", "beta"},
+		},
+		From:  protocol.Actor{Type: "agent", ID: "alpha"},
+		Parts: []protocol.Part{{Kind: "text", Text: "hello"}},
+	})
+	if !errors.Is(err, ErrDirectMessagesDisabled) {
+		t.Fatalf("expected direct messages disabled error, got %v", err)
+	}
+
+	if _, err := service.ListDirectConversations(); !errors.Is(err, ErrDirectMessagesDisabled) {
+		t.Fatalf("expected direct conversations disabled error, got %v", err)
+	}
+	if _, err := service.GetDirectConversation("dm_alpha_beta"); !errors.Is(err, ErrDirectMessagesDisabled) {
+		t.Fatalf("expected direct conversation disabled error, got %v", err)
+	}
+	if _, err := service.ListDMMessages("dm_alpha_beta", "", 10); !errors.Is(err, ErrDirectMessagesDisabled) {
+		t.Fatalf("expected direct messages read disabled error, got %v", err)
+	}
+	if _, err := service.ListArtifacts(protocol.ArtifactFilter{DMID: "dm_alpha_beta"}, "", 10); !errors.Is(err, ErrDirectMessagesDisabled) {
+		t.Fatalf("expected direct artifact read disabled error, got %v", err)
+	}
+
+	_, err = service.SendMessage(protocol.SendMessageRequest{
+		Target: protocol.Target{Kind: protocol.TargetKindDM},
+		From:   protocol.Actor{Type: "agent", ID: "unregistered"},
+	})
+	if !errors.Is(err, ErrDirectMessagesDisabled) {
+		t.Fatalf("expected disabled direct message policy before validation, got %v", err)
+	}
+}
+
+func TestServiceFiltersDirectMessageEventsWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	broker := events.NewBroker()
+	memory := store.NewMemoryStore()
+	service := NewService(ServiceConfig{
+		AllowHumanIngress:     true,
+		DisableDirectMessages: true,
+		NetworkID:             "local",
+		NetworkName:           "Local",
+		Version:               "test",
+		Store:                 memory,
+		Messages:              memory,
+		Broker:                broker,
+	})
+
+	broker.Publish(protocol.Event{
+		ID:        "evt_start",
+		Type:      protocol.EventTypeRoomCreated,
+		NetworkID: "local",
+		Room:      &protocol.Room{ID: "start"},
+	})
+	broker.Publish(protocol.Event{
+		ID:        "evt_dm",
+		Type:      protocol.EventTypeMessageCreated,
+		NetworkID: "local",
+		Message: &protocol.Message{
+			ID:     "msg_dm",
+			Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "dm_alpha_beta"},
+		},
+	})
+	broker.Publish(protocol.Event{
+		ID:        "evt_dm_created",
+		Type:      protocol.EventTypeDMCreated,
+		NetworkID: "local",
+		DM:        &protocol.DirectConversation{ID: "dm_alpha_beta"},
+	})
+	broker.Publish(protocol.Event{
+		ID:        "evt_room",
+		Type:      protocol.EventTypeRoomCreated,
+		NetworkID: "local",
+		Room:      &protocol.Room{ID: "research"},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := service.SubscribeFrom(ctx, "evt_start")
+
+	select {
+	case event := <-stream:
+		if event.ID != "evt_room" {
+			t.Fatalf("expected non-DM replay event, got %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for filtered replay event")
+	}
+
+	select {
+	case event := <-stream:
+		t.Fatalf("unexpected extra filtered event %#v", event)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 

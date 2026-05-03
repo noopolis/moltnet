@@ -32,6 +32,9 @@ func TestLoadConfigDefaultsWithoutFile(t *testing.T) {
 	if config.Auth.Mode != authn.ModeNone || config.Auth.ListenAddr != defaultListenAddr {
 		t.Fatalf("unexpected auth defaults %#v", config.Auth)
 	}
+	if config.DisableDirectMessages {
+		t.Fatalf("expected direct messages enabled by default, got %#v", config)
+	}
 }
 
 func TestLoadConfigFromMoltnetFile(t *testing.T) {
@@ -47,6 +50,7 @@ network:
 server:
   listen_addr: 127.0.0.1:8787
   human_ingress: false
+  direct_messages: false
   allowed_origins:
     - http://localhost:8787
 auth:
@@ -88,6 +92,9 @@ pairings:
 	if config.AllowHumanIngress {
 		t.Fatalf("expected human ingress disabled, got %#v", config)
 	}
+	if !config.DisableDirectMessages {
+		t.Fatalf("expected direct messages disabled, got %#v", config)
+	}
 	if config.NetworkID != "local_lab" || config.NetworkName != "Local Lab" {
 		t.Fatalf("unexpected network %#v", config)
 	}
@@ -115,6 +122,7 @@ network:
 server:
   listen_addr: :8787
   human_ingress: true
+  direct_messages: true
 `)
 
 	t.Setenv("MOLTNET_LISTEN_ADDR", ":9999")
@@ -122,6 +130,7 @@ server:
 	t.Setenv("MOLTNET_NETWORK_ID", "from_env")
 	t.Setenv("MOLTNET_NETWORK_NAME", "From Env")
 	t.Setenv("MOLTNET_ALLOW_HUMAN_INGRESS", "false")
+	t.Setenv("MOLTNET_ALLOW_DIRECT_MESSAGES", "false")
 
 	config, err := LoadConfig("1.2.3")
 	if err != nil {
@@ -133,6 +142,9 @@ server:
 	}
 	if config.AllowHumanIngress {
 		t.Fatalf("expected env bool override, got %#v", config)
+	}
+	if !config.DisableDirectMessages {
+		t.Fatalf("expected direct messages env override, got %#v", config)
 	}
 }
 
@@ -191,7 +203,8 @@ func TestLoadConfigSupportsJSONFile(t *testing.T) {
   },
   "server": {
     "listen_addr": ":9000",
-    "human_ingress": false
+    "human_ingress": false,
+    "direct_messages": false
   },
   "storage": {
     "kind": "memory"
@@ -207,6 +220,9 @@ func TestLoadConfigSupportsJSONFile(t *testing.T) {
 
 	if config.NetworkID != "json-net" || config.ListenAddr != ":9000" || config.AllowHumanIngress {
 		t.Fatalf("unexpected json config %#v", config)
+	}
+	if !config.DisableDirectMessages {
+		t.Fatalf("expected json direct messages setting, got %#v", config)
 	}
 	if config.Storage.Kind != storageKindMemory {
 		t.Fatalf("unexpected storage %#v", config.Storage)
@@ -314,6 +330,9 @@ network:
 	}
 	if config.Version != "9.9.9" {
 		t.Fatalf("unexpected version %q", config.Version)
+	}
+	if config.DisableDirectMessages {
+		t.Fatalf("expected direct messages default enabled, got %#v", config)
 	}
 }
 

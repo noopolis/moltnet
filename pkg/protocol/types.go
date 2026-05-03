@@ -23,6 +23,7 @@ type NetworkCapabilities struct {
 	EventStream        string `json:"event_stream,omitempty"`
 	AttachmentProtocol string `json:"attachment_protocol,omitempty"`
 	HumanIngress       bool   `json:"human_ingress"`
+	DirectMessages     bool   `json:"direct_messages"`
 	MessagePagination  string `json:"message_pagination,omitempty"`
 	Pairings           bool   `json:"pairings"`
 }

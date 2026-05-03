@@ -1,6 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useMessages } from "../../../hooks/useMessages";
+import { useNetwork } from "../../../hooks/useNetwork";
 import {
   isMessageTargetSelection,
   type Message,
@@ -14,9 +15,12 @@ const ESTIMATED_ROW_HEIGHT = 24;
 
 export function Timeline() {
   const { selected } = useSelection();
+  const { data: network } = useNetwork();
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useMessages();
   const parentRef = useRef<HTMLDivElement>(null);
+  const directMessagesEnabled =
+    !!network && network.capabilities?.direct_messages !== false;
 
   const messages = useMemo<Message[]>(() => {
     if (!data) return [];
@@ -106,6 +110,7 @@ export function Timeline() {
   }, [startIndex, hasNextPage, isFetchingNextPage, fetchNextPage, messages.length]);
 
   if (!isMessageTargetSelection(selected)) {
+    const targetLabel = directMessagesEnabled ? "a room or direct channel" : "a room";
     return (
       <Panel>
         <Panel.Header>
@@ -113,7 +118,22 @@ export function Timeline() {
         </Panel.Header>
         <Panel.Body>
           <p className="text-faint text-xs px-2 py-1.5">
-            select a room or direct channel.
+            select {targetLabel}.
+          </p>
+        </Panel.Body>
+      </Panel>
+    );
+  }
+
+  if (selected.kind === "dm" && !directMessagesEnabled) {
+    return (
+      <Panel>
+        <Panel.Header>
+          <Panel.Title>TIMELINE</Panel.Title>
+        </Panel.Header>
+        <Panel.Body>
+          <p className="text-faint text-xs px-2 py-1.5">
+            direct channels are disabled for this network.
           </p>
         </Panel.Body>
       </Panel>

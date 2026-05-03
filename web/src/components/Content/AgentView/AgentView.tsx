@@ -11,7 +11,7 @@ export function AgentView() {
   const { selected, select } = useSelection();
   const { data: agents = [] } = useAgents();
   const { data: rooms = [] } = useRooms();
-  const { data: dms = [] } = useDMs();
+  const { data: dms = [], directMessagesEnabled } = useDMs();
 
   const agentId = selected?.kind === "agent" ? selected.id : null;
   const agent = useMemo(
@@ -88,26 +88,30 @@ export function AgentView() {
           </div>
         )}
 
-        <div className="text-[11px] tracking-[0.12em] text-green mt-1 mb-1.5">
-          [ DIRECT CHANNELS ] ( {participatingDMs.length} )
-        </div>
-        {participatingDMs.length === 0 ? (
-          <p className="text-faint text-xs px-2 py-1">
-            no direct channels — this agent has no DMs.
-          </p>
-        ) : (
-          <div className="flex flex-col">
-            {participatingDMs.map((dm) => (
-              <ListItem
-                key={dm.id}
-                showMarker={false}
-                onClick={() => select({ kind: "dm", id: dm.id })}
-                title={dm.id}
-                trailing={`${dm.message_count ?? 0} msgs`}
-              />
-            ))}
-          </div>
-        )}
+        {directMessagesEnabled ? (
+          <>
+            <div className="text-[11px] tracking-[0.12em] text-green mt-1 mb-1.5">
+              [ DIRECT CHANNELS ] ( {participatingDMs.length} )
+            </div>
+            {participatingDMs.length === 0 ? (
+              <p className="text-faint text-xs px-2 py-1">
+                no direct channels — this agent has no DMs.
+              </p>
+            ) : (
+              <div className="flex flex-col">
+                {participatingDMs.map((dm) => (
+                  <ListItem
+                    key={dm.id}
+                    showMarker={false}
+                    onClick={() => select({ kind: "dm", id: dm.id })}
+                    title={dm.id}
+                    trailing={`${dm.message_count ?? 0} msgs`}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        ) : null}
       </Panel.Body>
     </Panel>
   );

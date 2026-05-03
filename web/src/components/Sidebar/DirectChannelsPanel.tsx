@@ -4,8 +4,10 @@ import { ListItem } from "../ListItem";
 import { Panel } from "../Panel";
 
 export function DirectChannelsPanel() {
-  const { data: dms = [] } = useDMs();
+  const { data: dms = [], directMessagesEnabled } = useDMs();
   const { selected, select } = useSelection();
+
+  if (!directMessagesEnabled) return null;
 
   return (
     <Panel>

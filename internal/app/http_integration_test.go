@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -195,6 +196,80 @@ func TestAppHTTPOpenAuthRegistrationFlow(t *testing.T) {
 	}
 	if len(page.Messages) != 1 || page.Messages[0].Parts[0].Text != "hello from luna" {
 		t.Fatalf("unexpected public messages %#v", page)
+	}
+}
+
+func TestAppHTTPRejectsDirectMessagesWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	configPath := filepath.Join(t.TempDir(), "Moltnet")
+	writeConfigFile(t, configPath, `
+version: moltnet.v1
+network:
+  id: local
+  name: Local Moltnet
+server:
+  listen_addr: ":0"
+  direct_messages: false
+storage:
+  kind: memory
+`)
+	config, err := LoadFile(configPath, "test")
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	instance, err := New(config)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer instance.close()
+
+	server := httptest.NewServer(instance.server.Handler)
+	defer server.Close()
+
+	response, err := http.Get(server.URL + "/v1/network")
+	if err != nil {
+		t.Fatalf("get network: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected network status %d", response.StatusCode)
+	}
+	var network protocol.Network
+	if err := json.NewDecoder(response.Body).Decode(&network); err != nil {
+		t.Fatalf("decode network: %v", err)
+	}
+	if network.Capabilities.DirectMessages {
+		t.Fatalf("expected direct messages disabled, got %#v", network.Capabilities)
+	}
+
+	status := postJSON(t, server.URL+"/v1/messages", protocol.SendMessageRequest{
+		Target: protocol.Target{
+			Kind:           protocol.TargetKindDM,
+			DMID:           "dm_alpha_beta",
+			ParticipantIDs: []string{"alpha", "beta"},
+		},
+		From:  protocol.Actor{Type: "agent", ID: "alpha"},
+		Parts: []protocol.Part{{Kind: protocol.PartKindText, Text: "private"}},
+	})
+	if status != http.StatusForbidden {
+		t.Fatalf("unexpected dm send status %d", status)
+	}
+
+	for _, endpoint := range []string{
+		"/v1/dms",
+		"/v1/dms/dm_alpha_beta",
+		"/v1/dms/dm_alpha_beta/messages",
+		"/v1/artifacts?dm_id=dm_alpha_beta",
+	} {
+		response, err := http.Get(server.URL + endpoint)
+		if err != nil {
+			t.Fatalf("get %s: %v", endpoint, err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusForbidden {
+			t.Fatalf("unexpected status %d for %s", response.StatusCode, endpoint)
+		}
 	}
 }
 

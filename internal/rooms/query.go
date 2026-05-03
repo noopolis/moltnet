@@ -16,10 +16,47 @@ type replayingBroker interface {
 
 func (s *Service) SubscribeFrom(ctx context.Context, lastEventID string) <-chan protocol.Event {
 	if broker, ok := s.broker.(replayingBroker); ok {
-		return broker.SubscribeFrom(ctx, lastEventID)
+		return s.filterEvents(ctx, broker.SubscribeFrom(ctx, lastEventID))
 	}
 
-	return s.broker.Subscribe(ctx)
+	return s.filterEvents(ctx, s.broker.Subscribe(ctx))
+}
+
+func (s *Service) filterEvents(ctx context.Context, stream <-chan protocol.Event) <-chan protocol.Event {
+	if !s.disableDirectMessages {
+		return stream
+	}
+
+	filtered := make(chan protocol.Event, 16)
+	go func() {
+		defer close(filtered)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-stream:
+				if !ok {
+					return
+				}
+				if directMessageEvent(event) {
+					continue
+				}
+				select {
+				case filtered <- event:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return filtered
+}
+
+func directMessageEvent(event protocol.Event) bool {
+	if event.DM != nil {
+		return true
+	}
+	return event.Message != nil && event.Message.Target.Kind == protocol.TargetKindDM
 }
 
 func (s *Service) Health(ctx context.Context) error {
@@ -59,6 +96,9 @@ func (s *Service) GetDirectConversation(dmID string) (protocol.DirectConversatio
 	id := strings.TrimSpace(dmID)
 	if id == "" {
 		return protocol.DirectConversation{}, invalidDMIDError()
+	}
+	if s.disableDirectMessages {
+		return protocol.DirectConversation{}, directMessagesDisabledError()
 	}
 
 	conversation, ok, err := s.getDirectConversation(context.Background(), id)

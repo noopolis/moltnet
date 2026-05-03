@@ -152,6 +152,9 @@ func (s *Service) ListDirectConversations() (protocol.DirectConversationPage, er
 }
 
 func (s *Service) ListDirectConversationsContext(ctx context.Context, page protocol.PageRequest) (protocol.DirectConversationPage, error) {
+	if s.disableDirectMessages {
+		return protocol.DirectConversationPage{}, directMessagesDisabledError()
+	}
 	conversations, err := s.listDirectConversations(ctx)
 	if err != nil {
 		return protocol.DirectConversationPage{}, err
@@ -194,6 +197,9 @@ func (s *Service) ListDMMessagesContext(
 	if strings.TrimSpace(dmID) == "" {
 		return protocol.MessagePage{}, invalidDMIDError()
 	}
+	if s.disableDirectMessages {
+		return protocol.MessagePage{}, directMessagesDisabledError()
+	}
 	if _, ok, err := s.getDirectConversation(ctx, dmID); err != nil {
 		return protocol.MessagePage{}, err
 	} else if !ok {
@@ -221,6 +227,9 @@ func (s *Service) ListArtifactsContext(
 ) (protocol.ArtifactPage, error) {
 	if !filter.Scoped() {
 		return protocol.ArtifactPage{}, artifactFilterRequiredError()
+	}
+	if filter.DMID != "" && s.disableDirectMessages {
+		return protocol.ArtifactPage{}, directMessagesDisabledError()
 	}
 	if filter.RoomID != "" {
 		if _, ok, err := s.getRoom(ctx, filter.RoomID); err != nil {

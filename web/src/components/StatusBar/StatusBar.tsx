@@ -25,6 +25,8 @@ export function StatusBar() {
   }, [bootedAt]);
 
   const ingressOn = !!network?.capabilities?.human_ingress;
+  const directMessagesEnabled =
+    !!network && network.capabilities?.direct_messages !== false;
   const eventsActive = selected?.kind === "events";
   const msgs = useMemo(() => {
     if (!messageData) return 0;
@@ -71,6 +73,11 @@ export function StatusBar() {
           label="ingress:"
           value={ingressOn ? "enabled" : "disabled"}
           tone={ingressOn ? "good" : "default"}
+        />
+        <StatusItem
+          label="direct:"
+          value={network ? (directMessagesEnabled ? "enabled" : "disabled") : "—"}
+          tone={directMessagesEnabled ? "good" : "default"}
         />
         <StatusItem value={clock} tone="ink" />
       </div>

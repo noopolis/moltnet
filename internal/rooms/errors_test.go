@@ -21,6 +21,7 @@ func TestRoomErrorsExposeStatusAndSentinels(t *testing.T) {
 		{err: invalidRoomIDError(), target: ErrInvalidRoomID, status: http.StatusUnprocessableEntity},
 		{err: invalidDMIDError(), target: ErrInvalidDMID, status: http.StatusUnprocessableEntity},
 		{err: humanIngressDisabledError(), target: ErrHumanIngressDisabled, status: http.StatusForbidden},
+		{err: directMessagesDisabledError(), target: ErrDirectMessagesDisabled, status: http.StatusForbidden},
 		{err: pairingClientMissingError(), target: ErrPairingClientMissing, status: http.StatusServiceUnavailable},
 	}
 

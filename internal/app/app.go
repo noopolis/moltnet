@@ -43,15 +43,16 @@ func New(config Config) (*App, error) {
 	}
 
 	service := rooms.NewService(rooms.ServiceConfig{
-		AllowHumanIngress: config.AllowHumanIngress,
-		NetworkID:         config.NetworkID,
-		NetworkName:       config.NetworkName,
-		Pairings:          config.Pairings,
-		Version:           config.Version,
-		Store:             roomStore,
-		Messages:          roomStore,
-		Broker:            broker,
-		PairingClient:     pairings.NewClient(),
+		AllowHumanIngress:     config.AllowHumanIngress,
+		DisableDirectMessages: config.DisableDirectMessages,
+		NetworkID:             config.NetworkID,
+		NetworkName:           config.NetworkName,
+		Pairings:              config.Pairings,
+		Version:               config.Version,
+		Store:                 roomStore,
+		Messages:              roomStore,
+		Broker:                broker,
+		PairingClient:         pairings.NewClient(),
 	})
 
 	policy, err := authn.NewPolicy(config.Auth)

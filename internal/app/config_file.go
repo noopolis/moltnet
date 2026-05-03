@@ -31,6 +31,7 @@ type rawServerConfig struct {
 	ListenAddr          string   `json:"listen_addr" yaml:"listen_addr"`
 	DataPath            string   `json:"data_path,omitempty" yaml:"data_path,omitempty"`
 	HumanIngress        *bool    `json:"human_ingress" yaml:"human_ingress"`
+	DirectMessages      *bool    `json:"direct_messages" yaml:"direct_messages"`
 	AllowedOrigins      []string `json:"allowed_origins,omitempty" yaml:"allowed_origins,omitempty"`
 	TrustForwardedProto bool     `json:"trust_forwarded_proto,omitempty" yaml:"trust_forwarded_proto,omitempty"`
 }

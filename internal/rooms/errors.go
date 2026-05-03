@@ -8,24 +8,25 @@ import (
 )
 
 var (
-	ErrInvalidRoomID        = errors.New("room id is required")
-	ErrInvalidRoomRequest   = errors.New("invalid room request")
-	ErrRoomExists           = errors.New("room already exists")
-	ErrUnknownRoom          = errors.New("unknown room")
-	ErrUnknownThread        = errors.New("unknown thread")
-	ErrUnknownAgent         = errors.New("unknown agent")
-	ErrInvalidDMID          = errors.New("dm id is required")
-	ErrInvalidCursor        = errors.New("invalid cursor")
-	ErrInvalidMessage       = errors.New("invalid message request")
-	ErrUnknownDM            = errors.New("unknown direct conversation")
-	ErrArtifactFilter       = errors.New("artifact filter is required")
-	ErrUnknownPairing       = errors.New("unknown pairing")
-	ErrPairingClientMissing = errors.New("pairing client is not configured")
-	ErrHumanIngressDisabled = errors.New("human ingress is disabled")
-	ErrRemotePairing        = errors.New("paired network request failed")
-	ErrAgentConflict        = errors.New("agent identity conflict")
-	ErrAgentUnauthorized    = errors.New("agent identity requires authentication")
-	ErrAgentForbidden       = errors.New("agent identity is forbidden")
+	ErrInvalidRoomID          = errors.New("room id is required")
+	ErrInvalidRoomRequest     = errors.New("invalid room request")
+	ErrRoomExists             = errors.New("room already exists")
+	ErrUnknownRoom            = errors.New("unknown room")
+	ErrUnknownThread          = errors.New("unknown thread")
+	ErrUnknownAgent           = errors.New("unknown agent")
+	ErrInvalidDMID            = errors.New("dm id is required")
+	ErrInvalidCursor          = errors.New("invalid cursor")
+	ErrInvalidMessage         = errors.New("invalid message request")
+	ErrUnknownDM              = errors.New("unknown direct conversation")
+	ErrArtifactFilter         = errors.New("artifact filter is required")
+	ErrUnknownPairing         = errors.New("unknown pairing")
+	ErrPairingClientMissing   = errors.New("pairing client is not configured")
+	ErrHumanIngressDisabled   = errors.New("human ingress is disabled")
+	ErrDirectMessagesDisabled = errors.New("direct messages are disabled")
+	ErrRemotePairing          = errors.New("paired network request failed")
+	ErrAgentConflict          = errors.New("agent identity conflict")
+	ErrAgentUnauthorized      = errors.New("agent identity requires authentication")
+	ErrAgentForbidden         = errors.New("agent identity is forbidden")
 )
 
 func unknownRoomError(roomID string) error {
@@ -185,6 +186,14 @@ func humanIngressDisabledError() error {
 		status: http.StatusForbidden,
 		msg:    "human ingress is disabled for this network",
 		cause:  ErrHumanIngressDisabled,
+	}
+}
+
+func directMessagesDisabledError() error {
+	return &Error{
+		status: http.StatusForbidden,
+		msg:    "direct messages are disabled for this network",
+		cause:  ErrDirectMessagesDisabled,
 	}
 }
 

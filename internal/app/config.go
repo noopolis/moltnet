@@ -30,15 +30,16 @@ const (
 )
 
 type Config struct {
-	AllowHumanIngress bool
-	Auth              authn.Config
-	ListenAddr        string
-	NetworkID         string
-	NetworkName       string
-	Pairings          []protocol.Pairing
-	Rooms             []RoomConfig
-	Storage           StorageConfig
-	Version           string
+	AllowHumanIngress     bool
+	DisableDirectMessages bool
+	Auth                  authn.Config
+	ListenAddr            string
+	NetworkID             string
+	NetworkName           string
+	Pairings              []protocol.Pairing
+	Rooms                 []RoomConfig
+	Storage               StorageConfig
+	Version               string
 }
 
 type RoomConfig struct {

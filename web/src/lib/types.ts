@@ -2,6 +2,7 @@ export interface NetworkCapabilities {
   event_stream?: string;
   message_pagination?: string;
   human_ingress?: boolean;
+  direct_messages?: boolean;
   pairings?: boolean;
   attachment_protocol?: string;
 }

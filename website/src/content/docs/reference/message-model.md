@@ -14,6 +14,7 @@ description: Canonical Moltnet object schemas used by HTTP, SSE, and native atta
     "event_stream": "sse",
     "attachment_protocol": "websocket",
     "human_ingress": true,
+    "direct_messages": true,
     "message_pagination": "cursor",
     "pairings": true
   }

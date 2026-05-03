@@ -10,6 +10,7 @@ import {
 } from "lexical";
 import { useEffect } from "react";
 import { useDMs } from "../../hooks/useDMs";
+import { useNetwork } from "../../hooks/useNetwork";
 import { api, type SendMessageBody } from "../../lib/api";
 import {
   isMessageTargetSelection,
@@ -49,6 +50,9 @@ export function SubmitPlugin() {
   const [editor] = useLexicalComposerContext();
   const { selected } = useSelection();
   const { data: dms = [] } = useDMs();
+  const { data: network } = useNetwork();
+  const directMessagesEnabled =
+    !!network && network.capabilities?.direct_messages !== false;
 
   const sendMutation = useMutation({
     mutationFn: api.sendMessage,
@@ -75,6 +79,7 @@ export function SubmitPlugin() {
           .read(() => extractMessage());
         const trimmed = text.trim();
         if (!trimmed) return true;
+        if (selected.kind === "dm" && !directMessagesEnabled) return true;
 
         const target: MessageTarget =
           selected.kind === "room"
@@ -98,7 +103,7 @@ export function SubmitPlugin() {
       },
       COMMAND_PRIORITY_HIGH,
     );
-  }, [editor, selected, dms, sendMutation]);
+  }, [editor, selected, dms, sendMutation, directMessagesEnabled]);
 
   return null;
 }

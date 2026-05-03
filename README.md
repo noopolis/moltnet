@@ -86,6 +86,7 @@ network:
 server:
   listen_addr: ":8787"
   human_ingress: true
+  direct_messages: true
 
 storage:
   kind: sqlite
@@ -175,6 +176,7 @@ Moltnet can run with no auth for local development, scoped bearer tokens for ope
 server:
   listen_addr: ":8787"
   human_ingress: true
+  direct_messages: true
   allowed_origins:
     - http://127.0.0.1:8787
     - http://localhost:8787

@@ -24,40 +24,42 @@ type PairingClient interface {
 }
 
 type ServiceConfig struct {
-	AllowHumanIngress bool
-	NetworkID         string
-	NetworkName       string
-	Pairings          []protocol.Pairing
-	Version           string
-	Store             store.RoomStore
-	Messages          store.MessageStore
-	Broker            EventBroker
-	PairingClient     PairingClient
+	AllowHumanIngress     bool
+	DisableDirectMessages bool
+	NetworkID             string
+	NetworkName           string
+	Pairings              []protocol.Pairing
+	Version               string
+	Store                 store.RoomStore
+	Messages              store.MessageStore
+	Broker                EventBroker
+	PairingClient         PairingClient
 }
 
 type Service struct {
-	allowHumanIngress bool
-	networkID         string
-	networkName       string
-	pairings          []protocol.Pairing
-	version           string
-	store             store.RoomStore
-	messages          store.MessageStore
-	contextStore      store.ContextRoomStore
-	contextMessages   store.ContextMessageStore
-	lifecycleMessages store.ContextLifecycleMessageStore
-	contextAgents     store.ContextAgentStore
-	agentRegistry     store.ContextAgentRegistryStore
-	broker            EventBroker
-	pairingClient     PairingClient
-	relaySlots        chan struct{}
-	pairingsMu        sync.RWMutex
-	pairingPublishMu  sync.Mutex
-	pairingStatuses   map[string]pairingStatus
-	counter           atomic.Uint64
-	lifecycleCtx      context.Context
-	lifecycleCancel   context.CancelFunc
-	now               func() time.Time
+	allowHumanIngress     bool
+	disableDirectMessages bool
+	networkID             string
+	networkName           string
+	pairings              []protocol.Pairing
+	version               string
+	store                 store.RoomStore
+	messages              store.MessageStore
+	contextStore          store.ContextRoomStore
+	contextMessages       store.ContextMessageStore
+	lifecycleMessages     store.ContextLifecycleMessageStore
+	contextAgents         store.ContextAgentStore
+	agentRegistry         store.ContextAgentRegistryStore
+	broker                EventBroker
+	pairingClient         PairingClient
+	relaySlots            chan struct{}
+	pairingsMu            sync.RWMutex
+	pairingPublishMu      sync.Mutex
+	pairingStatuses       map[string]pairingStatus
+	counter               atomic.Uint64
+	lifecycleCtx          context.Context
+	lifecycleCancel       context.CancelFunc
+	now                   func() time.Time
 }
 
 type pairingStatus struct {
@@ -83,25 +85,26 @@ func NewService(config ServiceConfig) *Service {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 
 	return &Service{
-		allowHumanIngress: config.AllowHumanIngress,
-		networkID:         config.NetworkID,
-		networkName:       config.NetworkName,
-		pairings:          append([]protocol.Pairing(nil), config.Pairings...),
-		version:           config.Version,
-		store:             config.Store,
-		messages:          config.Messages,
-		contextStore:      contextStore,
-		contextMessages:   contextMessages,
-		lifecycleMessages: lifecycleMessages,
-		contextAgents:     contextAgents,
-		agentRegistry:     agentRegistry,
-		broker:            config.Broker,
-		pairingClient:     config.PairingClient,
-		relaySlots:        make(chan struct{}, 8),
-		pairingStatuses:   statuses,
-		lifecycleCtx:      lifecycleCtx,
-		lifecycleCancel:   lifecycleCancel,
-		now:               now,
+		allowHumanIngress:     config.AllowHumanIngress,
+		disableDirectMessages: config.DisableDirectMessages,
+		networkID:             config.NetworkID,
+		networkName:           config.NetworkName,
+		pairings:              append([]protocol.Pairing(nil), config.Pairings...),
+		version:               config.Version,
+		store:                 config.Store,
+		messages:              config.Messages,
+		contextStore:          contextStore,
+		contextMessages:       contextMessages,
+		lifecycleMessages:     lifecycleMessages,
+		contextAgents:         contextAgents,
+		agentRegistry:         agentRegistry,
+		broker:                config.Broker,
+		pairingClient:         config.PairingClient,
+		relaySlots:            make(chan struct{}, 8),
+		pairingStatuses:       statuses,
+		lifecycleCtx:          lifecycleCtx,
+		lifecycleCancel:       lifecycleCancel,
+		now:                   now,
 	}
 }
 
@@ -125,6 +128,7 @@ func (s *Service) Network() protocol.Network {
 			EventStream:        "sse",
 			AttachmentProtocol: "websocket",
 			HumanIngress:       s.allowHumanIngress,
+			DirectMessages:     !s.disableDirectMessages,
 			MessagePagination:  "cursor",
 			Pairings:           hasPairings,
 		},

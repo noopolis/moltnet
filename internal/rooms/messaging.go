@@ -18,6 +18,9 @@ func (s *Service) SendMessage(request protocol.SendMessageRequest) (protocol.Mes
 }
 
 func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendMessageRequest) (protocol.MessageAccepted, error) {
+	if strings.TrimSpace(request.Target.Kind) == protocol.TargetKindDM && s.disableDirectMessages {
+		return protocol.MessageAccepted{}, directMessagesDisabledError()
+	}
 	if request.From.Type == "human" && !s.allowHumanIngress {
 		return protocol.MessageAccepted{}, humanIngressDisabledError()
 	}
@@ -307,7 +310,7 @@ func actorHasExplicitConsistentNetworkID(actor protocol.Actor, networkID string)
 }
 
 func (s *Service) Subscribe(ctx context.Context) <-chan protocol.Event {
-	return s.broker.Subscribe(ctx)
+	return s.filterEvents(ctx, s.broker.Subscribe(ctx))
 }
 
 func (s *Service) nextID(prefix string) string {
