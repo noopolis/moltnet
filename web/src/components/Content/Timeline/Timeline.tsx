@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useMessages } from "../../../hooks/useMessages";
 import { useNetwork } from "../../../hooks/useNetwork";
 import {
@@ -10,7 +10,7 @@ import { useSelection } from "../../../providers";
 import { Panel } from "../../Panel";
 import { TimelineMessage } from "./TimelineMessage";
 
-const SCROLL_TOP_THRESHOLD = 4;
+const SCROLL_TOP_FETCH_PX = 120;
 const ESTIMATED_ROW_HEIGHT = 24;
 
 export function Timeline() {
@@ -24,8 +24,12 @@ export function Timeline() {
 
   const messages = useMemo<Message[]>(() => {
     if (!data) return [];
-    // Pages are newest-first; flatten then reverse for chronological order.
-    return data.pages.flatMap((page) => page.messages).slice().reverse();
+    // React Query stores the newest page first and appends older pages after it.
+    // Each API page is already chronological, so only reverse the page groups.
+    return data.pages
+      .slice()
+      .reverse()
+      .flatMap((page) => page.messages ?? []);
   }, [data]);
 
   const virtualizer = useVirtualizer({
@@ -34,6 +38,27 @@ export function Timeline() {
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
     overscan: 12,
   });
+
+  const maybeFetchOlder = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (
+        !node ||
+        messages.length === 0 ||
+        !hasNextPage ||
+        isFetchingNextPage ||
+        node.scrollTop > SCROLL_TOP_FETCH_PX
+      ) {
+        return;
+      }
+
+      void fetchNextPage();
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage, messages.length],
+  );
+
+  const handleScroll = useCallback(() => {
+    maybeFetchOlder(parentRef.current);
+  }, [maybeFetchOlder]);
 
   // ─── Initial scroll to bottom on selection change ───────────────────────────
   // We pin the parent's scrollTop to scrollHeight twice (RAF + RAF) so the
@@ -97,17 +122,9 @@ export function Timeline() {
   }, [isFetchingNextPage, messages.length]);
 
   // ─── Trigger fetch-older when the user scrolls near the top ─────────────────
-  const startIndex = virtualizer.getVirtualItems()[0]?.index ?? 0;
   useEffect(() => {
-    if (
-      messages.length > 0 &&
-      startIndex <= SCROLL_TOP_THRESHOLD &&
-      hasNextPage &&
-      !isFetchingNextPage
-    ) {
-      fetchNextPage();
-    }
-  }, [startIndex, hasNextPage, isFetchingNextPage, fetchNextPage, messages.length]);
+    maybeFetchOlder(parentRef.current);
+  }, [maybeFetchOlder, messages.length]);
 
   if (!isMessageTargetSelection(selected)) {
     const targetLabel = directMessagesEnabled ? "a room or direct channel" : "a room";
@@ -149,7 +166,7 @@ export function Timeline() {
         <Panel.Count>{messages.length} messages</Panel.Count>
       </Panel.Header>
       <Panel.Body className="p-0">
-        <div ref={parentRef} className="flex-1 overflow-auto">
+        <div ref={parentRef} className="flex-1 overflow-auto" onScroll={handleScroll}>
           {messages.length === 0 ? (
             <p className="text-faint text-xs px-4 py-3">
               {isLoading ? "loading…" : "no messages yet."}

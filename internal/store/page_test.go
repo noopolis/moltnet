@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -91,6 +92,21 @@ func TestItemGetIDHelpers(t *testing.T) {
 
 func TestPageMessagesAndArtifactsResults(t *testing.T) {
 	t.Parallel()
+
+	emptyMessagePage, err := pageMessagesResult(nil, protocol.PageRequest{Limit: 2})
+	if err != nil {
+		t.Fatalf("pageMessagesResult(empty) error = %v", err)
+	}
+	if emptyMessagePage.Messages == nil {
+		t.Fatalf("expected empty message page to use [] instead of nil")
+	}
+	encodedEmptyMessagePage, err := json.Marshal(emptyMessagePage)
+	if err != nil {
+		t.Fatalf("marshal empty message page: %v", err)
+	}
+	if string(encodedEmptyMessagePage) != `{"messages":[],"page":{"has_more":false}}` {
+		t.Fatalf("unexpected empty message page json %s", encodedEmptyMessagePage)
+	}
 
 	messages := []protocol.Message{
 		{ID: "msg_1"},

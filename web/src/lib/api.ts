@@ -11,6 +11,10 @@ import type {
   Room,
 } from "./types";
 
+interface RawMessagePage extends Omit<MessagePage, "messages"> {
+  messages?: MessagePage["messages"] | null;
+}
+
 export interface SendMessageBody {
   target: MessageTarget;
   from: MessageFrom;
@@ -26,6 +30,13 @@ async function getJSON<T>(path: string): Promise<T> {
     throw new Error(`${path} returned ${response.status}`);
   }
   return (await response.json()) as T;
+}
+
+function normalizeMessagePage(page: RawMessagePage): MessagePage {
+  return {
+    ...page,
+    messages: page.messages ?? [],
+  };
 }
 
 export const api = {
@@ -49,17 +60,17 @@ export const api = {
       (r) => r.agents ?? [],
     ),
   roomMessages: (id: string, before?: string) =>
-    getJSON<MessagePage>(
+    getJSON<RawMessagePage>(
       `/v1/rooms/${encodeURIComponent(id)}/messages?limit=50${
         before ? `&before=${encodeURIComponent(before)}` : ""
       }`,
-    ),
+    ).then(normalizeMessagePage),
   dmMessages: (id: string, before?: string) =>
-    getJSON<MessagePage>(
+    getJSON<RawMessagePage>(
       `/v1/dms/${encodeURIComponent(id)}/messages?limit=50${
         before ? `&before=${encodeURIComponent(before)}` : ""
       }`,
-    ),
+    ).then(normalizeMessagePage),
   sendMessage: async (body: SendMessageBody) => {
     const start = performance.now();
     const response = await fetch("/v1/messages", {

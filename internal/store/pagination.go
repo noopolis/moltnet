@@ -11,7 +11,7 @@ func pageMessagesResult(messages []protocol.Message, page protocol.PageRequest) 
 		limit := page.Limit
 		if limit <= 0 || len(messages) <= limit {
 			return protocol.MessagePage{
-				Messages: append([]protocol.Message(nil), messages...),
+				Messages: append([]protocol.Message{}, messages...),
 				Page:     protocol.PageInfo{},
 			}, nil
 		}
