@@ -30,7 +30,7 @@ export function StatusBar() {
   const eventsActive = selected?.kind === "events";
   const msgs = useMemo(() => {
     if (!messageData) return 0;
-    return messageData.pages.reduce((acc, page) => acc + page.messages.length, 0);
+    return messageData.pages.reduce((acc, page) => acc + (page.messages ?? []).length, 0);
   }, [messageData]);
 
   const eventsButtonClass = [
