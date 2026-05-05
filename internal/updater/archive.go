@@ -80,7 +80,7 @@ func cleanArchiveName(name string) (string, error) {
 
 func validateArchiveEntryType(header *tar.Header) error {
 	switch header.Typeflag {
-	case tar.TypeReg, tar.TypeRegA:
+	case tar.TypeReg, 0:
 		return nil
 	case tar.TypeSymlink:
 		return fmt.Errorf("release archive contains symlink %q", header.Name)

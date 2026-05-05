@@ -45,11 +45,11 @@ type CompatibilityError struct {
 
 func (e *CompatibilityError) Error() string {
 	if len(e.Issues) == 0 {
-		return "Moltnet compatibility check failed"
+		return "moltnet compatibility check failed"
 	}
 
 	return fmt.Sprintf(
-		"Moltnet compatibility check failed for %s: %s",
+		"moltnet compatibility check failed for %s: %s",
 		observability.RedactURL(e.BaseURL),
 		strings.Join(e.Issues, "; "),
 	)
@@ -74,7 +74,7 @@ func NewPreflightRequest(config bridgeconfig.Config) (PreflightRequest, error) {
 
 	token, _, err := config.Moltnet.ResolveToken()
 	if err != nil {
-		return PreflightRequest{}, fmt.Errorf("resolve Moltnet token for compatibility preflight: %w", err)
+		return PreflightRequest{}, fmt.Errorf("resolve moltnet token for compatibility preflight: %w", err)
 	}
 
 	baseURL := strings.TrimRight(strings.TrimSpace(config.Moltnet.BaseURL), "/")
@@ -97,7 +97,7 @@ func FetchPreflightNetwork(ctx context.Context, request PreflightRequest) (proto
 	endpoint := request.baseURL + "/v1/network"
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return protocol.Network{}, fmt.Errorf("build Moltnet compatibility preflight request: %w", err)
+		return protocol.Network{}, fmt.Errorf("build moltnet compatibility preflight request: %w", err)
 	}
 	if request.token != "" {
 		httpRequest.Header.Set("Authorization", "Bearer "+request.token)
@@ -106,7 +106,7 @@ func FetchPreflightNetwork(ctx context.Context, request PreflightRequest) (proto
 	response, err := defaultPreflightClient.Do(httpRequest)
 	if err != nil {
 		return protocol.Network{}, fmt.Errorf(
-			"request Moltnet compatibility metadata from %s: %w",
+			"request moltnet compatibility metadata from %s: %w",
 			observability.RedactURL(endpoint),
 			err,
 		)
@@ -115,7 +115,7 @@ func FetchPreflightNetwork(ctx context.Context, request PreflightRequest) (proto
 
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
 		return protocol.Network{}, fmt.Errorf(
-			"Moltnet compatibility preflight %s returned %s: configured credentials cannot read network compatibility metadata; required scopes: observe, pair, or attach",
+			"moltnet compatibility preflight %s returned %s: configured credentials cannot read network compatibility metadata; required scopes: observe, pair, or attach",
 			observability.RedactURL(endpoint),
 			response.Status,
 		)
@@ -124,14 +124,14 @@ func FetchPreflightNetwork(ctx context.Context, request PreflightRequest) (proto
 		message := readPreflightBody(response.Body)
 		if message != "" {
 			return protocol.Network{}, fmt.Errorf(
-				"Moltnet compatibility preflight %s returned %s: %s",
+				"moltnet compatibility preflight %s returned %s: %s",
 				observability.RedactURL(endpoint),
 				response.Status,
 				message,
 			)
 		}
 		return protocol.Network{}, fmt.Errorf(
-			"Moltnet compatibility preflight %s returned %s",
+			"moltnet compatibility preflight %s returned %s",
 			observability.RedactURL(endpoint),
 			response.Status,
 		)
@@ -139,7 +139,7 @@ func FetchPreflightNetwork(ctx context.Context, request PreflightRequest) (proto
 
 	var network protocol.Network
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&network); err != nil {
-		return protocol.Network{}, fmt.Errorf("decode Moltnet compatibility metadata: %w", err)
+		return protocol.Network{}, fmt.Errorf("decode moltnet compatibility metadata: %w", err)
 	}
 
 	return network, nil

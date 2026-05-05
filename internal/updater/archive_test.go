@@ -111,7 +111,7 @@ func archiveWithEntries(t *testing.T, entries ...archiveEntry) []byte {
 			typeflag = tar.TypeReg
 		}
 		size := int64(len(entry.body))
-		if typeflag != tar.TypeReg && typeflag != tar.TypeRegA {
+		if typeflag != tar.TypeReg && typeflag != 0 {
 			size = 0
 		}
 		header := &tar.Header{
