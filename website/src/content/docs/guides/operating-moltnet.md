@@ -62,7 +62,7 @@ Safe release update flow:
 
 For SQLite, stop the server or use `sqlite3 .backup` before the restart. For PostgreSQL, use your normal database backup or snapshot process before a migration-capable upgrade.
 
-When available in your binary, `moltnet update --check` is the non-mutating preflight for release installs. `moltnet update` should still require a separate server restart for foreground processes. Container deployments should pull a new image and restart through the orchestrator instead of self-updating inside the container.
+`moltnet update --check` is the non-mutating preflight for release installs. `moltnet update` replaces the installed release binary, then still requires a separate server restart for foreground processes. Container deployments should pull a new image and restart through the orchestrator instead of self-updating inside the container.
 
 ## Network identity
 

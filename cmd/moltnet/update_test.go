@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -34,6 +35,7 @@ func TestRunUpdateParsesFlags(t *testing.T) {
 		"--dry-run",
 		"--yes",
 		"--server", "http://127.0.0.1:8787",
+		"--server-token-env", "MOLTNET_UPDATE_TOKEN",
 	}, "v0.1.0")
 	if err != nil {
 		t.Fatalf("run() update error = %v", err)
@@ -43,8 +45,45 @@ func TestRunUpdateParsesFlags(t *testing.T) {
 	}
 	if captured.CurrentVersion != "v0.1.0" ||
 		captured.TargetVersion != "v0.2.0" ||
-		captured.ServerURL != "http://127.0.0.1:8787" {
+		captured.ServerURL != "http://127.0.0.1:8787" ||
+		captured.ServerTokenEnv != "MOLTNET_UPDATE_TOKEN" {
 		t.Fatalf("unexpected update options %#v", captured)
+	}
+}
+
+func TestRunUpdateWritesMutationRefusalOutput(t *testing.T) {
+	processStateMu.Lock()
+	defer processStateMu.Unlock()
+
+	previousRunner := runUpdater
+	defer func() {
+		runUpdater = previousRunner
+	}()
+
+	runUpdater = func(_ context.Context, options updater.Options) (updater.Result, error) {
+		return updater.Result{
+			AssetName:       "moltnet_linux_amd64.tar.gz",
+			CurrentVersion:  options.CurrentVersion,
+			Install:         updater.Install{Method: updater.InstallMethodSource, Path: "/tmp/moltnet"},
+			MutationRefused: true,
+			TargetVersion:   "v0.2.0",
+			UpdateAvailable: true,
+			Warnings: []string{
+				"self-update is not available for source or development builds; install a release tarball with curl -fsSL https://moltnet.dev/install.sh | sh",
+			},
+		}, errors.New("self-update is not available for source or development builds")
+	}
+
+	var runErr error
+	output := captureStdoutLocked(t, func() {
+		runErr = run(context.Background(), []string{"update"}, "0.0.0-dev")
+	})
+	if runErr == nil {
+		t.Fatal("expected mutation refusal error")
+	}
+	if !strings.Contains(output, "Self-update is not available") ||
+		!strings.Contains(output, "install a release tarball") {
+		t.Fatalf("expected actionable refusal output, got %q", output)
 	}
 }
 

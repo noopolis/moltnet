@@ -53,7 +53,7 @@ func (s *Service) relayMessage(message protocol.Message) {
 	}
 
 	for _, pairing := range s.snapshotRelayPairings() {
-		if !s.shouldRelayToPairing(pairing, message) {
+		if !s.shouldAttemptRelayToPairing(pairing, message) {
 			continue
 		}
 
@@ -77,15 +77,30 @@ func (s *Service) relayMessage(message protocol.Message) {
 			ctx, cancel := context.WithTimeout(s.lifecycleCtx, pairingRelayTimeout)
 			defer cancel()
 
+			scope := pairingCheckRelayRoom
+			if message.Target.Kind == protocol.TargetKindDM {
+				scope = pairingCheckRelayDM
+			}
+			if _, err := s.refreshPairingDiagnosticsIfNeeded(ctx, pairing, scope); err != nil {
+				observability.DefaultMetrics.RecordRelay("error")
+				observability.Logger(ctx, "rooms.relay", "message_id", messageID, "pairing_id", pairing.ID).
+					Error("relay compatibility refresh failed", "error", err)
+				return
+			}
+			if !s.shouldRelayToPairing(pairing, message) {
+				observability.DefaultMetrics.RecordRelay("dropped")
+				return
+			}
+
 			if _, err := s.pairingClient.RelayMessage(ctx, pairing, request); err != nil {
 				observability.DefaultMetrics.RecordRelay("error")
-				s.setPairingStatus(pairing.ID, "error")
+				s.setPairingError(pairing.ID, "Remote relay request failed.")
 				observability.Logger(ctx, "rooms.relay", "message_id", messageID, "pairing_id", pairing.ID).
 					Error("relay message failed", "error", err)
 				return
 			}
 			observability.DefaultMetrics.RecordRelay("success")
-			s.setPairingStatus(pairing.ID, "connected")
+			s.setPairingRelaySuccess(pairing.ID)
 		}(pairing, request, message.ID)
 	}
 }
@@ -102,7 +117,7 @@ func (s *Service) shouldRelayToPairing(pairing protocol.Pairing, message protoco
 	if strings.TrimSpace(pairing.RemoteBaseURL) == "" {
 		return false
 	}
-	if !s.pairingRelayReady(pairing) {
+	if !s.pairingRelayAllowed(pairing, message) {
 		return false
 	}
 
@@ -124,33 +139,93 @@ func (s *Service) shouldRelayToPairing(pairing protocol.Pairing, message protoco
 	return false
 }
 
+func (s *Service) shouldAttemptRelayToPairing(pairing protocol.Pairing, message protocol.Message) bool {
+	if strings.TrimSpace(pairing.RemoteBaseURL) == "" {
+		return false
+	}
+	if !s.pairingRelayAttemptReady(pairing, message) {
+		return false
+	}
+	return s.pairingMatchesRelayTarget(pairing, message)
+}
+
 func (s *Service) currentPairingStatus(pairing protocol.Pairing) pairingStatus {
 	if id := strings.TrimSpace(pairing.ID); id != "" {
 		s.pairingsMu.RLock()
-		status := s.pairingStatuses[id]
+		status := s.pairingStatusForPairingLocked(pairing)
 		s.pairingsMu.RUnlock()
 		if strings.TrimSpace(status.value) != "" {
 			return status
 		}
 	}
 	return pairingStatus{
-		value: strings.TrimSpace(pairing.Status),
+		value: normalizePairingStatus(pairing.Status),
 	}
 }
 
-func (s *Service) pairingRelayReady(pairing protocol.Pairing) bool {
+func (s *Service) pairingRelayAttemptReady(pairing protocol.Pairing, message protocol.Message) bool {
 	status := s.currentPairingStatus(pairing)
 	value := strings.TrimSpace(status.value)
-	if value == "" || value == "connected" {
+	if value == protocol.PairingStatusError {
+		if status.updatedAt.IsZero() {
+			return true
+		}
+		return s.now().UTC().Sub(status.updatedAt) >= pairingRelayErrorRetryAfter
+	}
+	if s.pairingDiagnosticsNeedRefresh(status) {
 		return true
 	}
-	if value != "error" {
+	if value == protocol.PairingStatusConnected || value == protocol.PairingStatusUnknown {
+		return true
+	}
+	if value == protocol.PairingStatusDegraded {
+		return message.Target.Kind != protocol.TargetKindDM || status.directMessages
+	}
+	return false
+}
+
+func (s *Service) pairingRelayAllowed(pairing protocol.Pairing, message protocol.Message) bool {
+	status := s.currentPairingStatus(pairing)
+	switch strings.TrimSpace(status.value) {
+	case protocol.PairingStatusConnected:
+		return true
+	case protocol.PairingStatusDegraded:
+		return message.Target.Kind != protocol.TargetKindDM || status.directMessages
+	case protocol.PairingStatusUnknown:
+		return false
+	default:
 		return false
 	}
-	if status.updatedAt.IsZero() {
+}
+
+func (s *Service) setPairingRelaySuccess(pairingID string) {
+	s.pairingsMu.RLock()
+	status := s.pairingStatuses[pairingID]
+	s.pairingsMu.RUnlock()
+	if strings.TrimSpace(status.value) == protocol.PairingStatusDegraded {
+		s.setPairingStatus(pairingID, protocol.PairingStatusDegraded)
+		return
+	}
+	s.setPairingStatus(pairingID, protocol.PairingStatusConnected)
+}
+
+func (s *Service) pairingMatchesRelayTarget(pairing protocol.Pairing, message protocol.Message) bool {
+	if message.Target.Kind != protocol.TargetKindDM {
 		return true
 	}
-	return s.now().UTC().Sub(status.updatedAt) >= pairingRelayErrorRetryAfter
+
+	for _, participantID := range message.Target.ParticipantIDs {
+		networkID, _, ok := protocol.ParseScopedAgentID(participantID)
+		if ok && networkID == pairing.RemoteNetworkID {
+			return true
+		}
+		networkID, _, ok = protocol.ParseAgentFQID(participantID)
+		if ok && networkID == pairing.RemoteNetworkID {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *Service) relayRequest(pairing protocol.Pairing, message protocol.Message) (protocol.SendMessageRequest, bool) {

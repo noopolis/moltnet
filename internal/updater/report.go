@@ -54,12 +54,18 @@ func (r Result) String() string {
 		builder.WriteString("Restart Moltnet to run the new version.\n")
 	case !r.UpdateAvailable:
 		builder.WriteString("Moltnet is already at the requested version.\n")
+	case (r.CheckOnly || r.DryRun) && !selfUpdateAllowedForReport(r.Install):
+		builder.WriteString("Update available, but self-update is not available for this install.\n")
 	case r.CheckOnly || r.DryRun:
 		builder.WriteString("Update available.\n")
 	default:
 		builder.WriteString("Update available.\n")
 	}
 	return builder.String()
+}
+
+func selfUpdateAllowedForReport(install Install) bool {
+	return install.Method == InstallMethodReleaseTarball && install.SelfUpdateAllowed
 }
 
 func writeField(builder *strings.Builder, name string, value string) {

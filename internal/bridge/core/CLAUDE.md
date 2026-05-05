@@ -8,6 +8,11 @@ This package implements bridge lifecycle and adapter selection.
 - choose the runtime adapter
 - own lifecycle and shutdown
 
+## Structure
+
+- `runner.go`: bridge runner construction, adapter selection, and lifecycle entrypoint.
+- `preflight.go`: Moltnet `/v1/network` compatibility fetch and validation helpers.
+
 ## Non-Responsibilities
 
 - no runtime-specific transport details

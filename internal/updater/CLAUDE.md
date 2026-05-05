@@ -10,7 +10,8 @@ This folder contains Moltnet self-update mechanics for release tarball installs.
 - `release.go`: release metadata and asset fetching behind an HTTP client
 - `checksum.go`: checksum manifest parsing and SHA-256 verification
 - `archive.go`: safe extraction of the `moltnet` binary from release archives
-- `install.go`: install detection and binary replacement helpers
+- `install.go`: install detection, metadata, and binary replacement helpers
+- `lock.go`: exclusive update lock acquisition and stale lock cleanup
 - `update.go`: high-level update orchestration
 
 ## Rules

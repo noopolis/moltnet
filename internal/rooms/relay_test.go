@@ -208,6 +208,10 @@ func newRelayTestServiceWithBearer(t *testing.T, networkID string, networkName s
 
 func newRelayTestHandler(service *Service, expectedBearer string) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodGet && request.URL.Path == "/v1/network" {
+			writeRelayTestJSON(response, compatibleRemoteNetwork(service.networkID))
+			return
+		}
 		if request.Method != http.MethodPost || request.URL.Path != "/v1/messages" {
 			http.NotFound(response, request)
 			return
@@ -254,6 +258,13 @@ func newRelayTestHandler(service *Service, expectedBearer string) http.Handler {
 		response.WriteHeader(http.StatusAccepted)
 		_ = json.NewEncoder(response).Encode(accepted)
 	})
+}
+
+func writeRelayTestJSON(response http.ResponseWriter, payload any) {
+	response.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(response).Encode(payload); err != nil {
+		http.Error(response, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func waitForRoomMessage(t *testing.T, service *Service, roomID string) protocol.MessagePage {

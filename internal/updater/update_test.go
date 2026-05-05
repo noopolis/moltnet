@@ -139,6 +139,28 @@ func TestEnsureMutationAllowedRefusesUnsupportedInstalls(t *testing.T) {
 	}
 }
 
+func TestCheckReportSaysUnsupportedInstallsCannotSelfUpdate(t *testing.T) {
+	for _, method := range []InstallMethod{
+		InstallMethodSource,
+		InstallMethodContainer,
+		InstallMethodUnknown,
+	} {
+		t.Run(string(method), func(t *testing.T) {
+			result := Result{
+				CheckOnly:       true,
+				CurrentVersion:  "v0.1.0",
+				Install:         Install{Method: method, Path: "/tmp/moltnet"},
+				TargetVersion:   "v0.2.0",
+				UpdateAvailable: true,
+			}
+			output := result.String()
+			if !strings.Contains(output, "Update available, but self-update is not available for this install.") {
+				t.Fatalf("expected unsupported check wording, got %q", output)
+			}
+		})
+	}
+}
+
 func TestRunUsesExplicitTargetVersion(t *testing.T) {
 	installPath := writeMoltnetScript(t, t.TempDir(), "v0.1.0")
 	result, err := Run(context.Background(), Options{

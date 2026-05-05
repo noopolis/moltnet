@@ -1,15 +1,22 @@
 package updater
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Options struct {
 	CheckOnly      bool
 	CurrentVersion string
 	Detector       InstallDetector
 	DryRun         bool
+	LockPath       string
+	LockStaleAfter time.Duration
 	Platform       Platform
 	ReleaseSource  ReleaseSource
 	ServerProbe    ServerProbe
+	ServerToken    string
+	ServerTokenEnv string
 	ServerURL      string
 	TargetVersion  string
 	TempDir        string
@@ -64,7 +71,12 @@ type ReleaseSource interface {
 }
 
 type ServerProbe interface {
-	ProbeServer(ctx context.Context, serverURL string) (ServerInfo, error)
+	ProbeServer(ctx context.Context, request ServerProbeRequest) (ServerInfo, error)
+}
+
+type ServerProbeRequest struct {
+	Token string
+	URL   string
 }
 
 type ServerInfo struct {

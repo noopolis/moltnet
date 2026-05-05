@@ -92,6 +92,8 @@ func TestMoltnetClientRejectsReadyTokenWithoutTokenPath(t *testing.T) {
 		readIdentify(t, connection)
 		if err := connection.WriteJSON(protocol.AttachmentFrame{
 			Op:         protocol.AttachmentOpReady,
+			Version:    protocol.AttachmentProtocolV1,
+			NetworkID:  "local",
 			AgentToken: "magt_v1_alpha",
 		}); err != nil {
 			t.Fatalf("write ready: %v", err)

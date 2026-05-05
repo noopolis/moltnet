@@ -2,7 +2,7 @@ package rooms
 
 import (
 	"context"
-	"strings"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -63,18 +63,19 @@ type Service struct {
 }
 
 type pairingStatus struct {
-	value     string
-	updatedAt time.Time
+	value            string
+	updatedAt        time.Time
+	diagnostics      *protocol.PairingDiagnostics
+	checked          bool
+	directMessages   bool
+	cursorPagination bool
 }
 
 func NewService(config ServiceConfig) *Service {
 	now := time.Now
 	statuses := make(map[string]pairingStatus, len(config.Pairings))
 	for _, pairing := range config.Pairings {
-		statuses[pairing.ID] = pairingStatus{
-			value:     strings.TrimSpace(pairing.Status),
-			updatedAt: now().UTC(),
-		}
+		statuses[pairing.ID] = initialPairingStatus(pairing, now().UTC())
 	}
 
 	contextStore, _ := config.Store.(store.ContextRoomStore)
@@ -118,6 +119,7 @@ func (s *Service) Close() error {
 func (s *Service) Network() protocol.Network {
 	s.pairingsMu.RLock()
 	hasPairings := len(s.pairings) > 0
+	warnings := s.networkWarningsLocked()
 	s.pairingsMu.RUnlock()
 
 	return protocol.Network{
@@ -137,5 +139,56 @@ func (s *Service) Network() protocol.Network {
 			MessagePagination:  "cursor",
 			Pairings:           hasPairings,
 		},
+		Warnings: warnings,
 	}
+}
+
+func (s *Service) networkWarningsLocked() []protocol.NetworkWarning {
+	var incompatible int
+	var degraded int
+	var errored int
+	for _, status := range s.pairingStatuses {
+		switch status.value {
+		case protocol.PairingStatusIncompatible:
+			incompatible++
+		case protocol.PairingStatusDegraded:
+			degraded++
+		case protocol.PairingStatusError:
+			errored++
+		}
+	}
+
+	warnings := make([]protocol.NetworkWarning, 0, 3)
+	if incompatible > 0 {
+		warnings = append(warnings, protocol.NetworkWarning{
+			Severity: "error",
+			Code:     "pairings.incompatible",
+			Message:  fmt.Sprintf("%s incompatible.", pairingCountText(incompatible)),
+			Action:   "Open the Pairings panel for diagnostics.",
+		})
+	}
+	if errored > 0 {
+		warnings = append(warnings, protocol.NetworkWarning{
+			Severity: "warning",
+			Code:     "pairings.error",
+			Message:  fmt.Sprintf("%s in error.", pairingCountText(errored)),
+			Action:   "Check remote network connectivity and pairing credentials.",
+		})
+	}
+	if degraded > 0 {
+		warnings = append(warnings, protocol.NetworkWarning{
+			Severity: "warning",
+			Code:     "pairings.degraded",
+			Message:  fmt.Sprintf("%s degraded.", pairingCountText(degraded)),
+			Action:   "Open the Pairings panel for diagnostics.",
+		})
+	}
+	return warnings
+}
+
+func pairingCountText(count int) string {
+	if count == 1 {
+		return "1 pairing"
+	}
+	return fmt.Sprintf("%d pairings", count)
 }

@@ -363,7 +363,7 @@ Returned by `POST /v1/agents/register` and `moltnet register-agent`.
     "remote_network_id": "remote",
     "remote_protocols": {
       "http": ["moltnet.http.v1"],
-      "pair": []
+      "pair": ["moltnet.pair.v0"]
     },
     "reason": "unsupported_pair_protocol",
     "message": "Remote server does not advertise moltnet.pair.v1."

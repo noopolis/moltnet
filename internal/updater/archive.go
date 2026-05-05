@@ -26,6 +26,9 @@ func ExtractMoltnetBinary(archive []byte, destinationDir string) (string, error)
 	defer gzipReader.Close()
 
 	tarReader := tar.NewReader(gzipReader)
+	var binary bytes.Buffer
+	var binaryMode os.FileMode
+	foundBinary := false
 	for {
 		header, err := tarReader.Next()
 		if err == io.EOF {
@@ -39,15 +42,25 @@ func ExtractMoltnetBinary(archive []byte, destinationDir string) (string, error)
 			return "", err
 		}
 		if cleanName != archiveBinaryName {
-			continue
+			return "", fmt.Errorf("release archive contains unexpected member %q", header.Name)
 		}
-		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
-			return "", fmt.Errorf("release archive entry %q is not a regular file", header.Name)
+		if foundBinary {
+			return "", fmt.Errorf("release archive contains duplicate %s binary", archiveBinaryName)
 		}
-		return writeExtractedBinary(destinationDir, tarReader, header.FileInfo().Mode())
+		if err := validateArchiveEntryType(header); err != nil {
+			return "", err
+		}
+		if _, err := io.Copy(&binary, tarReader); err != nil {
+			return "", err
+		}
+		binaryMode = header.FileInfo().Mode()
+		foundBinary = true
 	}
 
-	return "", fmt.Errorf("release archive did not contain %s", archiveBinaryName)
+	if !foundBinary {
+		return "", fmt.Errorf("release archive did not contain %s", archiveBinaryName)
+	}
+	return writeExtractedBinary(destinationDir, bytes.NewReader(binary.Bytes()), binaryMode)
 }
 
 func cleanArchiveName(name string) (string, error) {
@@ -63,6 +76,21 @@ func cleanArchiveName(name string) (string, error) {
 		return "", fmt.Errorf("release archive contains unsafe path %q", name)
 	}
 	return clean, nil
+}
+
+func validateArchiveEntryType(header *tar.Header) error {
+	switch header.Typeflag {
+	case tar.TypeReg, tar.TypeRegA:
+		return nil
+	case tar.TypeSymlink:
+		return fmt.Errorf("release archive contains symlink %q", header.Name)
+	case tar.TypeLink:
+		return fmt.Errorf("release archive contains hardlink %q", header.Name)
+	case tar.TypeChar, tar.TypeBlock, tar.TypeFifo:
+		return fmt.Errorf("release archive contains device or special file %q", header.Name)
+	default:
+		return fmt.Errorf("release archive entry %q is not a regular file", header.Name)
+	}
 }
 
 func writeExtractedBinary(destinationDir string, reader io.Reader, mode os.FileMode) (string, error) {

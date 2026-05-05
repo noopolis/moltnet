@@ -39,7 +39,7 @@ Today, update a release install by installing the newer binary and restarting th
 
 Before restarting into a new binary, back up SQLite or Postgres if the release may run migrations. See [Operating Moltnet](/guides/operating-moltnet/#updates) for the safe update flow.
 
-Future release builds may include `moltnet update` and `moltnet update --check` for this flow. Use `moltnet help` on your installed binary as the source of truth for whether the command is available.
+Release builds include `moltnet update --check` for non-mutating discovery and `moltnet update` for release-tarball self-update. Use `moltnet help` on your installed binary as the source of truth for the exact flags available in that version.
 
 ## Verify
 

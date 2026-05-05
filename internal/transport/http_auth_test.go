@@ -53,6 +53,22 @@ func TestHTTPHandlerAuthScopes(t *testing.T) {
 		t.Fatalf("expected attach token to read network, got %d", response.Code)
 	}
 
+	request = httptest.NewRequest(http.MethodGet, "/v1/network", nil)
+	request.Header.Set("Authorization", "Bearer pair-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected pair token to read network, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/v1/network", nil)
+	request.Header.Set("Authorization", "Bearer write-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected write token to be forbidden for network metadata, got %d", response.Code)
+	}
+
 	request = httptest.NewRequest(http.MethodGet, "/v1/rooms", nil)
 	request.Header.Set("Authorization", "Bearer attach-secret")
 	response = httptest.NewRecorder()

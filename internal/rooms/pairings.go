@@ -55,12 +55,10 @@ func (s *Service) PairingNetwork(ctx context.Context, pairingID string) (protoco
 		return protocol.Network{}, pairingClientMissingError()
 	}
 
-	network, err := s.pairingClient.FetchNetwork(ctx, pairing)
+	network, _, err := s.refreshPairingDiagnostics(ctx, pairing, pairingCheckNetwork)
 	if err != nil {
-		s.setPairingStatus(pairing.ID, "error")
 		return protocol.Network{}, remotePairingError(err)
 	}
-	s.setPairingStatus(pairing.ID, "connected")
 	return network, nil
 }
 
@@ -81,12 +79,19 @@ func (s *Service) PairingRoomsContext(ctx context.Context, pairingID string, pag
 		return protocol.RoomPage{}, pairingClientMissingError()
 	}
 
-	rooms, err := s.pairingClient.FetchRooms(ctx, pairing)
+	_, status, err := s.refreshPairingDiagnostics(ctx, pairing, pairingCheckDiscovery)
 	if err != nil {
-		s.setPairingStatus(pairing.ID, "error")
 		return protocol.RoomPage{}, remotePairingError(err)
 	}
-	s.setPairingStatus(pairing.ID, "connected")
+	if err := pairingDiscoveryError(status); err != nil {
+		return protocol.RoomPage{}, remotePairingError(err)
+	}
+
+	rooms, err := s.pairingClient.FetchRooms(ctx, pairing)
+	if err != nil {
+		s.setPairingError(pairing.ID, "Remote rooms could not be fetched.")
+		return protocol.RoomPage{}, remotePairingError(err)
+	}
 
 	items := make([]roomItem, 0, len(rooms))
 	for _, room := range rooms {
@@ -127,12 +132,19 @@ func (s *Service) PairingAgentsContext(ctx context.Context, pairingID string, pa
 		return protocol.AgentPage{}, pairingClientMissingError()
 	}
 
-	agents, err := s.pairingClient.FetchAgents(ctx, pairing)
+	_, status, err := s.refreshPairingDiagnostics(ctx, pairing, pairingCheckDiscovery)
 	if err != nil {
-		s.setPairingStatus(pairing.ID, "error")
 		return protocol.AgentPage{}, remotePairingError(err)
 	}
-	s.setPairingStatus(pairing.ID, "connected")
+	if err := pairingDiscoveryError(status); err != nil {
+		return protocol.AgentPage{}, remotePairingError(err)
+	}
+
+	agents, err := s.pairingClient.FetchAgents(ctx, pairing)
+	if err != nil {
+		s.setPairingError(pairing.ID, "Remote agents could not be fetched.")
+		return protocol.AgentPage{}, remotePairingError(err)
+	}
 
 	items := make([]agentItem, 0, len(agents))
 	for _, agent := range agents {
@@ -189,9 +201,21 @@ func (s *Service) snapshotPairingsWithTokenPolicy(includeTokens bool) []protocol
 		if !includeTokens {
 			pairing.Token = ""
 		}
-		pairing.Status = s.pairingStatuses[pairing.ID].value
+		status := s.pairingStatusForPairingLocked(pairing)
+		pairing.Status = status.value
+		pairing.Diagnostics = clonePairingDiagnostics(status.diagnostics)
 		pairings = append(pairings, pairing)
 	}
 
 	return pairings
+}
+
+func (s *Service) pairingStatusForPairingLocked(pairing protocol.Pairing) pairingStatus {
+	status := s.pairingStatuses[pairing.ID]
+	if strings.TrimSpace(status.value) != "" {
+		return status
+	}
+	return pairingStatus{
+		value: normalizePairingStatus(pairing.Status),
+	}
 }

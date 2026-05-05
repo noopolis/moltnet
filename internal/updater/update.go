@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func Run(ctx context.Context, options Options) (Result, error) {
@@ -30,8 +31,10 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	result.AssetName = assetName
 
 	if strings.TrimSpace(options.ServerURL) != "" {
-		server, err := options.ServerProbe.ProbeServer(ctx, options.ServerURL)
-		if err != nil {
+		probeRequest, warning := serverProbeRequest(options)
+		if warning != "" {
+			result.Server = ServerInfo{URL: strings.TrimSpace(options.ServerURL), Warning: warning}
+		} else if server, err := options.ServerProbe.ProbeServer(ctx, probeRequest); err != nil {
 			result.Server = ServerInfo{URL: strings.TrimSpace(options.ServerURL), Warning: err.Error()}
 		} else {
 			result.Server = server
@@ -45,6 +48,7 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	} else {
 		if err := ensureMutationAllowed(install); err != nil {
 			result.MutationRefused = true
+			result.Warnings = append(result.Warnings, err.Error())
 			return result, err
 		}
 	}
@@ -75,6 +79,28 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	if options.CheckOnly || options.DryRun {
 		return result, nil
 	}
+	lock, err := acquireUpdateLock(updateLockOptions{
+		BinaryPath:    install.Path,
+		Path:          updateLockPath(options, install.Path),
+		StaleAfter:    options.LockStaleAfter,
+		TargetVersion: targetVersion,
+	})
+	if err != nil {
+		return result, err
+	}
+	defer lock.Release()
+
+	installedVersion, err := readBinaryVersion(ctx, install.Path)
+	if err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("could not re-check installed binary version before replacement: %v", err))
+	} else {
+		result.CurrentVersion = installedVersion
+		updateAvailable, err = versionDiffers(installedVersion, targetVersion)
+		if err != nil {
+			return result, err
+		}
+		result.UpdateAvailable = updateAvailable
+	}
 	if !updateAvailable {
 		return result, nil
 	}
@@ -91,6 +117,7 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	if err := VerifyChecksum(assetName, archive, checksums); err != nil {
 		return result, err
 	}
+	checksum, _ := checksumForAsset(assetName, checksums)
 
 	workspace, err := os.MkdirTemp(options.TempDir, "moltnet-update-*")
 	if err != nil {
@@ -112,6 +139,25 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	}
 	result.BackupPath = backupPath
 	result.Updated = true
+	finishedAt := time.Now().UTC().Format(time.RFC3339)
+	if err := writeInstallMetadata(installMetadata{
+		Arch:              options.Platform.Arch,
+		AssetChecksum:     normalizeAssetChecksum(checksum),
+		AssetName:         assetName,
+		InstallMethod:     string(InstallMethodReleaseTarball),
+		InstallPath:       install.Path,
+		InstalledAt:       finishedAt,
+		InstalledBy:       "moltnet update",
+		InstalledVersion:  targetVersion,
+		LastUpdate:        &installMetadataLastUpdate{Status: "succeeded", FromVersion: result.CurrentVersion, ToVersion: targetVersion, FinishedAt: finishedAt},
+		OS:                options.Platform.OS,
+		OwnerRepo:         defaultOwnerRepo,
+		PreviousBinary:    backupPath,
+		SelfUpdateAllowed: true,
+		Version:           1,
+	}); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("install metadata update failed after binary replacement: %v", err))
+	}
 	return result, nil
 }
 
@@ -131,6 +177,25 @@ func (options Options) withDefaults() Options {
 		options.ServerProbe = HTTPServerProbe{}
 	}
 	return options
+}
+
+func serverProbeRequest(options Options) (ServerProbeRequest, string) {
+	token := strings.TrimSpace(options.ServerToken)
+	tokenEnv := strings.TrimSpace(options.ServerTokenEnv)
+	if token == "" && tokenEnv != "" {
+		token = strings.TrimSpace(os.Getenv(tokenEnv))
+		if token == "" {
+			return ServerProbeRequest{URL: strings.TrimSpace(options.ServerURL)}, fmt.Sprintf("server token env %s is not set", tokenEnv)
+		}
+	}
+	return ServerProbeRequest{Token: token, URL: strings.TrimSpace(options.ServerURL)}, ""
+}
+
+func updateLockPath(options Options, installPath string) string {
+	if strings.TrimSpace(options.LockPath) != "" {
+		return strings.TrimSpace(options.LockPath)
+	}
+	return defaultUpdateLockPath(installPath)
 }
 
 func resolveTargetVersion(ctx context.Context, options Options) (string, error) {
@@ -177,13 +242,10 @@ func ensureMutationAllowed(install Install) error {
 }
 
 func verifyDownloadedVersion(ctx context.Context, binaryPath string, targetVersion string) error {
-	command := exec.CommandContext(ctx, binaryPath, "version")
-	command.Dir = filepath.Dir(binaryPath)
-	output, err := command.Output()
+	reported, err := readBinaryVersion(ctx, binaryPath)
 	if err != nil {
 		return fmt.Errorf("verify downloaded moltnet version: %w", err)
 	}
-	reported := strings.TrimSpace(string(output))
 	same, err := versionDiffers(reported, targetVersion)
 	if err != nil {
 		return err
@@ -192,4 +254,14 @@ func verifyDownloadedVersion(ctx context.Context, binaryPath string, targetVersi
 		return fmt.Errorf("downloaded moltnet reports version %q, expected %q", reported, targetVersion)
 	}
 	return nil
+}
+
+func readBinaryVersion(ctx context.Context, binaryPath string) (string, error) {
+	command := exec.CommandContext(ctx, binaryPath, "version")
+	command.Dir = filepath.Dir(binaryPath)
+	output, err := command.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
 }

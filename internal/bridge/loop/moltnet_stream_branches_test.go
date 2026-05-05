@@ -22,8 +22,9 @@ func TestMoltnetClientPostReadyErrorAndHandlerError(t *testing.T) {
 			readIdentify(t, connection)
 			writeReady(t, connection)
 			if err := connection.WriteJSON(protocol.AttachmentFrame{
-				Op:    protocol.AttachmentOpError,
-				Error: "runtime blocked",
+				Op:      protocol.AttachmentOpError,
+				Version: protocol.AttachmentProtocolV1,
+				Error:   "runtime blocked",
 			}); err != nil {
 				t.Fatalf("write error frame: %v", err)
 			}
@@ -136,6 +137,208 @@ func TestMoltnetClientReadyMismatchAndContextCancel(t *testing.T) {
 	})
 }
 
+func TestMoltnetClientRejectsHelloVersionBeforeIdentify(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		hello protocol.AttachmentFrame
+	}{
+		{
+			name:  "missing",
+			hello: protocol.AttachmentFrame{Op: protocol.AttachmentOpHello},
+		},
+		{
+			name: "mismatch",
+			hello: protocol.AttachmentFrame{
+				Op:      protocol.AttachmentOpHello,
+				Version: "moltnet.attach.v2",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			identified := make(chan protocol.AttachmentFrame, 1)
+			handlerDone := make(chan struct{})
+			server := newAttachmentTestServer(t, func(connection *websocket.Conn) {
+				defer close(handlerDone)
+				if err := connection.WriteJSON(test.hello); err != nil {
+					t.Errorf("write hello: %v", err)
+					return
+				}
+				if err := connection.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+					t.Errorf("set read deadline: %v", err)
+					return
+				}
+				var identify protocol.AttachmentFrame
+				if err := connection.ReadJSON(&identify); err == nil {
+					identified <- identify
+				}
+			})
+			defer server.Close()
+
+			config := attachmentBranchTestConfig(server.URL)
+			client := NewMoltnetClient(config)
+			err := client.StreamEvents(context.Background(), config, func(event protocol.Event) error { return nil })
+			if err == nil || !strings.Contains(err.Error(), "HELLO version") {
+				t.Fatalf("expected HELLO version error, got %v", err)
+			}
+
+			select {
+			case <-handlerDone:
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for attachment handler")
+			}
+			select {
+			case identify := <-identified:
+				t.Fatalf("client sent IDENTIFY after incompatible HELLO: %#v", identify)
+			default:
+			}
+		})
+	}
+}
+
+func TestMoltnetClientRejectsReadyCompatibilityBeforeEvents(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		ready protocol.AttachmentFrame
+		want  string
+	}{
+		{
+			name: "missing version",
+			ready: protocol.AttachmentFrame{
+				Op:        protocol.AttachmentOpReady,
+				NetworkID: "local",
+				AgentID:   "researcher",
+			},
+			want: "READY version",
+		},
+		{
+			name: "mismatched version",
+			ready: protocol.AttachmentFrame{
+				Op:        protocol.AttachmentOpReady,
+				Version:   "moltnet.attach.v2",
+				NetworkID: "local",
+				AgentID:   "researcher",
+			},
+			want: "READY version",
+		},
+		{
+			name: "mismatched network",
+			ready: protocol.AttachmentFrame{
+				Op:        protocol.AttachmentOpReady,
+				Version:   protocol.AttachmentProtocolV1,
+				NetworkID: "remote",
+				AgentID:   "researcher",
+			},
+			want: "READY network_id",
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := newAttachmentTestServer(t, func(connection *websocket.Conn) {
+				writeHello(t, connection)
+				readIdentify(t, connection)
+				if err := connection.WriteJSON(test.ready); err != nil {
+					t.Fatalf("write ready: %v", err)
+				}
+				_ = connection.WriteJSON(attachmentBranchTestEventFrame(protocol.AttachmentProtocolV1))
+			})
+			defer server.Close()
+
+			config := attachmentBranchTestConfig(server.URL)
+			client := NewMoltnetClient(config)
+			handled := make(chan protocol.Event, 1)
+			err := client.StreamEvents(context.Background(), config, func(event protocol.Event) error {
+				handled <- event
+				return nil
+			})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q error, got %v", test.want, err)
+			}
+			select {
+			case event := <-handled:
+				t.Fatalf("processed event before READY compatibility failure: %#v", event)
+			default:
+			}
+		})
+	}
+}
+
+func TestMoltnetClientRejectsUnversionedPostReadyFrames(t *testing.T) {
+	t.Parallel()
+
+	tests := []protocol.AttachmentFrame{
+		{Op: protocol.AttachmentOpEvent},
+		{Op: protocol.AttachmentOpPing},
+		{Op: protocol.AttachmentOpError, Error: "runtime blocked"},
+	}
+
+	for _, frame := range tests {
+		frame := frame
+		t.Run(frame.Op, func(t *testing.T) {
+			t.Parallel()
+
+			server := newAttachmentTestServer(t, func(connection *websocket.Conn) {
+				writeHello(t, connection)
+				readIdentify(t, connection)
+				writeReady(t, connection)
+				if err := connection.WriteJSON(frame); err != nil {
+					t.Fatalf("write frame: %v", err)
+				}
+			})
+			defer server.Close()
+
+			config := attachmentBranchTestConfig(server.URL)
+			client := NewMoltnetClient(config)
+			err := client.StreamEvents(context.Background(), config, func(event protocol.Event) error { return nil })
+			if err == nil || !strings.Contains(err.Error(), "version is required") {
+				t.Fatalf("expected version error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestMoltnetClientRejectsPostReadyFrameVersionMismatch(t *testing.T) {
+	t.Parallel()
+
+	server := newAttachmentTestServer(t, func(connection *websocket.Conn) {
+		writeHello(t, connection)
+		readIdentify(t, connection)
+		writeReady(t, connection)
+		if err := connection.WriteJSON(attachmentBranchTestEventFrame("moltnet.attach.v2")); err != nil {
+			t.Fatalf("write event: %v", err)
+		}
+	})
+	defer server.Close()
+
+	config := attachmentBranchTestConfig(server.URL)
+	client := NewMoltnetClient(config)
+	handled := make(chan protocol.Event, 1)
+	err := client.StreamEvents(context.Background(), config, func(event protocol.Event) error {
+		handled <- event
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "EVENT version") {
+		t.Fatalf("expected post-ready version error, got %v", err)
+	}
+	select {
+	case event := <-handled:
+		t.Fatalf("processed mismatched-version event: %#v", event)
+	default:
+	}
+}
+
 func TestAttachmentURLPathJoin(t *testing.T) {
 	t.Parallel()
 
@@ -169,5 +372,27 @@ func TestAttachmentHeartbeatHelpers(t *testing.T) {
 		Rooms: []bridgeconfig.RoomBinding{{ID: "research", Reply: bridgeconfig.ReplyManual}},
 	}) {
 		t.Fatal("expected manual-only room binding to suppress thread support")
+	}
+}
+
+func attachmentBranchTestConfig(baseURL string) bridgeconfig.Config {
+	return bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "researcher"},
+		Moltnet: bridgeconfig.MoltnetConfig{BaseURL: baseURL, NetworkID: "local"},
+	}
+}
+
+func attachmentBranchTestEventFrame(version string) protocol.AttachmentFrame {
+	return protocol.AttachmentFrame{
+		Op:        protocol.AttachmentOpEvent,
+		Version:   version,
+		NetworkID: "local",
+		Cursor:    "evt_1",
+		Event: &protocol.Event{
+			ID:        "evt_1",
+			Type:      protocol.EventTypeMessageCreated,
+			NetworkID: "local",
+			Message:   &protocol.Message{ID: "msg_1"},
+		},
 	}
 }

@@ -47,8 +47,8 @@ export function TopBar() {
 }
 
 function OperatorWarnings({ warnings }: { warnings: NetworkWarning[] }) {
-  const operatorWarnings = warnings.filter(
-    (warning) => warning.severity === "warning" || warning.severity === "error",
+  const operatorWarnings = warnings.filter((warning) =>
+    ["warning", "error"].includes(warningSeverity(warning)),
   );
   if (operatorWarnings.length === 0) return null;
 
@@ -76,7 +76,7 @@ function WarningChip({ warning }: { warning: NetworkWarning }) {
   const className = [
     "inline-block max-w-[28rem] min-w-0 truncate rounded border px-2 py-0.5",
     "text-[10px] leading-none",
-    warning.severity === "error"
+    warningSeverity(warning) === "error"
       ? "border-coral bg-coral/[0.14] text-ink"
       : "border-coral/50 bg-coral/[0.08] text-coral",
   ].join(" ");
@@ -100,4 +100,8 @@ function WarningChip({ warning }: { warning: NetworkWarning }) {
       {label}
     </span>
   );
+}
+
+function warningSeverity(warning: NetworkWarning) {
+  return warning.severity?.trim().toLowerCase() || "";
 }

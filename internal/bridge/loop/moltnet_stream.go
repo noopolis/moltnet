@@ -33,6 +33,10 @@ func (c *MoltnetClient) streamFrames(
 				sendAttachmentFrameResult(ctx, results, attachmentFrameResult{err: err})
 				return
 			}
+			if err := validateAttachmentFrameVersion(frame); err != nil {
+				sendAttachmentFrameResult(ctx, results, attachmentFrameResult{err: err})
+				return
+			}
 
 			switch frame.Op {
 			case protocol.AttachmentOpPing:

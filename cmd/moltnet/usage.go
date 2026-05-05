@@ -10,7 +10,7 @@ func buildUsage() string {
   moltnet register-agent --base-url <url> [--agent <id>] [--name <name>]
   moltnet send --target room:<id>|dm:<id> --text <message> [--network <id>] [--member <id>]
   moltnet skill install --runtime openclaw|picoclaw|tinyclaw|claude-code|codex --workspace <path>
-  moltnet update [--check] [--version <version>] [--dry-run] [--yes] [--server <url>]
+  moltnet update [--check] [--version <version>] [--dry-run] [--yes] [--server <url>] [--server-token-env <name>]
   moltnet validate [path]
   moltnet start
   moltnet node start [path]

@@ -10,11 +10,14 @@ import (
 	"strings"
 )
 
+const DefaultServerTokenEnv = "MOLTNET_UPDATE_SERVER_TOKEN"
+
 type HTTPServerProbe struct {
 	Client HTTPClient
 }
 
-func (p HTTPServerProbe) ProbeServer(ctx context.Context, serverURL string) (ServerInfo, error) {
+func (p HTTPServerProbe) ProbeServer(ctx context.Context, probe ServerProbeRequest) (ServerInfo, error) {
+	serverURL := strings.TrimSpace(probe.URL)
 	parsed, err := url.Parse(strings.TrimSpace(serverURL))
 	if err != nil {
 		return ServerInfo{}, err
@@ -34,6 +37,9 @@ func (p HTTPServerProbe) ProbeServer(ctx context.Context, serverURL string) (Ser
 	if err != nil {
 		return ServerInfo{}, err
 	}
+	if token := strings.TrimSpace(probe.Token); token != "" {
+		request.Header.Set("Authorization", bearerAuthorization(token))
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		return ServerInfo{}, err
@@ -51,4 +57,11 @@ func (p HTTPServerProbe) ProbeServer(ctx context.Context, serverURL string) (Ser
 		return ServerInfo{}, err
 	}
 	return ServerInfo{URL: strings.TrimSpace(serverURL), Version: strings.TrimSpace(payload.Version)}, nil
+}
+
+func bearerAuthorization(token string) string {
+	if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+		return token
+	}
+	return "Bearer " + token
 }
