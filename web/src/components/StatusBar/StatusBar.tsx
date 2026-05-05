@@ -3,6 +3,12 @@ import { useLatency } from "../../hooks/useLatency";
 import { useMessages } from "../../hooks/useMessages";
 import { useNetwork } from "../../hooks/useNetwork";
 import { formatClockUTC, formatUptime } from "../../lib/format";
+import {
+  capabilityText,
+  supportsCursorPagination,
+  supportsDirectMessages,
+  supportsEventStream,
+} from "../../lib/capabilities";
 import { useEventStream, useSelection } from "../../providers";
 import { StatusItem } from "./StatusItem";
 
@@ -24,9 +30,10 @@ export function StatusBar() {
     return () => clearInterval(id);
   }, [bootedAt]);
 
-  const ingressOn = !!network?.capabilities?.human_ingress;
-  const directMessagesEnabled =
-    !!network && network.capabilities?.direct_messages !== false;
+  const ingressOn = network?.capabilities?.human_ingress === true;
+  const eventStreamEnabled = supportsEventStream(network);
+  const directMessagesEnabled = supportsDirectMessages(network);
+  const cursorPaginationEnabled = supportsCursorPagination(network);
   const eventsActive = selected?.kind === "events";
   const msgs = useMemo(() => {
     if (!messageData) return 0;
@@ -67,17 +74,29 @@ export function StatusBar() {
         </button>
         <StatusItem
           label="stream:"
-          value={network?.capabilities?.event_stream ?? "—"}
+          value={
+            network ? capabilityText(network.capabilities?.event_stream) : "—"
+          }
+          tone={network ? (eventStreamEnabled ? "good" : "warn") : "default"}
         />
         <StatusItem
           label="ingress:"
-          value={ingressOn ? "enabled" : "disabled"}
+          value={network ? (ingressOn ? "enabled" : "disabled") : "—"}
           tone={ingressOn ? "good" : "default"}
         />
         <StatusItem
           label="direct:"
           value={network ? (directMessagesEnabled ? "enabled" : "disabled") : "—"}
-          tone={directMessagesEnabled ? "good" : "default"}
+          tone={network ? (directMessagesEnabled ? "good" : "warn") : "default"}
+        />
+        <StatusItem
+          label="page:"
+          value={
+            network
+              ? capabilityText(network.capabilities?.message_pagination)
+              : "—"
+          }
+          tone={network ? (cursorPaginationEnabled ? "good" : "warn") : "default"}
         />
         <StatusItem value={clock} tone="ink" />
       </div>

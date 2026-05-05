@@ -18,12 +18,19 @@ type RuntimeAdapter interface {
 	Run(ctx context.Context, config bridgeconfig.Config) error
 }
 
+type PreflightFunc func(ctx context.Context, config bridgeconfig.Config) error
+
 type Runner struct {
-	config  bridgeconfig.Config
-	adapter RuntimeAdapter
+	config    bridgeconfig.Config
+	adapter   RuntimeAdapter
+	preflight PreflightFunc
 }
 
 func New(config bridgeconfig.Config) (*Runner, error) {
+	return NewWithPreflight(config, Preflight)
+}
+
+func NewWithPreflight(config bridgeconfig.Config, preflight PreflightFunc) (*Runner, error) {
 	config = config.Normalized()
 
 	adapter, err := selectAdapter(config.Runtime.Kind)
@@ -32,12 +39,17 @@ func New(config bridgeconfig.Config) (*Runner, error) {
 	}
 
 	return &Runner{
-		config:  config,
-		adapter: adapter,
+		config:    config,
+		adapter:   adapter,
+		preflight: preflight,
 	}, nil
 }
 
 func (r *Runner) Run(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return nil
+	}
+
 	observability.Logger(
 		ctx,
 		"bridge.core",
@@ -46,6 +58,15 @@ func (r *Runner) Run(ctx context.Context) error {
 		"network_id", r.config.Moltnet.NetworkID,
 		"moltnet_url", observability.RedactURL(r.config.Moltnet.BaseURL),
 	).Info("moltnet-bridge starting")
+
+	if r.preflight != nil {
+		if err := r.preflight(ctx, r.config); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+	}
 
 	return r.adapter.Run(ctx, r.config)
 }

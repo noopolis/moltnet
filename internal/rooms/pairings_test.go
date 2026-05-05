@@ -74,7 +74,7 @@ func TestServicePairingLookups(t *testing.T) {
 		Messages: memory,
 		Broker:   events.NewBroker(),
 		PairingClient: fakePairingClient{
-			network: protocol.Network{ID: "remote", Name: "Remote"},
+			network: compatibleRemoteNetwork("remote"),
 			rooms: []protocol.Room{
 				{ID: "research", NetworkID: "remote", FQID: protocol.RoomFQID("remote", "research")},
 			},

@@ -37,6 +37,8 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runSend(rest)
 	case "skill":
 		return runSkillCommand(rest)
+	case "update":
+		return runUpdate(ctx, rest, buildVersion)
 	case "validate":
 		return runValidate(rest)
 	case "node":

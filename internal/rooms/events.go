@@ -48,27 +48,54 @@ func (s *Service) conversationLifecycle(
 }
 
 func (s *Service) setPairingStatus(pairingID string, status string) {
-	status = strings.TrimSpace(status)
+	s.setPairingRuntime(pairingID, pairingStatus{value: status}, false)
+}
+
+func (s *Service) setPairingError(pairingID string, message string) {
+	s.setPairingRuntime(pairingID, pairingStatus{
+		value: protocol.PairingStatusError,
+		diagnostics: &protocol.PairingDiagnostics{
+			CheckedAt: s.now().UTC(),
+			Reason:    pairingDiagnosticRemoteRequestFailure,
+			Message:   strings.TrimSpace(message),
+		},
+		checked: true,
+	}, true)
+}
+
+func (s *Service) setPairingRuntime(pairingID string, next pairingStatus, replaceDiagnostics bool) {
+	next.value = normalizePairingStatus(next.value)
 	updatedAt := s.now().UTC()
 
 	s.pairingsMu.Lock()
 	previous := s.pairingStatuses[pairingID]
-	if previous.value == status {
+	if !replaceDiagnostics {
+		next.diagnostics = clonePairingDiagnostics(previous.diagnostics)
+		next.checked = previous.checked
+		next.directMessages = previous.directMessages
+		next.cursorPagination = previous.cursorPagination
+	} else {
+		next.diagnostics = clonePairingDiagnostics(next.diagnostics)
+	}
+	if previous.value == next.value &&
+		previous.checked == next.checked &&
+		previous.directMessages == next.directMessages &&
+		previous.cursorPagination == next.cursorPagination &&
+		pairingDiagnosticsEqual(previous.diagnostics, next.diagnostics) {
 		previous.updatedAt = updatedAt
 		s.pairingStatuses[pairingID] = previous
 		s.pairingsMu.Unlock()
 		return
 	}
-	s.pairingStatuses[pairingID] = pairingStatus{
-		value:     status,
-		updatedAt: updatedAt,
-	}
+	next.updatedAt = updatedAt
+	s.pairingStatuses[pairingID] = next
 
 	var eventPairing *protocol.Pairing
 	for _, pairing := range s.pairings {
 		if pairing.ID == pairingID {
 			pairing.Token = ""
-			pairing.Status = status
+			pairing.Status = next.value
+			pairing.Diagnostics = clonePairingDiagnostics(next.diagnostics)
 			copyPairing := pairing
 			eventPairing = &copyPairing
 			break
@@ -82,7 +109,7 @@ func (s *Service) setPairingStatus(pairingID string, status string) {
 		return
 	}
 
-	observability.Logger(s.lifecycleCtx, "rooms.pairing", "pairing_id", pairingID, "status", status).
+	observability.Logger(s.lifecycleCtx, "rooms.pairing", "pairing_id", pairingID, "status", next.value).
 		Info("pairing status updated")
 	s.publishEvent(protocol.Event{
 		ID:        s.nextID("evt"),

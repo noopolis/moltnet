@@ -214,6 +214,63 @@ func TestAttachmentEndpointRejectsUnexpectedIdentifySequence(t *testing.T) {
 	}
 }
 
+func TestAttachmentEndpointRejectsIdentifyVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version string
+	}{
+		{name: "missing", version: ""},
+		{name: "mismatched", version: "moltnet.attach.v2"},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := &fakeService{
+				network: protocol.Network{ID: "local"},
+				stream:  make(chan protocol.Event),
+			}
+			server := httptest.NewServer(NewHTTPHandler(service, nil))
+			defer server.Close()
+
+			endpoint := "ws" + server.URL[len("http"):] + "/v1/attach"
+			connection, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+			if err != nil {
+				t.Fatalf("dial websocket: %v", err)
+			}
+			defer connection.Close()
+
+			var hello protocol.AttachmentFrame
+			if err := connection.ReadJSON(&hello); err != nil {
+				t.Fatalf("read hello: %v", err)
+			}
+
+			if err := connection.WriteJSON(protocol.AttachmentFrame{
+				Op:        protocol.AttachmentOpIdentify,
+				Version:   test.version,
+				NetworkID: "local",
+				Agent:     &protocol.Actor{ID: "researcher"},
+			}); err != nil {
+				t.Fatalf("write identify: %v", err)
+			}
+
+			var errorFrame protocol.AttachmentFrame
+			if err := connection.ReadJSON(&errorFrame); err != nil {
+				t.Fatalf("read error frame: %v", err)
+			}
+			if errorFrame.Op != protocol.AttachmentOpError ||
+				errorFrame.Version != protocol.AttachmentProtocolV1 ||
+				!strings.Contains(errorFrame.Error, "version") {
+				t.Fatalf("unexpected error frame %#v", errorFrame)
+			}
+		})
+	}
+}
+
 func dialAndIdentifyAttachment(
 	t *testing.T,
 	endpoint string,

@@ -3,6 +3,7 @@ import { usePairingAgents } from "../../../hooks/usePairingAgents";
 import { usePairingNetwork } from "../../../hooks/usePairingNetwork";
 import { usePairingRooms } from "../../../hooks/usePairingRooms";
 import { usePairings } from "../../../hooks/usePairings";
+import type { NetworkProtocols } from "../../../lib/types";
 import { useSelection } from "../../../providers";
 import { DetailRow } from "../../DetailRow";
 import { ListItem } from "../../ListItem";
@@ -40,6 +41,7 @@ export function PairingView() {
   const remoteName =
     pairing.remote_network_name || pairing.remote_network_id || "—";
   const status = pairing.status || "unknown";
+  const diagnostics = pairing.diagnostics;
   const remoteNetwork = networkQuery.data;
   const remoteRooms = roomsQuery.data ?? [];
   const remoteAgents = agentsQuery.data ?? [];
@@ -63,6 +65,44 @@ export function PairingView() {
           <DetailRow label="status" value={status} />
         </div>
 
+        {diagnostics ? (
+          <>
+            <SectionHeader title="DIAGNOSTICS" />
+            <div className="grid gap-2 text-xs mb-4">
+              {diagnostics.message || diagnostics.reason ? (
+                <DetailRow
+                  label="reason"
+                  value={
+                    diagnostics.message ||
+                    formatDiagnosticReason(diagnostics.reason)
+                  }
+                />
+              ) : null}
+              {diagnostics.remote_network_id ? (
+                <DetailRow
+                  label="remote id"
+                  value={diagnostics.remote_network_id}
+                />
+              ) : null}
+              {diagnostics.remote_version ? (
+                <DetailRow
+                  label="remote version"
+                  value={diagnostics.remote_version}
+                />
+              ) : null}
+              {diagnostics.remote_protocols ? (
+                <DetailRow
+                  label="protocols"
+                  value={formatProtocols(diagnostics.remote_protocols)}
+                />
+              ) : null}
+              {diagnostics.checked_at ? (
+                <DetailRow label="checked" value={diagnostics.checked_at} />
+              ) : null}
+            </div>
+          </>
+        ) : null}
+
         <SectionHeader title="REMOTE NETWORK" />
         {networkQuery.isLoading ? (
           <p className="text-faint text-xs px-2 py-1 mb-4">loading…</p>
@@ -78,6 +118,12 @@ export function PairingView() {
             />
             <DetailRow label="id" value={remoteNetwork.id} />
             <DetailRow label="version" value={remoteNetwork.version || "dev"} />
+            {remoteNetwork.protocols ? (
+              <DetailRow
+                label="protocols"
+                value={formatProtocols(remoteNetwork.protocols)}
+              />
+            ) : null}
             <DetailRow
               label="event stream"
               value={remoteNetwork.capabilities?.event_stream || "—"}
@@ -132,6 +178,25 @@ export function PairingView() {
       </Panel.Body>
     </Panel>
   );
+}
+
+function formatDiagnosticReason(reason: string | undefined) {
+  return reason?.replaceAll("_", " ") || "—";
+}
+
+function formatProtocols(protocols: NetworkProtocols) {
+  const parts = [
+    protocolPart("http", protocols.http),
+    protocolPart("attach", protocols.attach),
+    protocolPart("pair", protocols.pair),
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" · ") : "—";
+}
+
+function protocolPart(label: string, values: string[] | undefined) {
+  if (!values || values.length === 0) return "";
+  return `${label} ${values.join(", ")}`;
 }
 
 function SectionHeader({

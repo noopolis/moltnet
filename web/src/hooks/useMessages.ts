@@ -1,5 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { supportsDirectMessages } from "../lib/capabilities";
 import { isMessageTargetSelection } from "../lib/types";
 import { useSelection } from "../providers";
 import { useNetwork } from "./useNetwork";
@@ -8,8 +9,7 @@ export function useMessages() {
   const { selected } = useSelection();
   const { data: network } = useNetwork();
   const target = isMessageTargetSelection(selected) ? selected : null;
-  const directMessagesEnabled =
-    !!network && network.capabilities?.direct_messages !== false;
+  const directMessagesEnabled = supportsDirectMessages(network);
   const targetEnabled =
     !!target && (target.kind === "room" || (!!network && directMessagesEnabled));
 

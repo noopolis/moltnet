@@ -7,13 +7,15 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useNetwork } from "../hooks/useNetwork";
 import type { MoltnetEvent } from "../lib/types";
 
-export type EventStreamStatus = "connecting" | "open" | "error";
+export type EventStreamStatus = "connecting" | "open" | "error" | "unsupported";
 
 interface EventStreamState {
   status: EventStreamStatus;
   events: MoltnetEvent[];
+  reason?: string;
 }
 
 const EventStreamContext = createContext<EventStreamState | null>(null);
@@ -22,16 +24,53 @@ const MAX_EVENTS = 1000;
 
 export function EventStreamProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const { data: network, error: networkError } = useNetwork();
   const [status, setStatus] = useState<EventStreamStatus>("connecting");
+  const [reason, setReason] = useState<string | undefined>();
   const [events, setEvents] = useState<MoltnetEvent[]>([]);
+  const eventStreamCapability = network?.capabilities?.event_stream;
+  const hasNetwork = !!network;
+  const networkErrorMessage =
+    networkError instanceof Error
+      ? networkError.message
+      : networkError
+        ? String(networkError)
+        : undefined;
 
   useEffect(() => {
+    if (networkErrorMessage) {
+      setStatus("error");
+      setReason(networkErrorMessage);
+      return;
+    }
+
+    if (!hasNetwork) {
+      setStatus("connecting");
+      setReason(undefined);
+      return;
+    }
+
+    if (eventStreamCapability !== "sse") {
+      setStatus("unsupported");
+      setReason(eventStreamUnsupportedReason(eventStreamCapability));
+      return;
+    }
+
+    setStatus("connecting");
+    setReason(undefined);
+
     const stream = new EventSource("/v1/events/stream");
 
-    stream.onopen = () => setStatus("open");
-    stream.onerror = () => setStatus("error");
+    stream.onopen = () => {
+      setStatus("open");
+      setReason(undefined);
+    };
+    stream.onerror = () => {
+      setStatus("error");
+      setReason("event stream disconnected; browser is retrying");
+    };
 
-    const onMessageCreated = (raw: MessageEvent) => {
+    const onEvent = (raw: MessageEvent) => {
       let payload: MoltnetEvent;
       try {
         payload = JSON.parse(raw.data) as MoltnetEvent;
@@ -59,17 +98,26 @@ export function EventStreamProvider({ children }: { children: ReactNode }) {
           queryKey: ["messages", "dm", target.dm_id],
         });
       }
+      if (payload.type === "pairing.updated") {
+        queryClient.invalidateQueries({ queryKey: ["pairings"] });
+        queryClient.invalidateQueries({ queryKey: ["network"] });
+      }
     };
 
-    stream.addEventListener("message.created", onMessageCreated);
+    stream.addEventListener("message.created", onEvent);
+    stream.addEventListener("pairing.updated", onEvent);
 
     return () => {
-      stream.removeEventListener("message.created", onMessageCreated);
+      stream.removeEventListener("message.created", onEvent);
+      stream.removeEventListener("pairing.updated", onEvent);
       stream.close();
     };
-  }, [queryClient]);
+  }, [eventStreamCapability, hasNetwork, networkErrorMessage, queryClient]);
 
-  const value = useMemo(() => ({ status, events }), [status, events]);
+  const value = useMemo(
+    () => ({ status, events, reason }),
+    [status, events, reason],
+  );
 
   return (
     <EventStreamContext.Provider value={value}>
@@ -84,4 +132,11 @@ export function useEventStream(): EventStreamState {
     throw new Error("useEventStream must be used inside <EventStreamProvider>");
   }
   return ctx;
+}
+
+function eventStreamUnsupportedReason(capability: string | undefined) {
+  const value = capability?.trim();
+  return value
+    ? `event_stream=${value} is not supported by the console`
+    : "event_stream capability is not advertised";
 }

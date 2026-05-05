@@ -81,7 +81,7 @@ func (c *MoltnetClient) StreamEventsReady(
 	if err := c.identify(connection, config); err != nil {
 		return err
 	}
-	ready, err := c.expectReady(connection, readTimeout)
+	ready, err := c.expectReady(connection, readTimeout, config.Moltnet.NetworkID)
 	if err != nil {
 		return err
 	}
@@ -238,6 +238,9 @@ func (c *MoltnetClient) expectHello(connection *websocket.Conn) (time.Duration, 
 	if frame.Op != protocol.AttachmentOpHello {
 		return 0, fmt.Errorf("expected %s frame, got %s", protocol.AttachmentOpHello, frame.Op)
 	}
+	if err := requireAttachmentFrameVersion(frame); err != nil {
+		return 0, err
+	}
 	return heartbeatInterval(frame.HeartbeatIntervalMS), nil
 }
 
@@ -261,7 +264,11 @@ func (c *MoltnetClient) identify(connection *websocket.Conn, config bridgeconfig
 	})
 }
 
-func (c *MoltnetClient) expectReady(connection *websocket.Conn, readTimeout time.Duration) (protocol.AttachmentFrame, error) {
+func (c *MoltnetClient) expectReady(
+	connection *websocket.Conn,
+	readTimeout time.Duration,
+	networkID string,
+) (protocol.AttachmentFrame, error) {
 	frame, err := c.readFrame(connection, readTimeout)
 	if err != nil {
 		return protocol.AttachmentFrame{}, err
@@ -271,6 +278,9 @@ func (c *MoltnetClient) expectReady(connection *websocket.Conn, readTimeout time
 	}
 	if frame.Op != protocol.AttachmentOpReady {
 		return protocol.AttachmentFrame{}, fmt.Errorf("expected %s frame, got %s", protocol.AttachmentOpReady, frame.Op)
+	}
+	if err := validateReadyFrame(frame, networkID); err != nil {
+		return protocol.AttachmentFrame{}, err
 	}
 	return frame, nil
 }

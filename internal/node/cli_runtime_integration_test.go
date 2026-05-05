@@ -173,10 +173,14 @@ func waitForAgent(t *testing.T, baseURL string, agentID string) {
 	for time.Now().Before(deadline) {
 		response, err := http.Get(baseURL + "/v1/agents/" + agentID)
 		if err == nil {
-			_ = response.Body.Close()
 			if response.StatusCode == http.StatusOK {
-				return
+				var agent protocol.AgentSummary
+				if decodeErr := json.NewDecoder(response.Body).Decode(&agent); decodeErr == nil && agent.ActorUID != "" {
+					_ = response.Body.Close()
+					return
+				}
 			}
+			_ = response.Body.Close()
 		}
 		time.Sleep(cliRuntimeIntegrationPollInterval)
 	}

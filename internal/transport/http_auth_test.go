@@ -21,6 +21,7 @@ func TestHTTPHandlerAuthScopes(t *testing.T) {
 			{ID: "writer", Value: "write-secret", Scopes: []authn.Scope{authn.ScopeWrite}},
 			{ID: "admin", Value: "admin-secret", Scopes: []authn.Scope{authn.ScopeAdmin}},
 			{ID: "pair", Value: "pair-secret", Scopes: []authn.Scope{authn.ScopePair}},
+			{ID: "attach", Value: "attach-secret", Scopes: []authn.Scope{authn.ScopeAttach}},
 		},
 	})
 	if err != nil {
@@ -42,6 +43,38 @@ func TestHTTPHandlerAuthScopes(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected observe token to read network, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/v1/network", nil)
+	request.Header.Set("Authorization", "Bearer attach-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected attach token to read network, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/v1/network", nil)
+	request.Header.Set("Authorization", "Bearer pair-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected pair token to read network, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/v1/network", nil)
+	request.Header.Set("Authorization", "Bearer write-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected write token to be forbidden for network metadata, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/v1/rooms", nil)
+	request.Header.Set("Authorization", "Bearer attach-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected attach token to be forbidden for rooms, got %d", response.Code)
 	}
 
 	request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"target":{"kind":"room","room_id":"research"},"from":{"type":"agent","id":"writer"},"parts":[{"kind":"text","text":"hi"}]}`))

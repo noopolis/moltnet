@@ -10,6 +10,7 @@ func buildUsage() string {
   moltnet register-agent --base-url <url> [--agent <id>] [--name <name>]
   moltnet send --target room:<id>|dm:<id> --text <message> [--network <id>] [--member <id>]
   moltnet skill install --runtime openclaw|picoclaw|tinyclaw|claude-code|codex --workspace <path>
+  moltnet update [--check] [--version <version>] [--dry-run] [--yes] [--server <url>] [--server-token-env <name>]
   moltnet validate [path]
   moltnet start
   moltnet node start [path]
@@ -26,6 +27,7 @@ Commands:
   register-agent    Register or resolve this agent's durable Moltnet identity
   send              Send a text message through a configured Moltnet attachment
   skill             Install the canonical Moltnet skill into a runtime workspace
+  update            Check for or install Moltnet release updates
   validate          Validate Moltnet and MoltnetNode config files
   start, server    Start the Moltnet server
   node             Start the local MoltnetNode attachment daemon

@@ -2,6 +2,7 @@ package rooms
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,16 +13,34 @@ import (
 )
 
 type recordingPairingClient struct {
-	mu     sync.Mutex
-	calls  []protocol.Pairing
-	err    error
-	notify chan struct{}
-	block  bool
-	done   chan struct{}
+	mu           sync.Mutex
+	calls        []protocol.Pairing
+	networkCalls []protocol.Pairing
+	network      protocol.Network
+	err          error
+	relayErr     error
+	notify       chan struct{}
+	block        bool
+	done         chan struct{}
 }
 
 func (r *recordingPairingClient) FetchNetwork(ctx context.Context, pairing protocol.Pairing) (protocol.Network, error) {
-	return protocol.Network{}, r.err
+	r.mu.Lock()
+	r.networkCalls = append(r.networkCalls, pairing)
+	r.mu.Unlock()
+	if r.notify != nil {
+		select {
+		case r.notify <- struct{}{}:
+		default:
+		}
+	}
+	if r.err != nil {
+		return protocol.Network{}, r.err
+	}
+	if strings.TrimSpace(r.network.ID) != "" {
+		return r.network, nil
+	}
+	return compatibleRemoteNetwork(pairing.RemoteNetworkID), nil
 }
 
 func (r *recordingPairingClient) FetchRooms(ctx context.Context, pairing protocol.Pairing) ([]protocol.Room, error) {
@@ -54,8 +73,8 @@ func (r *recordingPairingClient) RelayMessage(
 		default:
 		}
 	}
-	if r.err != nil {
-		return protocol.MessageAccepted{}, r.err
+	if r.relayErr != nil {
+		return protocol.MessageAccepted{}, r.relayErr
 	}
 	if r.block {
 		<-ctx.Done()
@@ -191,7 +210,7 @@ func TestRelayMessageSelection(t *testing.T) {
 		updatedAt: time.Now().UTC().Add(-pairingRelayErrorRetryAfter - time.Second),
 	}
 	service.pairingsMu.Unlock()
-	if !service.shouldRelayToPairing(protocol.Pairing{ID: "pair_b", RemoteNetworkID: "net_b", RemoteBaseURL: "http://remote-b", Status: "connected"}, dmMessage) {
+	if !service.shouldAttemptRelayToPairing(protocol.Pairing{ID: "pair_b", RemoteNetworkID: "net_b", RemoteBaseURL: "http://remote-b", Status: "connected"}, dmMessage) {
 		t.Fatal("expected cooled-down error pairing status to allow retry")
 	}
 	service.setPairingStatus("pair_b", "connected")

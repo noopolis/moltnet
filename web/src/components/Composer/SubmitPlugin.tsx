@@ -12,6 +12,7 @@ import { useEffect } from "react";
 import { useDMs } from "../../hooks/useDMs";
 import { useNetwork } from "../../hooks/useNetwork";
 import { api, type SendMessageBody } from "../../lib/api";
+import { supportsDirectMessages } from "../../lib/capabilities";
 import {
   isMessageTargetSelection,
   type MessageTarget,
@@ -51,8 +52,7 @@ export function SubmitPlugin() {
   const { selected } = useSelection();
   const { data: dms = [] } = useDMs();
   const { data: network } = useNetwork();
-  const directMessagesEnabled =
-    !!network && network.capabilities?.direct_messages !== false;
+  const directMessagesEnabled = supportsDirectMessages(network);
 
   const sendMutation = useMutation({
     mutationFn: api.sendMessage,

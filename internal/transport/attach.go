@@ -61,27 +61,18 @@ func handleAttachment(
 	frame, err := readAttachmentFrame(connection, attachmentHelloTimeout)
 	if err != nil {
 		if message, ok := attachmentFrameErrorMessage(err); ok {
-			_ = writer.write(protocol.AttachmentFrame{
-				Op:    protocol.AttachmentOpError,
-				Error: message,
-			})
+			_ = writeAttachmentError(writer, message)
 		}
 		return
 	}
 
 	agent, err := identifiedAgent(frame, service.Network().ID)
 	if err != nil {
-		_ = writer.write(protocol.AttachmentFrame{
-			Op:    protocol.AttachmentOpError,
-			Error: err.Error(),
-		})
+		_ = writeAttachmentError(writer, err.Error())
 		return
 	}
 	if claims, ok := authn.ClaimsFromContext(request.Context()); ok && !claims.AllowsAgent(agent.ID) {
-		_ = writer.write(protocol.AttachmentFrame{
-			Op:    protocol.AttachmentOpError,
-			Error: fmt.Sprintf("attachment agent.id %q is not allowed for this token", agent.ID),
-		})
+		_ = writeAttachmentError(writer, fmt.Sprintf("attachment agent.id %q is not allowed for this token", agent.ID))
 		return
 	}
 	registration, err := service.RegisterAgentContext(request.Context(), protocol.RegisterAgentRequest{
@@ -95,10 +86,7 @@ func handleAttachment(
 				message = fmt.Sprintf("agent %q requires its agent token", agent.ID)
 			}
 		}
-		_ = writer.write(protocol.AttachmentFrame{
-			Op:    protocol.AttachmentOpError,
-			Error: message,
-		})
+		_ = writeAttachmentError(writer, message)
 		return
 	}
 	agent.ID = registration.AgentID
@@ -112,10 +100,7 @@ func handleAttachment(
 		attachmentCredentialForRegistration(request.Context(), registration.CredentialKey),
 	)
 	if err != nil {
-		_ = writer.write(protocol.AttachmentFrame{
-			Op:    protocol.AttachmentOpError,
-			Error: err.Error(),
-		})
+		_ = writeAttachmentError(writer, err.Error())
 		return
 	}
 	defer release()
@@ -205,8 +190,8 @@ func identifiedAgent(frame protocol.AttachmentFrame, networkID string) (protocol
 	if frame.Op != protocol.AttachmentOpIdentify {
 		return protocol.Actor{}, fmt.Errorf("expected %s frame", protocol.AttachmentOpIdentify)
 	}
-	if strings.TrimSpace(frame.Version) != protocol.AttachmentProtocolV1 {
-		return protocol.Actor{}, fmt.Errorf("attachment version %q does not match %q", frame.Version, protocol.AttachmentProtocolV1)
+	if err := requireAttachmentFrameVersion(frame); err != nil {
+		return protocol.Actor{}, err
 	}
 
 	if strings.TrimSpace(frame.NetworkID) != networkID {
@@ -294,23 +279,21 @@ func consumeAttachmentFrames(
 		frame, err := readAttachmentFrame(connection, readTimeout)
 		if err != nil {
 			if message, ok := attachmentFrameErrorMessage(err); ok {
-				if writeErr := writer.write(protocol.AttachmentFrame{
-					Op:    protocol.AttachmentOpError,
-					Error: message,
-				}); writeErr != nil {
+				if writeErr := writeAttachmentError(writer, message); writeErr != nil {
 					return writeErr
 				}
 			}
 			return err
 		}
 
+		if err := validateAttachmentFrameVersion(frame); err != nil {
+			return writeAttachmentFrameVersionError(writer, err)
+		}
+
 		switch frame.Op {
 		case protocol.AttachmentOpAck:
 			if !session.Ack(frame.Cursor) {
-				if err := writer.write(protocol.AttachmentFrame{
-					Op:    protocol.AttachmentOpError,
-					Error: "unexpected ACK cursor",
-				}); err != nil {
+				if err := writeAttachmentError(writer, "unexpected ACK cursor"); err != nil {
 					return err
 				}
 				return fmt.Errorf("unexpected ACK cursor %q", frame.Cursor)
@@ -325,10 +308,7 @@ func consumeAttachmentFrames(
 				return err
 			}
 		default:
-			if err := writer.write(protocol.AttachmentFrame{
-				Op:    protocol.AttachmentOpError,
-				Error: fmt.Sprintf("unexpected frame op %q", frame.Op),
-			}); err != nil {
+			if err := writeAttachmentError(writer, fmt.Sprintf("unexpected frame op %q", frame.Op)); err != nil {
 				return err
 			}
 			return fmt.Errorf("unexpected attachment frame op %q", frame.Op)

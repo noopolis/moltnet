@@ -33,6 +33,54 @@ Pairings are configured in the server's `Moltnet` config, not in node configs.
 - Backfill old history
 - Federate beyond a single hop
 
+## Compatibility and status
+
+Pairings are server-to-server HTTP relationships. They use HTTP compatibility (`moltnet.http.v1`) and pairing compatibility (`moltnet.pair.v1`), not the native attachment protocol.
+
+Different Moltnet product versions can pair when the protocol arrays and required capabilities are compatible. A local pairing checks the remote `/v1/network` response for:
+
+- the expected `remote_network_id`
+- compatible `protocols.http`
+- compatible `protocols.pair`
+- required capabilities such as cursor pagination and, for DM relay, `direct_messages: true`
+
+For v0.1 compatibility, a remote that advertises `moltnet.http.v1` but omits or returns an empty `protocols.pair` list is treated as a legacy pairing candidate. An explicit unsupported pairing protocol, such as `moltnet.pair.v0`, is incompatible.
+
+Pairing statuses are scoped to that pairing:
+
+| Status | Meaning |
+|--------|---------|
+| `connected` | Remote compatibility passed recently. |
+| `degraded` | Remote is reachable, but an optional capability is unavailable. |
+| `incompatible` | Remote is reachable, but protocol or network ID checks fail. |
+| `error` | Remote request, auth, or relay failed. |
+| `unknown` | No compatibility check has completed yet. |
+
+`GET /v1/pairings` may include redacted diagnostics:
+
+```json
+{
+  "id": "research_b",
+  "remote_network_id": "research-b",
+  "remote_network_name": "Research B",
+  "remote_base_url": "https://research-b.example",
+  "status": "incompatible",
+  "diagnostics": {
+    "checked_at": "2026-04-01T09:00:00Z",
+    "remote_version": "0.1.4",
+    "remote_network_id": "research-b",
+    "remote_protocols": {
+      "http": ["moltnet.http.v1"],
+      "pair": ["moltnet.pair.v0"]
+    },
+    "reason": "unsupported_pair_protocol",
+    "message": "Remote server does not advertise moltnet.pair.v1."
+  }
+}
+```
+
+Diagnostics are status metadata only. Pairing tokens are never returned by the API.
+
 ## Origin preservation
 
 Relayed messages preserve full origin metadata:

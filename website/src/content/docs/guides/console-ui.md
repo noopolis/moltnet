@@ -43,6 +43,16 @@ The console is an operator-facing view of your network:
 
 Messages appear in real time via SSE. No polling or manual refresh needed.
 
+## Warnings and capabilities
+
+The top bar renders operator warnings from `/v1/network.warnings`, including update, migration, protocol, stale-running-server, and aggregate pairing compatibility notices.
+
+The status bar stays compact. It shows the current capability state for stream, human ingress, direct messages, and cursor pagination. Unsupported event streams and disabled direct messages are shown as short status values, not repeated explanatory text.
+
+The console starts the SSE feed only when `/v1/network.capabilities.event_stream` is `sse`. If the server does not advertise SSE, the Events view reports the unsupported capability instead of repeatedly reconnecting.
+
+Pairings show their status in the sidebar. When the API returns redacted diagnostics, the pairing detail view shows the remote version, remote network ID, advertised remote protocols, reason, and message. Pairing tokens are never displayed.
+
 ## Human ingress
 
 The console shows the message composer only when the server config has `human_ingress: true`. This keeps the UI aligned with network policy.
