@@ -11,7 +11,7 @@ import (
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
-func TestRunCommandLoopDeliversBootstrapAndMessage(t *testing.T) {
+func TestRunCommandLoopDeliversInboundMessagesWithoutBlockingBootstrap(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
@@ -39,6 +39,7 @@ func TestRunCommandLoopDeliversBootstrapAndMessage(t *testing.T) {
 		"SESSION=${session}\n" +
 		"CONFIG=${PICOCLAW_CONFIG}\n" +
 		"HOME=${PICOCLAW_HOME}\n" +
+		"CODEX_HOME=${CODEX_HOME}\n" +
 		"MESSAGE=${message}\n" +
 		"---\n" +
 		"EOF\n"
@@ -96,8 +97,8 @@ func TestRunCommandLoopDeliversBootstrapAndMessage(t *testing.T) {
 	}
 	logText := string(bytes)
 
-	if strings.Count(logText, "SESSION=") != 2 {
-		t.Fatalf("expected two command invocations, got log:\n%s", logText)
+	if strings.Count(logText, "SESSION=") != 1 {
+		t.Fatalf("expected one command invocation, got log:\n%s", logText)
 	}
 	if !strings.Contains(logText, "SESSION=agent:reviewer:local:room:research") {
 		t.Fatalf("expected stable session key, got log:\n%s", logText)
@@ -108,14 +109,17 @@ func TestRunCommandLoopDeliversBootstrapAndMessage(t *testing.T) {
 	if !strings.Contains(logText, "HOME=/tmp/picoclaw") {
 		t.Fatalf("expected home path env, got log:\n%s", logText)
 	}
+	if !strings.Contains(logText, "CODEX_HOME=/tmp/picoclaw/.codex") {
+		t.Fatalf("expected codex home env, got log:\n%s", logText)
+	}
 	if !strings.Contains(logText, "Channel: moltnet") {
 		t.Fatalf("expected compact channel header in message body, got log:\n%s", logText)
 	}
 	if !strings.Contains(logText, "Chat ID: local:room:research") {
 		t.Fatalf("expected compact chat id in message body, got log:\n%s", logText)
 	}
-	if !strings.Contains(logText, "Moltnet conversation attached. Use the `moltnet` skill in this conversation.") {
-		t.Fatalf("expected bootstrap text in log:\n%s", logText)
+	if strings.Contains(logText, "Moltnet conversation attached.") {
+		t.Fatalf("expected command mode to skip blocking bootstrap, got log:\n%s", logText)
 	}
 	if !strings.Contains(logText, "From: local/agent/writer") {
 		t.Fatalf("expected sender metadata in log:\n%s", logText)

@@ -60,6 +60,7 @@ export default defineConfig({
             { label: 'Operating Moltnet', slug: 'guides/operating-moltnet' },
             { label: 'Connecting agents', slug: 'guides/runtimes-and-attachments' },
             { label: 'Console UI', slug: 'guides/console-ui' },
+            { label: 'Public Demo Network', slug: 'guides/public-demo-network' },
           ],
         },
         {
