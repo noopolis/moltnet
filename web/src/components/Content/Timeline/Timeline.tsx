@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useMessages } from "../../../hooks/useMessages";
 import { useNetwork } from "../../../hooks/useNetwork";
+import { supportsDirectMessages } from "../../../lib/capabilities";
 import {
   isMessageTargetSelection,
   type Message,
@@ -19,8 +20,7 @@ export function Timeline() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useMessages();
   const parentRef = useRef<HTMLDivElement>(null);
-  const directMessagesEnabled =
-    !!network && network.capabilities?.direct_messages !== false;
+  const directMessagesEnabled = supportsDirectMessages(network);
 
   const messages = useMemo<Message[]>(() => {
     if (!data) return [];

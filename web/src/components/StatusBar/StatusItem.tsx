@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 interface StatusItemProps {
   label?: string;
   value: ReactNode;
-  tone?: "default" | "good" | "ink";
+  tone?: "default" | "good" | "ink" | "warn";
 }
 
 export function StatusItem({ label, value, tone = "default" }: StatusItemProps) {
@@ -12,7 +12,9 @@ export function StatusItem({ label, value, tone = "default" }: StatusItemProps) 
       ? "text-green"
       : tone === "ink"
         ? "text-ink"
-        : "text-sub";
+        : tone === "warn"
+          ? "text-coral"
+          : "text-sub";
 
   return (
     <span className="inline-flex gap-1">

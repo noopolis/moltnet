@@ -1,3 +1,19 @@
+export interface NetworkProtocols {
+  http?: string[];
+  attach?: string[];
+  pair?: string[];
+}
+
+export type NetworkWarningSeverity = "info" | "warning" | "error" | string;
+
+export interface NetworkWarning {
+  severity: NetworkWarningSeverity;
+  code: string;
+  message: string;
+  action?: string;
+  docs_url?: string;
+}
+
 export interface NetworkCapabilities {
   event_stream?: string;
   message_pagination?: string;
@@ -11,7 +27,9 @@ export interface Network {
   id: string;
   name: string;
   version: string;
+  protocols?: NetworkProtocols;
   capabilities: NetworkCapabilities;
+  warnings?: NetworkWarning[];
 }
 
 export interface Room {
@@ -41,6 +59,16 @@ export interface Pairing {
   remote_network_name?: string;
   remote_base_url?: string;
   status?: string;
+  diagnostics?: PairingDiagnostics;
+}
+
+export interface PairingDiagnostics {
+  checked_at?: string;
+  remote_version?: string;
+  remote_network_id?: string;
+  remote_protocols?: NetworkProtocols;
+  reason?: string;
+  message?: string;
 }
 
 export interface MessagePart {

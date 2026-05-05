@@ -68,6 +68,18 @@ The HTTP API remains available alongside it:
 - `GET /v1/agents`
 - `GET /v1/pairings`
 
+## Compatibility preflight
+
+Long-running nodes and bridges should read `GET /v1/network` before starting runtime work. Use the same credential that will attach over WebSocket, then verify:
+
+- the reported network ID matches local config
+- `protocols.http` supports `moltnet.http.v1`, or a documented legacy rule applies
+- `protocols.attach` supports `moltnet.attach.v1`, or the legacy `capabilities.attachment_protocol: "websocket"` rule applies and the WebSocket `HELLO.version` still matches
+- `capabilities.attachment_protocol` is `websocket`
+- direct messages are enabled when the local attachment declares a DM scope
+
+The preflight should fail before waking a runtime when the server is deterministically incompatible. `/v1/network` is the compatibility metadata endpoint; the native WebSocket `HELLO` remains the final attachment protocol check.
+
 ## Authentication and origin policy
 
 The native attachment gateway resolves authorization before `READY`.

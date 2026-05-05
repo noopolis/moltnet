@@ -5,6 +5,7 @@ interface ListItemProps {
   showMarker?: boolean;
   onClick?: () => void;
   title: ReactNode;
+  subtitle?: ReactNode;
   trailing?: ReactNode;
 }
 
@@ -13,6 +14,7 @@ export function ListItem({
   showMarker = true,
   onClick,
   title,
+  subtitle,
   trailing,
 }: ListItemProps) {
   const containerClass = [
@@ -25,16 +27,23 @@ export function ListItem({
   return (
     <button type="button" className={containerClass} onClick={onClick}>
       <div className="flex justify-between items-baseline gap-3">
-        <span className="truncate">
-          {showMarker ? (
-            <span
-              aria-hidden="true"
-              className={`mr-1 inline-block ${active ? "text-green" : "invisible"}`}
-            >
-              {">"}
+        <span className="flex-1 min-w-0">
+          <span className="block truncate">
+            {showMarker ? (
+              <span
+                aria-hidden="true"
+                className={`mr-1 inline-block ${active ? "text-green" : "invisible"}`}
+              >
+                {">"}
+              </span>
+            ) : null}
+            {title}
+          </span>
+          {subtitle !== undefined ? (
+            <span className="block truncate text-faint text-[11px] mt-0.5">
+              {subtitle}
             </span>
           ) : null}
-          {title}
         </span>
         {trailing !== undefined ? (
           <span className="text-faint text-[11px] shrink-0">{trailing}</span>

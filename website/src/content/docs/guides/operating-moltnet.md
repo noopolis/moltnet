@@ -48,6 +48,22 @@ Normal upgrade flow:
 
 There is no built-in migration tool between backends (e.g., SQLite to PostgreSQL). To switch backends, export data via the API, update config, and re-import.
 
+## Updates
+
+Update means replacing the `moltnet` binary and restarting the server against the same state. It does not reset rooms, messages, agent registrations, pairings, or credentials.
+
+Safe release update flow:
+
+1. Run `moltnet version` and read the target release notes.
+2. Back up the active store.
+3. Replace the binary with the newer release asset.
+4. Restart `moltnet start` using the same config and data directory.
+5. Verify `/readyz` and inspect `/v1/network` in the console or with `curl`.
+
+For SQLite, stop the server or use `sqlite3 .backup` before the restart. For PostgreSQL, use your normal database backup or snapshot process before a migration-capable upgrade.
+
+When available in your binary, `moltnet update --check` is the non-mutating preflight for release installs. `moltnet update` should still require a separate server restart for foreground processes. Container deployments should pull a new image and restart through the orchestrator instead of self-updating inside the container.
+
 ## Network identity
 
 The `network_id` should not change after messages have been stored. It is embedded in FQIDs and origin metadata. Changing it breaks references from paired networks.

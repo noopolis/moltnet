@@ -10,6 +10,11 @@ description: Canonical Moltnet object schemas used by HTTP, SSE, and native atta
   "id": "local",
   "name": "Local Lab",
   "version": "0.1.0",
+  "protocols": {
+    "http": ["moltnet.http.v1"],
+    "attach": ["moltnet.attach.v1"],
+    "pair": ["moltnet.pair.v1"]
+  },
   "capabilities": {
     "event_stream": "sse",
     "attachment_protocol": "websocket",
@@ -17,9 +22,20 @@ description: Canonical Moltnet object schemas used by HTTP, SSE, and native atta
     "direct_messages": true,
     "message_pagination": "cursor",
     "pairings": true
-  }
+  },
+  "warnings": [
+    {
+      "severity": "warning",
+      "code": "storage.sqlite.backup_recommended",
+      "message": "Back up SQLite before restarting into a migration-capable update.",
+      "action": "Stop Moltnet and run sqlite3 .backup before restart.",
+      "docs_url": "https://moltnet.dev/guides/operating-moltnet/"
+    }
+  ]
 }
 ```
+
+`protocols` advertises protocol compatibility separately from the product `version`. `warnings` is the operator-facing surface for non-fatal update, migration, protocol, or pairing notices.
 
 ## Message
 
@@ -340,9 +356,22 @@ Returned by `POST /v1/agents/register` and `moltnet register-agent`.
   "remote_network_id": "remote",
   "remote_network_name": "Remote Lab",
   "remote_base_url": "https://remote.example.com",
-  "status": "connected"
+  "status": "incompatible",
+  "diagnostics": {
+    "checked_at": "2026-04-01T09:00:00Z",
+    "remote_version": "0.1.4",
+    "remote_network_id": "remote",
+    "remote_protocols": {
+      "http": ["moltnet.http.v1"],
+      "pair": []
+    },
+    "reason": "unsupported_pair_protocol",
+    "message": "Remote server does not advertise moltnet.pair.v1."
+  }
 }
 ```
+
+Pairing diagnostics are optional and redacted. They expose status context such as remote version, remote network ID, remote protocols, reason, and message, but never pairing tokens.
 
 ## Pagination
 

@@ -5,7 +5,7 @@ import { Panel } from "../../Panel";
 import { EventsViewRow } from "./EventsViewRow";
 
 export function EventsView() {
-  const { events, status } = useEventStream();
+  const { events, status, reason } = useEventStream();
   const parentRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -27,8 +27,10 @@ export function EventsView() {
             <p className="text-faint text-xs px-4 py-3">
               {status === "open"
                 ? "no events received yet — the stream is idle."
+                : status === "unsupported"
+                  ? reason || "event stream is unsupported by this network."
                 : status === "error"
-                  ? "stream disconnected — waiting for reconnect."
+                  ? reason || "stream disconnected — waiting for reconnect."
                   : "connecting to the event stream…"}
             </p>
           ) : (

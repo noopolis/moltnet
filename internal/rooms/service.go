@@ -124,6 +124,11 @@ func (s *Service) Network() protocol.Network {
 		ID:      s.networkID,
 		Name:    s.networkName,
 		Version: s.version,
+		Protocols: protocol.NetworkProtocols{
+			HTTP:   []string{protocol.HTTPProtocolV1},
+			Attach: []string{protocol.AttachmentProtocolV1},
+			Pair:   []string{protocol.PairProtocolV1},
+		},
 		Capabilities: protocol.NetworkCapabilities{
 			EventStream:        "sse",
 			AttachmentProtocol: "websocket",

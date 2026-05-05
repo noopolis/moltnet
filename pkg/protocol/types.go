@@ -16,7 +16,9 @@ type Network struct {
 	ID           string              `json:"id"`
 	Name         string              `json:"name"`
 	Version      string              `json:"version"`
+	Protocols    NetworkProtocols    `json:"protocols,omitempty"`
 	Capabilities NetworkCapabilities `json:"capabilities,omitempty"`
+	Warnings     []NetworkWarning    `json:"warnings,omitempty"`
 }
 
 type NetworkCapabilities struct {
