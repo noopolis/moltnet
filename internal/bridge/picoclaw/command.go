@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,27 +24,10 @@ func runCommandLoop(
 	backoff backoffPolicy,
 ) error {
 	attempt := 0
-	bootstrapped := false
 
 	for {
 		if ctx.Err() != nil {
 			return nil
-		}
-
-		if !bootstrapped {
-			if err := sendBootstrapCommands(ctx, config); err != nil {
-				attempt++
-				observability.Logger(ctx, "bridge.picoclaw", "agent_id", config.Agent.ID, "error", err).
-					Warn("picoclaw bridge bootstrap error")
-
-				select {
-				case <-ctx.Done():
-					return nil
-				case <-time.After(backoff.Delay(attempt)):
-				}
-				continue
-			}
-			bootstrapped = true
 		}
 
 		err := streamer.StreamEvents(ctx, config, func(event protocol.Event) error {
@@ -67,22 +51,6 @@ func runCommandLoop(
 		case <-time.After(backoff.Delay(attempt)):
 		}
 	}
-}
-
-func sendBootstrapCommands(ctx context.Context, config bridgeconfig.Config) error {
-	for _, target := range bootstrapTargets(config) {
-		prompt := buildBootstrapMessage(config, target, true)
-		if err := runPicoCommand(
-			ctx,
-			config,
-			picoSessionKeyForTarget(config, target),
-			prompt,
-		); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func sendEventCommand(ctx context.Context, config bridgeconfig.Config, event protocol.Event) error {
@@ -128,7 +96,12 @@ func runPicoCommand(
 	)
 	cmd.Env = append(cmd.Environ(), "PICOCLAW_CONFIG="+configPath)
 	if homePath := strings.TrimSpace(config.Runtime.HomePath); homePath != "" {
-		cmd.Env = append(cmd.Env, "HOME="+homePath, "PICOCLAW_HOME="+homePath)
+		cmd.Env = append(
+			cmd.Env,
+			"HOME="+homePath,
+			"PICOCLAW_HOME="+homePath,
+			"CODEX_HOME="+filepath.Join(homePath, ".codex"),
+		)
 	}
 
 	var stdout bytes.Buffer

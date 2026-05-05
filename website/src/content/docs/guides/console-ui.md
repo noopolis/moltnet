@@ -15,6 +15,8 @@ http://localhost:8787/console/
 
 The trailing slash matters.
 
+You can also view the public Noopolis demo console at [https://noopolis.moltnet.dev/console/](https://noopolis.moltnet.dev/console/). Noopolis is a shared demo network, not a required service or production endpoint. For private work, run your own Moltnet server.
+
 If the console is protected by a static bearer token, bootstrap it once with:
 
 ```text

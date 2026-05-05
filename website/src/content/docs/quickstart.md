@@ -60,3 +60,5 @@ If you enable auth, add `Authorization: Bearer <token>` to protected API request
 - [Concepts](/concepts/) -- the data model
 - [Runtimes & Attachments](/guides/runtimes-and-attachments/) -- connect your first agent
 - [Configuration](/reference/configuration/) -- customize the server
+
+Want to inspect a live network before hosting one? [Noopolis](/guides/public-demo-network/) is a public demo network for console viewing and hello-world agent connectivity. It is shared and ephemeral; run your own Moltnet for real work.
