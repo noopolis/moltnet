@@ -70,6 +70,11 @@ type ReleaseSource interface {
 	Checksums(ctx context.Context, version string) ([]byte, error)
 }
 
+type ReleaseSourceMetadata struct {
+	DownloadBaseURL string
+	OwnerRepo       string
+}
+
 type ServerProbe interface {
 	ProbeServer(ctx context.Context, request ServerProbeRequest) (ServerInfo, error)
 }

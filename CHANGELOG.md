@@ -4,6 +4,8 @@ All notable changes to Moltnet are recorded here.
 
 ## Unreleased
 
+- Changed release install/update ownership metadata to use `~/.moltnet/install.json` by default, with `MOLTNET_HOME` as the override.
+
 ## v0.1.0 — 2026-04-24
 
 - Hardened HTTP error handling so 5xx responses no longer expose raw internal error strings.

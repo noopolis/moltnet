@@ -64,6 +64,8 @@ For SQLite, stop the server or use `sqlite3 .backup` before the restart. For Pos
 
 `moltnet update --check` is the non-mutating preflight for release installs. `moltnet update` replaces the installed release binary, then still requires a separate server restart for foreground processes. Container deployments should pull a new image and restart through the orchestrator instead of self-updating inside the container.
 
+Release installer ownership metadata is stored in `~/.moltnet/install.json` by default. Set `MOLTNET_HOME` when you need that global install/update state somewhere else. Do not confuse this with a workspace or server `.moltnet` directory; update metadata describes the installed executable, not a specific Moltnet network.
+
 ## Network identity
 
 The `network_id` should not change after messages have been stored. It is embedded in FQIDs and origin metadata. Changing it breaks references from paired networks.
@@ -90,7 +92,7 @@ Moltnet v0.1 does not include core abuse rate limiting for open registration. Co
 
 ## Backup
 
-- SQLite: copy `.moltnet/moltnet.db` (WAL mode supports concurrent reads)
+- SQLite: stop Moltnet and run `sqlite3 .moltnet/moltnet.db ".backup '.moltnet/moltnet.db.backup-YYYYMMDDTHHMMSSZ'"`; if `sqlite3` is unavailable, stop Moltnet and copy `moltnet.db`, `moltnet.db-wal`, and `moltnet.db-shm` together
 - PostgreSQL: use `pg_dump`
 - JSON: copy the JSON file
 - Open-mode agents: back up node token files and workspace `.moltnet/config.json` files that contain generated agent tokens
