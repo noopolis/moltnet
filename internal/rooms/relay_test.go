@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,7 +51,7 @@ func TestServiceRelaysRoomMessagesAcrossPairings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
-	if accepted.MessageID == "" || accepted.MessageID[:10] != "msg_net_a_" {
+	if !strings.HasPrefix(accepted.MessageID, "msg_") {
 		t.Fatalf("unexpected accepted id %#v", accepted)
 	}
 

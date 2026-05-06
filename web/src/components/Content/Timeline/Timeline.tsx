@@ -1,4 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
+import type { KeyboardEvent, TouchEvent, WheelEvent } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useMessages } from "../../../hooks/useMessages";
 import { useNetwork } from "../../../hooks/useNetwork";
@@ -9,9 +10,19 @@ import {
 } from "../../../lib/types";
 import { useSelection } from "../../../providers";
 import { Panel } from "../../Panel";
+import {
+  captureScrollAnchor,
+  captureScrollSnapshot,
+  isNearTop,
+  isTimelineAtBottom,
+  pinToBottom,
+  restoreScrollAnchor,
+  restorePrependScroll,
+  type ScrollAnchor,
+  type ScrollSnapshot,
+} from "./scroll";
 import { TimelineMessage } from "./TimelineMessage";
 
-const SCROLL_TOP_FETCH_PX = 120;
 const ESTIMATED_ROW_HEIGHT = 24;
 
 export function Timeline() {
@@ -21,6 +32,9 @@ export function Timeline() {
     useMessages();
   const parentRef = useRef<HTMLDivElement>(null);
   const directMessagesEnabled = supportsDirectMessages(network);
+  const selectedKey = isMessageTargetSelection(selected)
+    ? `${selected.kind}:${selected.id}`
+    : null;
 
   const messages = useMemo<Message[]>(() => {
     if (!data) return [];
@@ -35,9 +49,87 @@ export function Timeline() {
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => parentRef.current,
+    getItemKey: (index) => messages[index]?.id ?? index,
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
     overscan: 12,
   });
+
+  const firstMessageID = messages[0]?.id ?? "";
+  const lastMessageID = messages[messages.length - 1]?.id ?? "";
+  const autoFollowRef = useRef(true);
+  const nearBottomRef = useRef(true);
+  const bottomPinTokenRef = useRef(0);
+  const pinningRef = useRef(false);
+  const anchorRestoreTokenRef = useRef(0);
+  const restoringAnchorRef = useRef(false);
+  const scrolledKeyRef = useRef<string | null>(null);
+  const scrollAnchorRef = useRef<ScrollAnchor | null>(null);
+  const snapshotRef = useRef<ScrollSnapshot | null>(null);
+  const touchYRef = useRef<number | null>(null);
+  const renderedRef = useRef<{
+    key: string | null;
+    count: number;
+    lastMessageID: string;
+  }>({ key: null, count: 0, lastMessageID: "" });
+
+  const cancelBottomPin = useCallback(() => {
+    bottomPinTokenRef.current += 1;
+    anchorRestoreTokenRef.current += 1;
+    autoFollowRef.current = false;
+    nearBottomRef.current = false;
+    pinningRef.current = false;
+    const node = parentRef.current;
+    if (node) scrollAnchorRef.current = captureScrollAnchor(node);
+  }, []);
+
+  const preserveScrollAnchor = useCallback((anchor: ScrollAnchor) => {
+    const token = anchorRestoreTokenRef.current + 1;
+    anchorRestoreTokenRef.current = token;
+
+    const restore = () => {
+      if (anchorRestoreTokenRef.current !== token || autoFollowRef.current) return;
+      const node = parentRef.current;
+      if (!node) return;
+
+      restoringAnchorRef.current = true;
+      restoreScrollAnchor(node, anchor);
+      scrollAnchorRef.current = captureScrollAnchor(node) ?? anchor;
+      requestAnimationFrame(() => {
+        if (anchorRestoreTokenRef.current === token) {
+          restoringAnchorRef.current = false;
+        }
+      });
+    };
+
+    restore();
+    requestAnimationFrame(restore);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const token = bottomPinTokenRef.current + 1;
+    bottomPinTokenRef.current = token;
+    autoFollowRef.current = true;
+    const stick = () => {
+      if (bottomPinTokenRef.current !== token || !autoFollowRef.current) return;
+      const node = parentRef.current;
+      if (!node) return;
+      pinningRef.current = true;
+      pinToBottom(node);
+      nearBottomRef.current = true;
+      requestAnimationFrame(() => {
+        if (bottomPinTokenRef.current === token) {
+          pinningRef.current = false;
+        }
+      });
+    };
+
+    stick();
+    requestAnimationFrame(() => {
+      stick();
+      requestAnimationFrame(stick);
+    });
+    window.setTimeout(stick, 50);
+  }, []);
 
   const maybeFetchOlder = useCallback(
     (node: HTMLDivElement | null) => {
@@ -46,85 +138,156 @@ export function Timeline() {
         messages.length === 0 ||
         !hasNextPage ||
         isFetchingNextPage ||
-        node.scrollTop > SCROLL_TOP_FETCH_PX
+        !isNearTop(node)
       ) {
         return;
       }
 
+      snapshotRef.current = captureScrollSnapshot(node);
       void fetchNextPage();
     },
     [fetchNextPage, hasNextPage, isFetchingNextPage, messages.length],
   );
 
   const handleScroll = useCallback(() => {
-    maybeFetchOlder(parentRef.current);
-  }, [maybeFetchOlder]);
-
-  // ─── Initial scroll to bottom on selection change ───────────────────────────
-  // We pin the parent's scrollTop to scrollHeight twice (RAF + RAF) so the
-  // virtualizer's first measured pass is reflected before we lock in.
-  const scrolledKeyRef = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    const key = isMessageTargetSelection(selected)
-      ? `${selected.kind}:${selected.id}`
-      : null;
-    if (!key || key === scrolledKeyRef.current) return;
-    if (messages.length === 0) return;
-
-    scrolledKeyRef.current = key;
     const node = parentRef.current;
     if (!node) return;
-
-    const stick = () => {
-      if (parentRef.current) {
-        parentRef.current.scrollTop = parentRef.current.scrollHeight;
-      }
-    };
-    stick();
-    requestAnimationFrame(() => {
-      stick();
-      requestAnimationFrame(stick);
-    });
-  }, [selected, messages.length]);
-
-  // Reset the initial-scroll guard when the user navigates away from a target.
-  useEffect(() => {
-    if (!isMessageTargetSelection(selected)) {
-      scrolledKeyRef.current = null;
+    const nearBottom = isTimelineAtBottom(node);
+    nearBottomRef.current = nearBottom;
+    if (nearBottom) {
+      autoFollowRef.current = true;
+      scrollAnchorRef.current = null;
+    } else if (restoringAnchorRef.current) {
+      scrollAnchorRef.current = captureScrollAnchor(node);
+    } else if (!pinningRef.current) {
+      autoFollowRef.current = false;
+      bottomPinTokenRef.current += 1;
+      anchorRestoreTokenRef.current += 1;
+      scrollAnchorRef.current = captureScrollAnchor(node);
     }
-  }, [selected]);
+    maybeFetchOlder(node);
+  }, [maybeFetchOlder]);
 
-  // ─── Preserve scroll position when older pages are prepended ────────────────
-  // Snapshot scrollTop + scrollHeight when fetchNextPage starts; on completion,
-  // shift scrollTop down by the height that was added at the top so the user's
-  // anchor message stays visually fixed.
-  const wasFetchingRef = useRef(false);
-  const snapshotRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(
-    null,
+  const handleWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      if (event.deltaY < 0) cancelBottomPin();
+    },
+    [cancelBottomPin],
   );
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") {
+        cancelBottomPin();
+      }
+    },
+    [cancelBottomPin],
+  );
+
+  const handleTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
+    touchYRef.current = event.touches[0]?.clientY ?? null;
+  }, []);
+
+  const handleTouchMove = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const currentY = event.touches[0]?.clientY ?? null;
+      const previousY = touchYRef.current;
+      if (currentY !== null && previousY !== null && currentY > previousY + 4) {
+        cancelBottomPin();
+      }
+      touchYRef.current = currentY;
+    },
+    [cancelBottomPin],
+  );
+
+  // Preserve the current viewport when older pages are prepended above it.
   useLayoutEffect(() => {
     const node = parentRef.current;
-    if (isFetchingNextPage && !wasFetchingRef.current && node) {
-      snapshotRef.current = {
-        scrollTop: node.scrollTop,
-        scrollHeight: node.scrollHeight,
-      };
+    const snapshot = snapshotRef.current;
+    if (isFetchingNextPage || !node || !snapshot) return;
+    anchorRestoreTokenRef.current += 1;
+
+    const restore = () => {
+      const current = parentRef.current;
+      if (!current) return;
+      restorePrependScroll(current, snapshot);
+      const nearBottom = isTimelineAtBottom(current);
+      nearBottomRef.current = nearBottom;
+      if (nearBottom) autoFollowRef.current = true;
+      scrollAnchorRef.current = captureScrollAnchor(current);
+    };
+
+    restore();
+    requestAnimationFrame(() => {
+      restore();
+      requestAnimationFrame(restore);
+    });
+    snapshotRef.current = null;
+  }, [firstMessageID, isFetchingNextPage, lastMessageID, messages.length]);
+
+  // Initial selection loads pin to the newest message. Later live appends only
+  // stick when the operator was already reading at the bottom of the chat.
+  useLayoutEffect(() => {
+    const previous = renderedRef.current;
+    const targetChanged = previous.key !== selectedKey;
+    const tailChanged =
+      !targetChanged &&
+      lastMessageID !== "" &&
+      lastMessageID !== previous.lastMessageID;
+    const countGrew = !targetChanged && messages.length > previous.count;
+
+    renderedRef.current = {
+      key: selectedKey,
+      count: messages.length,
+      lastMessageID,
+    };
+
+    if (!selectedKey) {
+      scrolledKeyRef.current = null;
+      nearBottomRef.current = true;
+      autoFollowRef.current = true;
+      scrollAnchorRef.current = null;
+      snapshotRef.current = null;
+      return;
     }
-    if (!isFetchingNextPage && wasFetchingRef.current && node && snapshotRef.current) {
-      const { scrollTop, scrollHeight } = snapshotRef.current;
-      const delta = node.scrollHeight - scrollHeight;
-      if (delta > 0) {
-        node.scrollTop = scrollTop + delta;
-      }
+    if (targetChanged) {
+      scrolledKeyRef.current = null;
+      nearBottomRef.current = true;
+      autoFollowRef.current = true;
+      scrollAnchorRef.current = null;
       snapshotRef.current = null;
     }
-    wasFetchingRef.current = isFetchingNextPage;
-  }, [isFetchingNextPage, messages.length]);
+    if (messages.length === 0) return;
+    if (scrolledKeyRef.current !== selectedKey) {
+      scrolledKeyRef.current = selectedKey;
+      scrollToBottom();
+      return;
+    }
+    if (snapshotRef.current || isFetchingNextPage) return;
+    const node = parentRef.current;
+    const shouldStick =
+      autoFollowRef.current && (nearBottomRef.current || (!!node && isTimelineAtBottom(node)));
+    if ((tailChanged || countGrew) && shouldStick) {
+      scrollToBottom();
+      return;
+    }
+    if ((tailChanged || countGrew) && node && !autoFollowRef.current) {
+      const anchor = scrollAnchorRef.current ?? captureScrollAnchor(node);
+      if (anchor) preserveScrollAnchor(anchor);
+    }
+  }, [
+    isFetchingNextPage,
+    lastMessageID,
+    messages.length,
+    preserveScrollAnchor,
+    scrollToBottom,
+    selectedKey,
+  ]);
 
   // ─── Trigger fetch-older when the user scrolls near the top ─────────────────
   useEffect(() => {
     maybeFetchOlder(parentRef.current);
-  }, [maybeFetchOlder, messages.length]);
+  }, [firstMessageID, maybeFetchOlder, messages.length]);
 
   if (!isMessageTargetSelection(selected)) {
     const targetLabel = directMessagesEnabled ? "a room or direct channel" : "a room";
@@ -166,7 +329,17 @@ export function Timeline() {
         <Panel.Count>{messages.length} messages</Panel.Count>
       </Panel.Header>
       <Panel.Body className="p-0">
-        <div ref={parentRef} className="flex-1 overflow-auto" onScroll={handleScroll}>
+        <div
+          ref={parentRef}
+          className="flex-1 overflow-auto"
+          data-testid="timeline-scroll"
+          style={{ overflowAnchor: "none" }}
+          onKeyDown={handleKeyDown}
+          onScroll={handleScroll}
+          onTouchMove={handleTouchMove}
+          onTouchStart={handleTouchStart}
+          onWheel={handleWheel}
+        >
           {messages.length === 0 ? (
             <p className="text-faint text-xs px-4 py-3">
               {isLoading ? "loading…" : "no messages yet."}
@@ -191,6 +364,7 @@ export function Timeline() {
                   <div
                     key={virtualItem.key}
                     data-index={virtualItem.index}
+                    data-message-id={message.id}
                     ref={virtualizer.measureElement}
                     style={{
                       position: "absolute",

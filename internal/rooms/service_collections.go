@@ -57,7 +57,7 @@ func (s *Service) CreateRoomContext(ctx context.Context, request protocol.Create
 	}
 
 	s.publishEvent(protocol.Event{
-		ID:        s.nextID("evt"),
+		ID:        newPrefixedID("evt"),
 		Type:      protocol.EventTypeRoomCreated,
 		NetworkID: s.networkID,
 		Room:      &room,

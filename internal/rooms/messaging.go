@@ -30,7 +30,7 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 
 	messageID := strings.TrimSpace(request.ID)
 	if messageID == "" {
-		messageID = s.nextID("msg")
+		messageID = newPrefixedID("msg")
 	}
 
 	if err := validateSendMessageRequest(request); err != nil {
@@ -111,7 +111,7 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 
 	if lifecycle.Thread != nil {
 		s.publishEvent(protocol.Event{
-			ID:        s.nextID("evt"),
+			ID:        newPrefixedID("evt"),
 			Type:      protocol.EventTypeThreadCreated,
 			NetworkID: s.networkID,
 			Thread:    lifecycle.Thread,
@@ -120,7 +120,7 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	}
 	if lifecycle.DM != nil {
 		s.publishEvent(protocol.Event{
-			ID:        s.nextID("evt"),
+			ID:        newPrefixedID("evt"),
 			Type:      protocol.EventTypeDMCreated,
 			NetworkID: s.networkID,
 			DM:        lifecycle.DM,
@@ -311,9 +311,4 @@ func actorHasExplicitConsistentNetworkID(actor protocol.Actor, networkID string)
 
 func (s *Service) Subscribe(ctx context.Context) <-chan protocol.Event {
 	return s.filterEvents(ctx, s.broker.Subscribe(ctx))
-}
-
-func (s *Service) nextID(prefix string) string {
-	id := s.counter.Add(1)
-	return fmt.Sprintf("%s_%s_%d", prefix, sanitizeIDComponent(s.networkID), id)
 }

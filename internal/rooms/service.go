@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/noopolis/moltnet/internal/store"
@@ -56,7 +55,6 @@ type Service struct {
 	pairingsMu            sync.RWMutex
 	pairingPublishMu      sync.Mutex
 	pairingStatuses       map[string]pairingStatus
-	counter               atomic.Uint64
 	lifecycleCtx          context.Context
 	lifecycleCancel       context.CancelFunc
 	now                   func() time.Time
