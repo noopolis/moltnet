@@ -45,6 +45,9 @@ func acquireUpdateLock(options updateLockOptions) (*updateLock, error) {
 	if staleAfter <= 0 {
 		staleAfter = defaultUpdateLockStaleAfter
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("create update lock directory: %w", err)
+	}
 
 	for {
 		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -136,11 +139,12 @@ func existingLockIsStale(path string, staleAfter time.Duration) (bool, error) {
 	return time.Since(info.ModTime()) > staleAfter, nil
 }
 
-func defaultUpdateLockPath(installPath string) string {
-	if strings.TrimSpace(installPath) == "" {
+func defaultUpdateLockPath(_ string) string {
+	home := defaultMoltnetHome()
+	if home == "" {
 		return ""
 	}
-	return filepath.Clean(installPath) + ".update.lock"
+	return filepath.Join(home, "update.lock")
 }
 
 func readUpdateLockRecord(path string) (updateLockRecord, bool) {

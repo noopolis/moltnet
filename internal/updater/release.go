@@ -114,6 +114,13 @@ func (s HTTPReleaseSource) ownerRepo() string {
 	return defaultOwnerRepo
 }
 
+func (s HTTPReleaseSource) InstallMetadata() ReleaseSourceMetadata {
+	return ReleaseSourceMetadata{
+		DownloadBaseURL: strings.TrimSpace(s.DownloadBaseURL),
+		OwnerRepo:       s.ownerRepo(),
+	}
+}
+
 func (s HTTPReleaseSource) get(ctx context.Context, requestURL string) ([]byte, error) {
 	client := s.Client
 	if client == nil {

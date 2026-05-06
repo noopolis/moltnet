@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
+
+const moltnetHomeEnv = "MOLTNET_HOME"
 
 type DefaultInstallDetector struct{}
 
@@ -94,7 +95,7 @@ func writeInstallMetadata(metadata installMetadata) error {
 	contents = append(contents, '\n')
 
 	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := ensurePrivateDirectory(directory, "install metadata directory"); err != nil {
 		return err
 	}
 	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -153,6 +154,12 @@ func isContainerInstall() bool {
 func loadInstallMetadata() (installMetadata, bool) {
 	path := defaultInstallMetadataPath()
 	if path == "" {
+		return installMetadata{}, false
+	}
+	if err := validatePrivateDirectory(filepath.Dir(path), "install metadata directory"); err != nil {
+		return installMetadata{}, false
+	}
+	if err := validatePrivateRegularFile(path, "install metadata"); err != nil {
 		return installMetadata{}, false
 	}
 	contents, err := os.ReadFile(path)
@@ -230,18 +237,71 @@ func normalizeAssetChecksum(checksum string) string {
 	return "sha256:" + trimmed
 }
 
+func validatePrivateDirectory(path string, label string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s %q must not be a symlink", label, path)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s %q must be a directory", label, path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("%s %q must not be group/world accessible", label, path)
+	}
+	return nil
+}
+
+func ensurePrivateDirectory(path string, label string) error {
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	return validatePrivateDirectory(path, label)
+}
+
+func validatePrivateRegularFile(path string, label string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s %q must not be a symlink", label, path)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s %q must be a regular file", label, path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("%s %q must not be group/world accessible", label, path)
+	}
+	return nil
+}
+
 func defaultInstallMetadataPath() string {
-	if stateHome := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); stateHome != "" {
-		return filepath.Join(stateHome, "moltnet", "install.json")
+	home := defaultMoltnetHome()
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, "install.json")
+}
+
+func defaultMoltnetHome() string {
+	if override := strings.TrimSpace(os.Getenv(moltnetHomeEnv)); override != "" {
+		if absolute, err := filepath.Abs(override); err == nil {
+			return absolute
+		}
+		return filepath.Clean(override)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return ""
 	}
-	if runtime.GOOS == "darwin" {
-		return filepath.Join(home, "Library", "Application Support", "moltnet", "install.json")
-	}
-	return filepath.Join(home, ".local", "state", "moltnet", "install.json")
+	return filepath.Join(home, ".moltnet")
 }
 
 func samePath(left string, right string) bool {

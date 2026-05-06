@@ -140,10 +140,12 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	result.BackupPath = backupPath
 	result.Updated = true
 	finishedAt := time.Now().UTC().Format(time.RFC3339)
+	sourceMetadata := releaseSourceMetadata(options.ReleaseSource)
 	if err := writeInstallMetadata(installMetadata{
 		Arch:              options.Platform.Arch,
 		AssetChecksum:     normalizeAssetChecksum(checksum),
 		AssetName:         assetName,
+		DownloadBaseURL:   sourceMetadata.DownloadBaseURL,
 		InstallMethod:     string(InstallMethodReleaseTarball),
 		InstallPath:       install.Path,
 		InstalledAt:       finishedAt,
@@ -151,7 +153,7 @@ func Run(ctx context.Context, options Options) (Result, error) {
 		InstalledVersion:  targetVersion,
 		LastUpdate:        &installMetadataLastUpdate{Status: "succeeded", FromVersion: result.CurrentVersion, ToVersion: targetVersion, FinishedAt: finishedAt},
 		OS:                options.Platform.OS,
-		OwnerRepo:         defaultOwnerRepo,
+		OwnerRepo:         sourceMetadata.OwnerRepo,
 		PreviousBinary:    backupPath,
 		SelfUpdateAllowed: true,
 		Version:           1,
@@ -207,6 +209,20 @@ func resolveTargetVersion(ctx context.Context, options Options) (string, error) 
 		return "", err
 	}
 	return strings.TrimSpace(version), nil
+}
+
+func releaseSourceMetadata(source ReleaseSource) ReleaseSourceMetadata {
+	type metadataSource interface {
+		InstallMetadata() ReleaseSourceMetadata
+	}
+	if source, ok := source.(metadataSource); ok {
+		metadata := source.InstallMetadata()
+		if strings.TrimSpace(metadata.OwnerRepo) == "" {
+			metadata.OwnerRepo = defaultOwnerRepo
+		}
+		return metadata
+	}
+	return ReleaseSourceMetadata{OwnerRepo: defaultOwnerRepo}
 }
 
 func versionDiffers(current string, target string) (bool, error) {

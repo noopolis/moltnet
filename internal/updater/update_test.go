@@ -224,6 +224,8 @@ func TestRunErrorsOnMissingAsset(t *testing.T) {
 }
 
 func TestRunReplacesTempInstallRoot(t *testing.T) {
+	t.Setenv(moltnetHomeEnv, t.TempDir())
+
 	assetName := "moltnet_linux_amd64.tar.gz"
 	server := newReleaseServer(t, fakeRelease{
 		assetName: assetName,
@@ -320,6 +322,7 @@ func releaseUpdateOptions(server *fakeReleaseServer, installPath string) Options
 			Path:              installPath,
 			SelfUpdateAllowed: true,
 		}},
+		LockPath:      installPath + ".test.update.lock",
 		Platform:      Platform{OS: "linux", Arch: "amd64"},
 		ReleaseSource: HTTPReleaseSource{Client: server.Client(), DownloadBaseURL: server.URL},
 	}

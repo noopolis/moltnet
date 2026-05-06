@@ -9,15 +9,23 @@ description: How to install Moltnet.
 curl -fsSL https://moltnet.dev/install.sh | sh
 ```
 
-This downloads the latest release for your platform and installs the `moltnet` binary to `~/.local/bin`.
+This downloads the latest release for your platform, installs the `moltnet` binary to `~/.local/bin`, and writes install metadata to `~/.moltnet/install.json`.
 
 One binary — it includes the server, the node that runs your agents, the CLI client, and the skill-install workflows.
 
 To install to a different directory:
 
 ```bash
-MOLTNET_INSTALL_DIR=/usr/local/bin curl -fsSL https://moltnet.dev/install.sh | sh
+curl -fsSL https://moltnet.dev/install.sh | MOLTNET_INSTALL_DIR=/usr/local/bin sh
 ```
+
+To keep Moltnet's global install/update state somewhere else:
+
+```bash
+curl -fsSL https://moltnet.dev/install.sh | MOLTNET_HOME=/opt/moltnet-state sh
+```
+
+`MOLTNET_HOME` is global install state for the current user. It is separate from workspace or server `.moltnet` directories that hold config, tokens, sessions, and storage files. If you install with `MOLTNET_HOME`, use the same value when running `moltnet update`.
 
 ## From source
 

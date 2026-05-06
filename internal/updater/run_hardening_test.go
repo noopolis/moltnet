@@ -15,8 +15,8 @@ import (
 )
 
 func TestRunWritesInstallMetadataAfterUpdate(t *testing.T) {
-	stateHome := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", stateHome)
+	moltnetHome := missingMoltnetHome(t)
+	t.Setenv(moltnetHomeEnv, moltnetHome)
 
 	assetName := "moltnet_linux_amd64.tar.gz"
 	archive := moltnetArchive(t, "v0.2.0")
@@ -28,7 +28,9 @@ func TestRunWritesInstallMetadataAfterUpdate(t *testing.T) {
 	defer server.Close()
 
 	installPath := writeMoltnetScript(t, t.TempDir(), "v0.1.0")
-	result, err := Run(context.Background(), releaseUpdateOptions(server, installPath))
+	options := releaseUpdateOptions(server, installPath)
+	options.ReleaseSource = HTTPReleaseSource{Client: server.Client(), DownloadBaseURL: server.URL, OwnerRepo: "example/moltnet"}
+	result, err := Run(context.Background(), options)
 	if err != nil {
 		t.Fatalf("Run() update error = %v", err)
 	}
@@ -36,7 +38,7 @@ func TestRunWritesInstallMetadataAfterUpdate(t *testing.T) {
 		t.Fatalf("expected update result %#v", result)
 	}
 
-	metadataPath := filepath.Join(stateHome, "moltnet", "install.json")
+	metadataPath := filepath.Join(moltnetHome, "install.json")
 	contents, err := os.ReadFile(metadataPath)
 	if err != nil {
 		t.Fatalf("read install metadata: %v", err)
@@ -44,6 +46,7 @@ func TestRunWritesInstallMetadataAfterUpdate(t *testing.T) {
 	var metadata struct {
 		AssetChecksum    string `json:"asset_checksum"`
 		AssetName        string `json:"asset_name"`
+		DownloadBaseURL  string `json:"download_base_url"`
 		InstallMethod    string `json:"install_method"`
 		InstallPath      string `json:"install_path"`
 		InstalledAt      string `json:"installed_at"`
@@ -55,6 +58,7 @@ func TestRunWritesInstallMetadataAfterUpdate(t *testing.T) {
 			Status      string `json:"status"`
 			ToVersion   string `json:"to_version"`
 		} `json:"last_update"`
+		OwnerRepo         string `json:"owner_repo"`
 		PreviousBinary    string `json:"previous_binary"`
 		SelfUpdateAllowed bool   `json:"self_update_allowed"`
 		Version           int    `json:"version"`
@@ -69,7 +73,9 @@ func TestRunWritesInstallMetadataAfterUpdate(t *testing.T) {
 		!metadata.SelfUpdateAllowed ||
 		metadata.AssetName != assetName ||
 		metadata.AssetChecksum != wantChecksum ||
+		metadata.DownloadBaseURL != server.URL ||
 		metadata.InstalledVersion != "v0.2.0" ||
+		metadata.OwnerRepo != "example/moltnet" ||
 		metadata.PreviousBinary != result.BackupPath ||
 		metadata.Version != 1 ||
 		metadata.InstalledBy != "moltnet update" ||
@@ -94,8 +100,8 @@ func TestRunWritesInstallMetadataAfterUpdate(t *testing.T) {
 }
 
 func TestRunTreatsInstallMetadataFailureAsPostUpdateWarning(t *testing.T) {
-	stateHome := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", stateHome)
+	moltnetHome := missingMoltnetHome(t)
+	t.Setenv(moltnetHomeEnv, moltnetHome)
 
 	assetName := "moltnet_linux_amd64.tar.gz"
 	server := newReleaseServer(t, fakeRelease{
@@ -105,7 +111,7 @@ func TestRunTreatsInstallMetadataFailureAsPostUpdateWarning(t *testing.T) {
 	})
 	defer server.Close()
 
-	metadataDir := filepath.Join(stateHome, "moltnet")
+	metadataDir := moltnetHome
 	if err := os.MkdirAll(metadataDir, 0o700); err != nil {
 		t.Fatalf("create metadata dir: %v", err)
 	}
@@ -137,8 +143,8 @@ func TestDefaultInstallDetectorRefusesDevelopmentVersionDespiteStaleMetadata(t *
 	if isContainerInstall() {
 		t.Skip("container detection takes precedence over local install metadata")
 	}
-	stateHome := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", stateHome)
+	moltnetHome := missingMoltnetHome(t)
+	t.Setenv(moltnetHomeEnv, moltnetHome)
 
 	executable, err := os.Executable()
 	if err != nil {
@@ -164,8 +170,8 @@ func TestDefaultInstallDetectorRefusesDevelopmentVersionDespiteStaleMetadata(t *
 }
 
 func TestRunRechecksInstalledBinaryBeforeNoop(t *testing.T) {
-	stateHome := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", stateHome)
+	moltnetHome := missingMoltnetHome(t)
+	t.Setenv(moltnetHomeEnv, moltnetHome)
 
 	assetName := "moltnet_linux_amd64.tar.gz"
 	server := newReleaseServer(t, fakeRelease{
@@ -187,7 +193,7 @@ func TestRunRechecksInstalledBinaryBeforeNoop(t *testing.T) {
 		t.Fatalf("expected rechecked install version to drive update, got %#v", result)
 	}
 
-	contents, err := os.ReadFile(filepath.Join(stateHome, "moltnet", "install.json"))
+	contents, err := os.ReadFile(filepath.Join(moltnetHome, "install.json"))
 	if err != nil {
 		t.Fatalf("read install metadata: %v", err)
 	}
@@ -205,6 +211,12 @@ func TestRunRechecksInstalledBinaryBeforeNoop(t *testing.T) {
 }
 
 func TestRunRefusesConcurrentUpdateLock(t *testing.T) {
+	moltnetHome := missingMoltnetHome(t)
+	t.Setenv(moltnetHomeEnv, moltnetHome)
+	if err := os.MkdirAll(moltnetHome, 0o700); err != nil {
+		t.Fatalf("create Moltnet home: %v", err)
+	}
+
 	assetName := "moltnet_linux_amd64.tar.gz"
 	server := newReleaseServer(t, fakeRelease{
 		assetName: assetName,
@@ -214,11 +226,12 @@ func TestRunRefusesConcurrentUpdateLock(t *testing.T) {
 	defer server.Close()
 
 	installPath := writeMoltnetScript(t, t.TempDir(), "v0.1.0")
-	if err := os.WriteFile(defaultUpdateLockPath(installPath), []byte("active"), 0o600); err != nil {
+	options := releaseUpdateOptions(server, installPath)
+	if err := os.WriteFile(options.LockPath, []byte("active"), 0o600); err != nil {
 		t.Fatalf("write active lock: %v", err)
 	}
 
-	result, err := Run(context.Background(), releaseUpdateOptions(server, installPath))
+	result, err := Run(context.Background(), options)
 	if err == nil {
 		t.Fatal("expected active lock error")
 	}
@@ -230,6 +243,108 @@ func TestRunRefusesConcurrentUpdateLock(t *testing.T) {
 	}
 	if got := runVersion(t, installPath); got != "v0.1.0" {
 		t.Fatalf("lock refusal mutated install, version = %q", got)
+	}
+}
+
+func TestRunUsesMoltnetHomeUpdateLockByDefault(t *testing.T) {
+	moltnetHome := missingMoltnetHome(t)
+	t.Setenv(moltnetHomeEnv, moltnetHome)
+	if err := os.MkdirAll(moltnetHome, 0o700); err != nil {
+		t.Fatalf("create Moltnet home: %v", err)
+	}
+
+	assetName := "moltnet_linux_amd64.tar.gz"
+	server := newReleaseServer(t, fakeRelease{
+		assetName: assetName,
+		archive:   moltnetArchive(t, "v0.2.0"),
+		version:   "v0.2.0",
+	})
+	defer server.Close()
+
+	lockPath := filepath.Join(moltnetHome, "update.lock")
+	if err := os.WriteFile(lockPath, []byte("active"), 0o600); err != nil {
+		t.Fatalf("write active default lock: %v", err)
+	}
+	installPath := writeMoltnetScript(t, t.TempDir(), "v0.1.0")
+	options := releaseUpdateOptions(server, installPath)
+	options.LockPath = ""
+
+	result, err := Run(context.Background(), options)
+	if err == nil {
+		t.Fatal("expected default lock refusal")
+	}
+	if !strings.Contains(err.Error(), "already running") {
+		t.Fatalf("unexpected lock error %v", err)
+	}
+	if result.Updated {
+		t.Fatalf("lock refusal updated install %#v", result)
+	}
+	if _, err := os.Stat(installPath + ".update.lock"); !os.IsNotExist(err) {
+		t.Fatalf("install-local lock was used, stat err=%v", err)
+	}
+}
+
+func TestDefaultInstallDetectorIgnoresInsecureMetadata(t *testing.T) {
+	if isContainerInstall() {
+		t.Skip("container detection takes precedence over local install metadata")
+	}
+	moltnetHome := missingMoltnetHome(t)
+	t.Setenv(moltnetHomeEnv, moltnetHome)
+	if err := os.MkdirAll(moltnetHome, 0o700); err != nil {
+		t.Fatalf("create Moltnet home: %v", err)
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable(): %v", err)
+	}
+	metadata := installMetadata{
+		InstallMethod:     string(InstallMethodReleaseTarball),
+		InstallPath:       cleanExecutablePath(executable),
+		SelfUpdateAllowed: true,
+		Version:           1,
+	}
+	contents, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatalf("marshal metadata: %v", err)
+	}
+	metadataPath := filepath.Join(moltnetHome, "install.json")
+	if err := os.WriteFile(metadataPath, append(contents, '\n'), 0o644); err != nil {
+		t.Fatalf("write insecure metadata: %v", err)
+	}
+
+	install, err := (DefaultInstallDetector{}).DetectInstall(context.Background(), "v0.1.0")
+	if err != nil {
+		t.Fatalf("DetectInstall() error = %v", err)
+	}
+	if install.Method != InstallMethodUnknown || install.SelfUpdateAllowed {
+		t.Fatalf("expected insecure metadata to be ignored, got %#v", install)
+	}
+}
+
+func TestWriteInstallMetadataRefusesInsecureExistingHomeWithoutChmod(t *testing.T) {
+	moltnetHome := t.TempDir()
+	t.Setenv(moltnetHomeEnv, moltnetHome)
+	if err := os.Chmod(moltnetHome, 0o755); err != nil {
+		t.Fatalf("make home insecure: %v", err)
+	}
+	defer os.Chmod(moltnetHome, 0o700)
+
+	err := writeInstallMetadata(installMetadata{
+		InstallMethod:     string(InstallMethodReleaseTarball),
+		InstallPath:       "/tmp/moltnet",
+		SelfUpdateAllowed: true,
+		Version:           1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "group/world accessible") {
+		t.Fatalf("expected insecure home refusal, got %v", err)
+	}
+	info, statErr := os.Stat(moltnetHome)
+	if statErr != nil {
+		t.Fatalf("stat moltnet home: %v", statErr)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("writeInstallMetadata changed existing home mode to %o", got)
 	}
 }
 
