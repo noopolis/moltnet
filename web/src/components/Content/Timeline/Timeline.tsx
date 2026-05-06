@@ -1,4 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
+import type { KeyboardEvent, TouchEvent, WheelEvent } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useMessages } from "../../../hooks/useMessages";
 import { useNetwork } from "../../../hooks/useNetwork";
@@ -10,11 +11,14 @@ import {
 import { useSelection } from "../../../providers";
 import { Panel } from "../../Panel";
 import {
+  captureScrollAnchor,
   captureScrollSnapshot,
   isNearTop,
   isTimelineAtBottom,
   pinToBottom,
+  restoreScrollAnchor,
   restorePrependScroll,
+  type ScrollAnchor,
   type ScrollSnapshot,
 } from "./scroll";
 import { TimelineMessage } from "./TimelineMessage";
@@ -45,33 +49,78 @@ export function Timeline() {
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => parentRef.current,
+    getItemKey: (index) => messages[index]?.id ?? index,
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
     overscan: 12,
   });
 
   const firstMessageID = messages[0]?.id ?? "";
   const lastMessageID = messages[messages.length - 1]?.id ?? "";
+  const autoFollowRef = useRef(true);
   const nearBottomRef = useRef(true);
   const bottomPinTokenRef = useRef(0);
-  const bottomPinUntilRef = useRef(0);
+  const pinningRef = useRef(false);
+  const anchorRestoreTokenRef = useRef(0);
+  const restoringAnchorRef = useRef(false);
   const scrolledKeyRef = useRef<string | null>(null);
+  const scrollAnchorRef = useRef<ScrollAnchor | null>(null);
   const snapshotRef = useRef<ScrollSnapshot | null>(null);
+  const touchYRef = useRef<number | null>(null);
   const renderedRef = useRef<{
     key: string | null;
     count: number;
     lastMessageID: string;
   }>({ key: null, count: 0, lastMessageID: "" });
 
+  const cancelBottomPin = useCallback(() => {
+    bottomPinTokenRef.current += 1;
+    anchorRestoreTokenRef.current += 1;
+    autoFollowRef.current = false;
+    nearBottomRef.current = false;
+    pinningRef.current = false;
+    const node = parentRef.current;
+    if (node) scrollAnchorRef.current = captureScrollAnchor(node);
+  }, []);
+
+  const preserveScrollAnchor = useCallback((anchor: ScrollAnchor) => {
+    const token = anchorRestoreTokenRef.current + 1;
+    anchorRestoreTokenRef.current = token;
+
+    const restore = () => {
+      if (anchorRestoreTokenRef.current !== token || autoFollowRef.current) return;
+      const node = parentRef.current;
+      if (!node) return;
+
+      restoringAnchorRef.current = true;
+      restoreScrollAnchor(node, anchor);
+      scrollAnchorRef.current = captureScrollAnchor(node) ?? anchor;
+      requestAnimationFrame(() => {
+        if (anchorRestoreTokenRef.current === token) {
+          restoringAnchorRef.current = false;
+        }
+      });
+    };
+
+    restore();
+    requestAnimationFrame(restore);
+  }, []);
+
   const scrollToBottom = useCallback(() => {
     const token = bottomPinTokenRef.current + 1;
     bottomPinTokenRef.current = token;
-    bottomPinUntilRef.current = Date.now() + 600;
+    autoFollowRef.current = true;
     const stick = () => {
-      if (bottomPinTokenRef.current !== token) return;
+      if (bottomPinTokenRef.current !== token || !autoFollowRef.current) return;
       const node = parentRef.current;
       if (!node) return;
+      pinningRef.current = true;
       pinToBottom(node);
       nearBottomRef.current = true;
+      requestAnimationFrame(() => {
+        if (bottomPinTokenRef.current === token) {
+          pinningRef.current = false;
+        }
+      });
     };
 
     stick();
@@ -80,8 +129,6 @@ export function Timeline() {
       requestAnimationFrame(stick);
     });
     window.setTimeout(stick, 50);
-    window.setTimeout(stick, 150);
-    window.setTimeout(stick, 350);
   }, []);
 
   const maybeFetchOlder = useCallback(
@@ -105,25 +152,69 @@ export function Timeline() {
   const handleScroll = useCallback(() => {
     const node = parentRef.current;
     if (!node) return;
-    const nearBottom = isTimelineAtBottom(node, lastMessageID);
+    const nearBottom = isTimelineAtBottom(node);
     nearBottomRef.current = nearBottom;
-    if (!nearBottom && Date.now() > bottomPinUntilRef.current) {
+    if (nearBottom) {
+      autoFollowRef.current = true;
+      scrollAnchorRef.current = null;
+    } else if (restoringAnchorRef.current) {
+      scrollAnchorRef.current = captureScrollAnchor(node);
+    } else if (!pinningRef.current) {
+      autoFollowRef.current = false;
       bottomPinTokenRef.current += 1;
+      anchorRestoreTokenRef.current += 1;
+      scrollAnchorRef.current = captureScrollAnchor(node);
     }
     maybeFetchOlder(node);
-  }, [lastMessageID, maybeFetchOlder]);
+  }, [maybeFetchOlder]);
+
+  const handleWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      if (event.deltaY < 0) cancelBottomPin();
+    },
+    [cancelBottomPin],
+  );
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") {
+        cancelBottomPin();
+      }
+    },
+    [cancelBottomPin],
+  );
+
+  const handleTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
+    touchYRef.current = event.touches[0]?.clientY ?? null;
+  }, []);
+
+  const handleTouchMove = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const currentY = event.touches[0]?.clientY ?? null;
+      const previousY = touchYRef.current;
+      if (currentY !== null && previousY !== null && currentY > previousY + 4) {
+        cancelBottomPin();
+      }
+      touchYRef.current = currentY;
+    },
+    [cancelBottomPin],
+  );
 
   // Preserve the current viewport when older pages are prepended above it.
   useLayoutEffect(() => {
     const node = parentRef.current;
     const snapshot = snapshotRef.current;
     if (isFetchingNextPage || !node || !snapshot) return;
+    anchorRestoreTokenRef.current += 1;
 
     const restore = () => {
       const current = parentRef.current;
       if (!current) return;
       restorePrependScroll(current, snapshot);
-      nearBottomRef.current = isTimelineAtBottom(current, lastMessageID);
+      const nearBottom = isTimelineAtBottom(current);
+      nearBottomRef.current = nearBottom;
+      if (nearBottom) autoFollowRef.current = true;
+      scrollAnchorRef.current = captureScrollAnchor(current);
     };
 
     restore();
@@ -154,12 +245,16 @@ export function Timeline() {
     if (!selectedKey) {
       scrolledKeyRef.current = null;
       nearBottomRef.current = true;
+      autoFollowRef.current = true;
+      scrollAnchorRef.current = null;
       snapshotRef.current = null;
       return;
     }
     if (targetChanged) {
       scrolledKeyRef.current = null;
       nearBottomRef.current = true;
+      autoFollowRef.current = true;
+      scrollAnchorRef.current = null;
       snapshotRef.current = null;
     }
     if (messages.length === 0) return;
@@ -170,11 +265,24 @@ export function Timeline() {
     }
     if (snapshotRef.current || isFetchingNextPage) return;
     const node = parentRef.current;
-    const shouldStick = nearBottomRef.current || (!!node && isTimelineAtBottom(node, lastMessageID));
+    const shouldStick =
+      autoFollowRef.current && (nearBottomRef.current || (!!node && isTimelineAtBottom(node)));
     if ((tailChanged || countGrew) && shouldStick) {
       scrollToBottom();
+      return;
     }
-  }, [isFetchingNextPage, lastMessageID, messages.length, scrollToBottom, selectedKey]);
+    if ((tailChanged || countGrew) && node && !autoFollowRef.current) {
+      const anchor = scrollAnchorRef.current ?? captureScrollAnchor(node);
+      if (anchor) preserveScrollAnchor(anchor);
+    }
+  }, [
+    isFetchingNextPage,
+    lastMessageID,
+    messages.length,
+    preserveScrollAnchor,
+    scrollToBottom,
+    selectedKey,
+  ]);
 
   // ─── Trigger fetch-older when the user scrolls near the top ─────────────────
   useEffect(() => {
@@ -225,7 +333,12 @@ export function Timeline() {
           ref={parentRef}
           className="flex-1 overflow-auto"
           data-testid="timeline-scroll"
+          style={{ overflowAnchor: "none" }}
+          onKeyDown={handleKeyDown}
           onScroll={handleScroll}
+          onTouchMove={handleTouchMove}
+          onTouchStart={handleTouchStart}
+          onWheel={handleWheel}
         >
           {messages.length === 0 ? (
             <p className="text-faint text-xs px-4 py-3">
