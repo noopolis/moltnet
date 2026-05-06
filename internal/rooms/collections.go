@@ -80,7 +80,7 @@ func (s *Service) UpdateRoomMembers(
 	}
 
 	s.publishEvent(protocol.Event{
-		ID:        s.nextID("evt"),
+		ID:        newPrefixedID("evt"),
 		Type:      protocol.EventTypeRoomMembersUpdated,
 		NetworkID: s.networkID,
 		Room:      &room,

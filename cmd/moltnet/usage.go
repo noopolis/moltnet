@@ -17,6 +17,7 @@ func buildUsage() string {
   moltnet bridge run <path>
   moltnet attachment run <path>
   moltnet version
+  moltnet --version
 
 Commands:
   connect           Write local Moltnet client config and optionally install the skill
@@ -34,6 +35,7 @@ Commands:
   bridge           Run one low-level bridge attachment from a config file
   attachment       Run one low-level attachment runner from a config file
   version          Print the Moltnet version
+  --version        Print the Moltnet version
   help             Show this help
 `
 }

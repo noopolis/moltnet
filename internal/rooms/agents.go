@@ -36,7 +36,7 @@ func (s *Service) RegisterAgentContext(
 	registration := protocol.AgentRegistration{
 		NetworkID:     s.networkID,
 		AgentID:       agentID,
-		ActorUID:      s.nextID("actor"),
+		ActorUID:      newPrefixedID("actor"),
 		ActorURI:      protocol.AgentFQID(s.networkID, agentID),
 		DisplayName:   strings.TrimSpace(request.Name),
 		CredentialKey: credentialKey,
@@ -126,7 +126,7 @@ func (s *Service) resolveRequestedAgentID(
 	for attempt := 0; attempt < 100; attempt++ {
 		candidate := base
 		if attempt > 0 {
-			candidate = base + "-" + shortSuffix(s.nextID("agent"))
+			candidate = base + "-" + shortSuffix(newPrefixedID("agent"))
 		}
 		if _, ok, err := s.registeredAgent(ctx, candidate); err != nil {
 			return "", err

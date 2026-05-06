@@ -17,6 +17,9 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 	command, rest := parseCommand(args)
 
 	switch command {
+	case "--version":
+		fmt.Fprintln(stdout, buildVersion)
+		return nil
 	case "", "start", "server":
 		return runServer(ctx, buildVersion)
 	case "bridge":

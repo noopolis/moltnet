@@ -15,6 +15,13 @@ interface RawMessagePage extends Omit<MessagePage, "messages"> {
   messages?: MessagePage["messages"] | null;
 }
 
+const configuredDelay = Number.parseInt(
+  import.meta.env.VITE_MOLTNET_CONSOLE_API_DELAY_MS ?? "",
+  10,
+);
+const apiDelayMs =
+  Number.isFinite(configuredDelay) && configuredDelay > 0 ? configuredDelay : 0;
+
 export interface SendMessageBody {
   target: MessageTarget;
   from: MessageFrom;
@@ -23,6 +30,7 @@ export interface SendMessageBody {
 }
 
 async function getJSON<T>(path: string): Promise<T> {
+  await delayForConsoleTesting();
   const start = performance.now();
   const response = await fetch(path);
   recordLatency(Math.round(performance.now() - start));
@@ -30,6 +38,11 @@ async function getJSON<T>(path: string): Promise<T> {
     throw new Error(`${path} returned ${response.status}`);
   }
   return (await response.json()) as T;
+}
+
+function delayForConsoleTesting() {
+  if (apiDelayMs <= 0) return Promise.resolve();
+  return new Promise((resolve) => window.setTimeout(resolve, apiDelayMs));
 }
 
 function normalizeMessagePage(page: RawMessagePage): MessagePage {

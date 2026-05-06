@@ -2,8 +2,6 @@ package rooms
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 	"time"
 
@@ -17,8 +15,7 @@ func (s *Service) publishEvent(event protocol.Event) {
 }
 
 func eventIDForMessage(messageID string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(messageID)))
-	return "evt_msg_" + hex.EncodeToString(sum[:])
+	return deterministicPrefixedID("evt", messageID)
 }
 
 func (s *Service) conversationLifecycle(
@@ -112,7 +109,7 @@ func (s *Service) setPairingRuntime(pairingID string, next pairingStatus, replac
 	observability.Logger(s.lifecycleCtx, "rooms.pairing", "pairing_id", pairingID, "status", next.value).
 		Info("pairing status updated")
 	s.publishEvent(protocol.Event{
-		ID:        s.nextID("evt"),
+		ID:        newPrefixedID("evt"),
 		Type:      protocol.EventTypePairingUpdated,
 		NetworkID: s.networkID,
 		Pairing:   eventPairing,
