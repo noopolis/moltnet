@@ -72,7 +72,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
 	}))
 
 	mux.HandleFunc("GET /v1/network", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve, authn.ScopePair, authn.ScopeAttach}, func(response http.ResponseWriter, request *http.Request) {
-		writeJSON(response, http.StatusOK, service.Network())
+		writeJSON(response, http.StatusOK, networkForRequest(policy, request, service.Network()))
 	}))
 
 	mux.HandleFunc("GET /v1/rooms", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve, authn.ScopePair}, func(response http.ResponseWriter, request *http.Request) {

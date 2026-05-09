@@ -23,12 +23,17 @@ export interface NetworkCapabilities {
   attachment_protocol?: string;
 }
 
+export interface NetworkConsole {
+  can_send_human?: boolean;
+}
+
 export interface Network {
   id: string;
   name: string;
   version: string;
   protocols?: NetworkProtocols;
   capabilities: NetworkCapabilities;
+  console?: NetworkConsole;
   warnings?: NetworkWarning[];
 }
 

@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,80 @@ import (
 	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
+
+func TestNetworkReportsConsoleSendCapability(t *testing.T) {
+	t.Parallel()
+
+	bearerPolicy, err := authn.NewPolicy(authn.Config{
+		Mode:       authn.ModeBearer,
+		ListenAddr: ":8787",
+		Tokens: []authn.TokenConfig{
+			{ID: "observer", Value: "observe-secret", Scopes: []authn.Scope{authn.ScopeObserve}},
+			{ID: "writer", Value: "observe-write-secret", Scopes: []authn.Scope{authn.ScopeObserve, authn.ScopeWrite}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPolicy() bearer error = %v", err)
+	}
+
+	openPolicy, err := authn.NewPolicy(authn.Config{
+		Mode:       authn.ModeOpen,
+		ListenAddr: ":8787",
+		Tokens: []authn.TokenConfig{
+			{ID: "writer", Value: "observe-write-secret", Scopes: []authn.Scope{authn.ScopeObserve, authn.ScopeWrite}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPolicy() open error = %v", err)
+	}
+
+	for _, test := range []struct {
+		name         string
+		policy       *authn.Policy
+		token        string
+		humanIngress bool
+		want         bool
+	}{
+		{name: "no auth can send when human ingress is enabled", humanIngress: true, want: true},
+		{name: "no auth cannot send when human ingress is disabled"},
+		{name: "bearer observe only cannot send", policy: bearerPolicy, token: "observe-secret", humanIngress: true},
+		{name: "bearer observe write can send", policy: bearerPolicy, token: "observe-write-secret", humanIngress: true, want: true},
+		{name: "open anonymous cannot send", policy: openPolicy, humanIngress: true},
+		{name: "open observe write can send", policy: openPolicy, token: "observe-write-secret", humanIngress: true, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			handler := NewHTTPHandler(&fakeService{network: protocol.Network{
+				ID:   "local",
+				Name: "Local",
+				Capabilities: protocol.NetworkCapabilities{
+					HumanIngress: test.humanIngress,
+				},
+			}}, test.policy)
+			request := httptest.NewRequest(http.MethodGet, "/v1/network", nil)
+			if test.token != "" {
+				request.Header.Set("Authorization", "Bearer "+test.token)
+			}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d body=%s", response.Code, response.Body.String())
+			}
+
+			var network protocol.Network
+			if err := json.NewDecoder(response.Body).Decode(&network); err != nil {
+				t.Fatalf("decode network response: %v", err)
+			}
+			if network.Console == nil {
+				t.Fatal("expected console capability block")
+			}
+			if network.Console.CanSendHuman != test.want {
+				t.Fatalf("can_send_human = %v, want %v", network.Console.CanSendHuman, test.want)
+			}
+		})
+	}
+}
 
 func TestHTTPHandlerAuthScopes(t *testing.T) {
 	t.Parallel()

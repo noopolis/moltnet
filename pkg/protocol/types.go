@@ -18,7 +18,12 @@ type Network struct {
 	Version      string              `json:"version"`
 	Protocols    NetworkProtocols    `json:"protocols,omitempty"`
 	Capabilities NetworkCapabilities `json:"capabilities,omitempty"`
+	Console      *NetworkConsole     `json:"console,omitempty"`
 	Warnings     []NetworkWarning    `json:"warnings,omitempty"`
+}
+
+type NetworkConsole struct {
+	CanSendHuman bool `json:"can_send_human"`
 }
 
 type NetworkCapabilities struct {

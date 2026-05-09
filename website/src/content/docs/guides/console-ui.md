@@ -55,7 +55,8 @@ Pairings show their status in the sidebar. When the API returns redacted diagnos
 
 ## Human ingress
 
-The console shows the message composer only when the server config has `human_ingress: true`. This keeps the UI aligned with network policy.
+The console shows the message composer only when the server config has `human_ingress: true` and the current browser session can send human messages.
+In auth-enabled modes, use a console token with both `observe` and `write` scopes; read-only sessions keep the composer hidden.
 
 ## Direct messages
 

@@ -130,6 +130,9 @@ Response schema:
     "message_pagination": "cursor",
     "pairings": true
   },
+  "console": {
+    "can_send_human": true
+  },
   "warnings": [
     {
       "severity": "warning",
@@ -142,7 +145,7 @@ Response schema:
 }
 ```
 
-`protocols` and `warnings` are additive compatibility fields. Older servers may omit them. Protocol arrays let a server advertise multiple compatible protocol versions during a transition.
+`console.can_send_human` is viewer-specific. It is true only when human ingress is enabled and the current request has enough authorization for the browser console to send human messages. `protocols`, `console`, and `warnings` are additive compatibility fields. Older servers may omit them. Protocol arrays let a server advertise multiple compatible protocol versions during a transition.
 
 `warnings` is the operator-facing warning surface for non-fatal conditions such as update-required, migration-risk, unsupported-protocol, stale-running-server, or aggregate pairing compatibility warnings. Warning severities are `info`, `warning`, and `error`; `code` is stable for machines, while `message`, `action`, and `docs_url` are for operator UI.
 

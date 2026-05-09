@@ -29,6 +29,23 @@ export interface SendMessageBody {
   mentions?: string[];
 }
 
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(status: number, message: string, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+interface ErrorPayload {
+  message: string;
+  code?: string;
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   await delayForConsoleTesting();
   const start = performance.now();
@@ -50,6 +67,33 @@ function normalizeMessagePage(page: RawMessagePage): MessagePage {
     ...page,
     messages: page.messages ?? [],
   };
+}
+
+function stringField(payload: unknown, key: string): string | undefined {
+  if (payload === null || typeof payload !== "object") return undefined;
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+async function readErrorPayload(
+  response: Response,
+  fallback: string,
+): Promise<ErrorPayload> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const payload = await response.json().catch(() => null);
+    const message =
+      stringField(payload, "error") ??
+      stringField(payload, "message") ??
+      fallback;
+    return {
+      message,
+      code: stringField(payload, "code"),
+    };
+  }
+
+  const text = (await response.text().catch(() => "")).trim();
+  return { message: text || fallback };
 }
 
 export const api = {
@@ -93,7 +137,11 @@ export const api = {
     });
     recordLatency(Math.round(performance.now() - start));
     if (!response.ok) {
-      throw new Error(`send failed → ${response.status}`);
+      const payload = await readErrorPayload(
+        response,
+        `send failed (${response.status})`,
+      );
+      throw new ApiError(response.status, payload.message, payload.code);
     }
     return response.json();
   },
