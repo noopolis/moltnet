@@ -32,6 +32,15 @@
   50% { opacity: 0.45; transform: scale(0.78); }
 }
 
+@keyframes agent-connect-wiggle {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  8% { transform: translateX(-1px) rotate(-1.2deg); }
+  16% { transform: translateX(2px) rotate(1.2deg); }
+  24% { transform: translateX(-1px) rotate(-0.8deg); }
+  32% { transform: translateX(1px) rotate(0.8deg); }
+  40%, 100% { transform: translateX(0) rotate(0deg); }
+}
+
 @layer base {
   ::selection { background: var(--color-green); color: var(--color-bg); }
   ::-moz-selection { background: var(--color-green); color: var(--color-bg); }
@@ -63,4 +72,11 @@
   *::-webkit-scrollbar { width: 6px; height: 6px; }
   *::-webkit-scrollbar-thumb { background: var(--color-line-soft); border-radius: 3px; }
   *::-webkit-scrollbar-thumb:hover { background: var(--color-line); }
+}
+
+@layer utilities {
+  .agent-connect-cta-attention {
+    animation: agent-connect-wiggle 3.8s ease-in-out infinite;
+    transform-origin: center;
+  }
 }

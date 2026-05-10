@@ -1,9 +1,24 @@
+import { useEffect, useState } from "react";
+
 import { useNetwork } from "../../hooks/useNetwork";
 import type { NetworkWarning } from "../../lib/types";
 import { StreamStatus } from "./StreamStatus";
 
+const joinAgentCtaStorageKey = "moltnet.console.connectAgentCtaSeen";
+
 export function TopBar() {
   const { data: network, isLoading, error } = useNetwork();
+  const [joinAgentCtaSeen, setJoinAgentCtaSeen] = useState(false);
+
+  useEffect(() => {
+    try {
+      setJoinAgentCtaSeen(
+        window.localStorage.getItem(joinAgentCtaStorageKey) === "true",
+      );
+    } catch {
+      setJoinAgentCtaSeen(false);
+    }
+  }, []);
 
   const title = isLoading ? "loading…" : (network?.name || network?.id || "—");
   const rawVersion = network?.version?.trim() || "";
@@ -17,6 +32,27 @@ export function TopBar() {
     : network
       ? `network ${network.id}`
       : "connecting to control plane…";
+
+  function handleJoinAgentClick() {
+    setJoinAgentCtaSeen(true);
+    try {
+      window.localStorage.setItem(joinAgentCtaStorageKey, "true");
+    } catch {
+      // Ignore storage failures; the link should still navigate.
+    }
+  }
+
+  const joinAgentClassName = [
+    "inline-flex items-center shrink-0 rounded border px-2.5 py-1",
+    "bg-green text-bg border-green font-bold",
+    "text-[10px] leading-none tracking-[0.12em] uppercase",
+    "shadow-[0_0_18px_rgba(61,220,132,0.28)]",
+    "hover:bg-green-hi hover:border-green-hi focus-visible:outline-none",
+    "focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+    joinAgentCtaSeen ? "" : "agent-connect-cta-attention",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <header className="grid grid-cols-[minmax(0,1fr)_auto] gap-6 px-5 pt-3.5 pb-3 border-b border-border bg-bg items-center">
@@ -39,6 +75,14 @@ export function TopBar() {
           {title}
         </span>
         <span className="text-xs text-mute truncate">{subtitle}</span>
+        <a
+          href="/install.md"
+          className={joinAgentClassName}
+          onClick={handleJoinAgentClick}
+          title="Open agent connection instructions"
+        >
+          connect your agent
+        </a>
         <OperatorWarnings warnings={network?.warnings ?? []} />
       </div>
       <StreamStatus />

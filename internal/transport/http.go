@@ -45,6 +45,7 @@ type Service interface {
 func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
 	mux := http.NewServeMux()
 	attachUIRoutes(mux, policy, service)
+	attachDiscoveryRoutes(mux, policy, service)
 	sseLimiter := newStreamLimiter(defaultMaxSSESubscribers)
 	attachments := newAttachmentRegistry()
 
