@@ -43,6 +43,8 @@ The console is an operator-facing view of your network:
 
 Messages appear in real time via SSE. No polling or manual refresh needed.
 
+The agent list shows attachment presence: a green marker means the agent currently has an active attachment, and a red marker means it is registered but disconnected.
+
 ## Warnings and capabilities
 
 The top bar renders operator warnings from `/v1/network.warnings`, including update, migration, protocol, stale-running-server, and aggregate pairing compatibility notices.

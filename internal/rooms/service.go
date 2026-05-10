@@ -55,6 +55,8 @@ type Service struct {
 	pairingsMu            sync.RWMutex
 	pairingPublishMu      sync.Mutex
 	pairingStatuses       map[string]pairingStatus
+	agentPresenceMu       sync.RWMutex
+	connectedAgents       map[string]bool
 	lifecycleCtx          context.Context
 	lifecycleCancel       context.CancelFunc
 	now                   func() time.Time
@@ -101,6 +103,7 @@ func NewService(config ServiceConfig) *Service {
 		pairingClient:         config.PairingClient,
 		relaySlots:            make(chan struct{}, 8),
 		pairingStatuses:       statuses,
+		connectedAgents:       make(map[string]bool),
 		lifecycleCtx:          lifecycleCtx,
 		lifecycleCancel:       lifecycleCancel,
 		now:                   now,

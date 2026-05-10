@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/noopolis/moltnet/pkg/protocol"
@@ -27,53 +28,58 @@ func (e fakeStatusError) StatusCode() int {
 }
 
 type fakeService struct {
-	network         protocol.Network
-	pairNetwork     protocol.Network
-	agents          []protocol.AgentSummary
-	pairAgents      []protocol.AgentSummary
-	pairings        []protocol.Pairing
-	pairingsPage    protocol.PairingPage
-	pairListErr     error
-	rooms           []protocol.Room
-	pairRooms       []protocol.Room
-	roomPage        protocol.MessagePage
-	threads         []protocol.Thread
-	threadPage      protocol.MessagePage
-	threadsPage     protocol.ThreadPage
-	dms             []protocol.DirectConversation
-	dmListPage      protocol.DirectConversationPage
-	dmPage          protocol.MessagePage
-	artifactPage    protocol.ArtifactPage
-	createdRoom     protocol.CreateRoomRequest
-	registeredAgent protocol.RegisterAgentRequest
-	updatedRoom     protocol.UpdateRoomMembersRequest
-	sentMessage     protocol.SendMessageRequest
-	roomID          string
-	roomBefore      string
-	roomAfter       string
-	threadID        string
-	threadBefore    string
-	threadAfter     string
-	dmID            string
-	dmBefore        string
-	dmAfter         string
-	agentBefore     string
-	agentAfter      string
-	pairBefore      string
-	pairAfter       string
-	pairRoomPage    protocol.RoomPage
-	pairAgentPage   protocol.AgentPage
-	limit           int
-	createErr       error
-	pairingErr      error
-	roomError       error
-	threadError     error
-	dmError         error
-	artifactErr     error
-	sendErr         error
-	healthErr       error
-	stream          chan protocol.Event
-	replayStream    chan protocol.Event
+	mu                 sync.Mutex
+	network            protocol.Network
+	pairNetwork        protocol.Network
+	agents             []protocol.AgentSummary
+	pairAgents         []protocol.AgentSummary
+	pairings           []protocol.Pairing
+	pairingsPage       protocol.PairingPage
+	pairListErr        error
+	rooms              []protocol.Room
+	pairRooms          []protocol.Room
+	roomPage           protocol.MessagePage
+	threads            []protocol.Thread
+	threadPage         protocol.MessagePage
+	threadsPage        protocol.ThreadPage
+	dms                []protocol.DirectConversation
+	dmListPage         protocol.DirectConversationPage
+	dmPage             protocol.MessagePage
+	artifactPage       protocol.ArtifactPage
+	createdRoom        protocol.CreateRoomRequest
+	registeredAgent    protocol.RegisterAgentRequest
+	connectedAgents    []protocol.Actor
+	disconnectedAgents []protocol.Actor
+	deliveredWakes     []protocol.Event
+	failedWakes        []protocol.Event
+	updatedRoom        protocol.UpdateRoomMembersRequest
+	sentMessage        protocol.SendMessageRequest
+	roomID             string
+	roomBefore         string
+	roomAfter          string
+	threadID           string
+	threadBefore       string
+	threadAfter        string
+	dmID               string
+	dmBefore           string
+	dmAfter            string
+	agentBefore        string
+	agentAfter         string
+	pairBefore         string
+	pairAfter          string
+	pairRoomPage       protocol.RoomPage
+	pairAgentPage      protocol.AgentPage
+	limit              int
+	createErr          error
+	pairingErr         error
+	roomError          error
+	threadError        error
+	dmError            error
+	artifactErr        error
+	sendErr            error
+	healthErr          error
+	stream             chan protocol.Event
+	replayStream       chan protocol.Event
 }
 
 func (f *fakeService) Health(ctx context.Context) error { return f.healthErr }
@@ -115,6 +121,26 @@ func (f *fakeService) ListAgentsContext(ctx context.Context, page protocol.PageR
 	f.agentAfter = page.After
 	f.limit = page.Limit
 	return protocol.AgentPage{Agents: f.agents}, nil
+}
+func (f *fakeService) AgentConnected(ctx context.Context, agent protocol.Actor) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.connectedAgents = append(f.connectedAgents, agent)
+}
+func (f *fakeService) AgentDisconnected(ctx context.Context, agent protocol.Actor) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.disconnectedAgents = append(f.disconnectedAgents, agent)
+}
+func (f *fakeService) AgentWakeDelivered(ctx context.Context, agent protocol.Actor, event protocol.Event) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deliveredWakes = append(f.deliveredWakes, event)
+}
+func (f *fakeService) AgentWakeFailed(ctx context.Context, agent protocol.Actor, event protocol.Event, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failedWakes = append(f.failedWakes, event)
 }
 func (f *fakeService) ListPairingsContext(ctx context.Context, page protocol.PageRequest) (protocol.PairingPage, error) {
 	f.pairBefore = page.Before

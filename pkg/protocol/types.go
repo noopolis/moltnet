@@ -81,6 +81,7 @@ type Event struct {
 	ID        string              `json:"id"`
 	Type      string              `json:"type"`
 	NetworkID string              `json:"network_id"`
+	Agent     *AgentEvent         `json:"agent,omitempty"`
 	Message   *Message            `json:"message,omitempty"`
 	Room      *Room               `json:"room,omitempty"`
 	Thread    *Thread             `json:"thread,omitempty"`
@@ -115,6 +116,7 @@ type AgentSummary struct {
 	FQID      string   `json:"fqid,omitempty"`
 	NetworkID string   `json:"network_id"`
 	Rooms     []string `json:"rooms,omitempty"`
+	Connected bool     `json:"connected"`
 }
 
 type RegisterAgentRequest struct {

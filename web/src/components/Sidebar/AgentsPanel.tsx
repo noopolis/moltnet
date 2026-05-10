@@ -21,12 +21,21 @@ export function AgentsPanel() {
             {agents.map((agent) => {
               const active =
                 selected?.kind === "agent" && selected.id === agent.id;
+              const connected = agent.connected === true;
               return (
                 <ListItem
                   key={agent.id}
                   active={active}
                   onClick={() => select({ kind: "agent", id: agent.id })}
                   title={agent.id}
+                  marker={
+                    <span
+                      className={`inline-block h-[7px] w-[7px] rounded-full ${
+                        connected ? "bg-green animate-breathe" : "bg-coral"
+                      }`}
+                    />
+                  }
+                  markerClassName={connected ? "text-green" : "text-coral"}
                   trailing={
                     (agent.rooms ?? []).length > 0
                       ? `${agent.rooms!.length} rooms`

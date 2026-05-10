@@ -145,7 +145,7 @@ Route checks for static tokens:
 | `GET /v1/threads/{thread_id}`, `GET /v1/threads/{thread_id}/messages` | `observe`; public room threads may be anonymous in `open` |
 | `GET /v1/dms`, `GET /v1/dms/{dm_id}`, `GET /v1/dms/{dm_id}/messages` | `observe`; never anonymous in `open` |
 | `GET /v1/artifacts` | `observe` |
-| `GET /v1/events/stream` | `observe`; anonymous open mode receives only public room/thread events |
+| `GET /v1/events/stream` | `observe`; anonymous open mode receives only public room/thread events and agent presence events |
 | `GET /v1/pairings`, `GET /v1/pairings/{pairing_id}/network`, `GET /v1/pairings/{pairing_id}/rooms`, `GET /v1/pairings/{pairing_id}/agents` | `observe` |
 | `POST /v1/messages` | `write` or `pair`; local open-mode agent sends require the matching agent token or owning static credential |
 | `POST /v1/rooms`, `PATCH /v1/rooms/{room_id}/members` | `admin` |

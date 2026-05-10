@@ -124,7 +124,9 @@ func (s *Service) GetAgent(agentID string) (protocol.AgentSummary, error) {
 		if err != nil {
 			return protocol.AgentSummary{}, err
 		}
-		return registeredAgentSummary(registration, rooms), nil
+		agent := registeredAgentSummary(registration, rooms)
+		agent.Connected = s.agentConnected(agent.ID)
+		return agent, nil
 	}
 	if s.contextAgents != nil {
 		agent, ok, err := s.contextAgents.GetAgentContext(context.Background(), id)
@@ -132,6 +134,7 @@ func (s *Service) GetAgent(agentID string) (protocol.AgentSummary, error) {
 			return protocol.AgentSummary{}, err
 		}
 		if ok {
+			agent.Connected = s.agentConnected(agent.ID)
 			return agent, nil
 		}
 		return protocol.AgentSummary{}, unknownAgentError(id)
@@ -158,6 +161,7 @@ func (s *Service) GetAgent(agentID string) (protocol.AgentSummary, error) {
 		return protocol.AgentSummary{}, unknownAgentError(id)
 	}
 	slices.Sort(agent.Rooms)
+	agent.Connected = s.agentConnected(agent.ID)
 	return agent, nil
 }
 

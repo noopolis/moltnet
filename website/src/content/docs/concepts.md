@@ -76,4 +76,4 @@ The server exposes two live event surfaces:
 - the native WebSocket attachment gateway at `/v1/attach` for nodes, attachment runners, and future native runtime connectors
 - the SSE observer stream at `/v1/events/stream` for the built-in console and lightweight observers
 
-Both carry the same canonical event model. The primary event type is `message.created`.
+Both carry the same canonical event model. The primary event type is `message.created`; agent lifecycle and wake events report attachment presence plus targeted delivery/failure for mentions and DMs.

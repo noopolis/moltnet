@@ -23,17 +23,45 @@ func TestAttachmentSessionTracksAckedCursor(t *testing.T) {
 	}
 
 	session.NoteSent(" evt_1 ")
-	if !session.Ack(" evt_1 ") {
+	if _, _, ok := session.Ack(" evt_1 "); !ok {
 		t.Fatal("expected ack to succeed")
 	}
 	if got := session.ResumeCursor(); got != "evt_1" {
 		t.Fatalf("unexpected resume cursor %q", got)
 	}
-	if session.Ack("evt_1") {
+	if _, _, ok := session.Ack("evt_1"); ok {
 		t.Fatal("expected duplicate ack to fail")
 	}
-	if session.Ack("") {
+	if _, _, ok := session.Ack(""); ok {
 		t.Fatal("expected blank ack to fail")
+	}
+}
+
+func TestAttachmentSessionTracksWakeAcksAndFailures(t *testing.T) {
+	t.Parallel()
+
+	session := newAttachmentSession("")
+	wake := protocol.Event{
+		ID:   "evt_1",
+		Type: protocol.EventTypeMessageCreated,
+		Message: &protocol.Message{
+			ID: "msg_1",
+		},
+	}
+	session.NoteSent("evt_1")
+	session.NoteWakeSent("evt_1", wake)
+
+	pending := session.PendingWakes()
+	if len(pending) != 1 || pending[0].ID != "evt_1" {
+		t.Fatalf("unexpected pending wakes %#v", pending)
+	}
+
+	event, wakeAck, ok := session.Ack("evt_1")
+	if !ok || !wakeAck || event.ID != "evt_1" {
+		t.Fatalf("unexpected wake ack event=%#v wake=%v ok=%v", event, wakeAck, ok)
+	}
+	if pending := session.PendingWakes(); len(pending) != 0 {
+		t.Fatalf("expected wake to be cleared after ack, got %#v", pending)
 	}
 }
 
@@ -54,11 +82,11 @@ func TestAttachmentSessionEvictsOldestPendingCursors(t *testing.T) {
 	}
 	for index := 0; index < 5; index++ {
 		cursor := fmt.Sprintf("evt_%d", index)
-		if session.Ack(cursor) {
+		if _, _, ok := session.Ack(cursor); ok {
 			t.Fatalf("expected evicted cursor %q to be unacked", cursor)
 		}
 	}
-	if !session.Ack("evt_5") {
+	if _, _, ok := session.Ack("evt_5"); !ok {
 		t.Fatal("expected retained cursor ack to succeed")
 	}
 }
@@ -70,7 +98,7 @@ func TestAttachmentSessionAckTrimsOrderHistory(t *testing.T) {
 	for index := 0; index < maxPendingAttachmentAcks*2; index++ {
 		cursor := fmt.Sprintf("evt_%d", index)
 		session.NoteSent(cursor)
-		if !session.Ack(cursor) {
+		if _, _, ok := session.Ack(cursor); !ok {
 			t.Fatalf("expected ack for %q to succeed", cursor)
 		}
 	}
@@ -116,7 +144,7 @@ func TestConsumeAttachmentFramesHandlesAckPingAndUnexpectedOp(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- consumeAttachmentFrames(context.Background(), serverConn, writer, session, time.Second)
+		errCh <- consumeAttachmentFrames(context.Background(), serverConn, writer, session, time.Second, nil)
 	}()
 
 	if err := clientConn.WriteJSON(protocol.AttachmentFrame{
@@ -191,7 +219,7 @@ func TestConsumeAttachmentFramesAllowsLegacyAckAndPongVersionOmission(t *testing
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- consumeAttachmentFrames(context.Background(), serverConn, writer, session, time.Second)
+		errCh <- consumeAttachmentFrames(context.Background(), serverConn, writer, session, time.Second, nil)
 	}()
 
 	if err := clientConn.WriteJSON(protocol.AttachmentFrame{
@@ -282,7 +310,7 @@ func TestConsumeAttachmentFramesRejectsMismatchedFrameVersion(t *testing.T) {
 
 			errCh := make(chan error, 1)
 			go func() {
-				errCh <- consumeAttachmentFrames(context.Background(), serverConn, writer, session, time.Second)
+				errCh <- consumeAttachmentFrames(context.Background(), serverConn, writer, session, time.Second, nil)
 			}()
 
 			if err := clientConn.WriteJSON(test.frame); err != nil {
@@ -331,7 +359,7 @@ func TestConsumeAttachmentFramesRejectsUnversionedModernFrames(t *testing.T) {
 
 			errCh := make(chan error, 1)
 			go func() {
-				errCh <- consumeAttachmentFrames(context.Background(), serverConn, writer, session, time.Second)
+				errCh <- consumeAttachmentFrames(context.Background(), serverConn, writer, session, time.Second, nil)
 			}()
 
 			if err := clientConn.WriteJSON(frame); err != nil {

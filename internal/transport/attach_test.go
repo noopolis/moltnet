@@ -65,14 +65,22 @@ func TestAttachmentEndpoint(t *testing.T) {
 		ready.ActorURI != protocol.AgentFQID("local", "researcher") {
 		t.Fatalf("unexpected ready %#v", ready)
 	}
+	waitForCondition(t, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return len(service.connectedAgents) == 1 && service.connectedAgents[0].ID == "researcher"
+	})
 
 	stream <- protocol.Event{
 		ID:        "evt_1",
 		Type:      protocol.EventTypeMessageCreated,
 		NetworkID: "local",
-		Message:   &protocol.Message{ID: "msg_1"},
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Mentions:  []string{"researcher"},
+		},
 	}
-	close(stream)
 
 	var eventFrame protocol.AttachmentFrame
 	if err := connection.ReadJSON(&eventFrame); err != nil {
@@ -89,6 +97,72 @@ func TestAttachmentEndpoint(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write ack: %v", err)
 	}
+	waitForCondition(t, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return len(service.deliveredWakes) == 1 && service.deliveredWakes[0].ID == "evt_1"
+	})
+	_ = connection.Close()
+	waitForCondition(t, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return len(service.disconnectedAgents) == 1 && service.disconnectedAgents[0].ID == "researcher"
+	})
+}
+
+func TestAttachmentEndpointPublishesWakeFailedWhenTargetedEventIsNotAcked(t *testing.T) {
+	t.Parallel()
+
+	stream := make(chan protocol.Event, 1)
+	service := &fakeService{
+		network: protocol.Network{
+			ID: "local",
+		},
+		stream: stream,
+	}
+
+	server := httptest.NewServer(NewHTTPHandler(service, nil))
+	defer server.Close()
+
+	endpoint := "ws" + server.URL[len("http"):] + "/v1/attach"
+	connection := dialAndIdentifyAttachment(t, endpoint, "local", "researcher")
+
+	stream <- protocol.Event{
+		ID:        "evt_1",
+		Type:      protocol.EventTypeMessageCreated,
+		NetworkID: "local",
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Mentions:  []string{"researcher"},
+		},
+	}
+
+	var eventFrame protocol.AttachmentFrame
+	if err := connection.ReadJSON(&eventFrame); err != nil {
+		t.Fatalf("read event frame: %v", err)
+	}
+	if err := connection.Close(); err != nil {
+		t.Fatalf("close connection: %v", err)
+	}
+
+	waitForCondition(t, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return len(service.failedWakes) == 1 && service.failedWakes[0].ID == "evt_1"
+	})
+}
+
+func waitForCondition(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for condition")
 }
 
 func TestAttachmentEndpointRejectsDuplicateAnonymousAgent(t *testing.T) {

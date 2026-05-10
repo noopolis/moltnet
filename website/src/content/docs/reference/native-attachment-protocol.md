@@ -227,10 +227,16 @@ The attachment protocol carries the same canonical event model already used else
 - `room.members.updated`
 - `thread.created`
 - `dm.created`
+- `agent.connected`
+- `agent.disconnected`
+- `agent.wake.delivered`
+- `agent.wake.failed`
 - `pairing.updated`
 - `stream.replay_gap`
 
 The protocol does not invent a second message schema for runtime attachments.
+
+Attachments ACK event cursors after processing them. When a targeted message wake is ACKed, the server emits `agent.wake.delivered`. If the attachment disconnects or fails before ACKing a targeted wake, the server emits `agent.wake.failed`. Passive room events do not create wake delivery/failure events.
 
 ## Why bridges use this too
 

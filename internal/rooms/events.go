@@ -14,6 +14,104 @@ func (s *Service) publishEvent(event protocol.Event) {
 	s.broker.Publish(event)
 }
 
+func (s *Service) AgentConnected(ctx context.Context, agent protocol.Actor) {
+	eventAgent := s.setAgentConnected(agent, true)
+	s.publishAgentEvent(ctx, protocol.EventTypeAgentConnected, eventAgent)
+}
+
+func (s *Service) AgentDisconnected(ctx context.Context, agent protocol.Actor) {
+	eventAgent := s.setAgentConnected(agent, false)
+	s.publishAgentEvent(ctx, protocol.EventTypeAgentDisconnected, eventAgent)
+}
+
+func (s *Service) AgentWakeDelivered(ctx context.Context, agent protocol.Actor, event protocol.Event) {
+	if event.Message == nil {
+		return
+	}
+	s.publishAgentEvent(ctx, protocol.EventTypeAgentWakeDelivered, protocol.AgentEvent{
+		AgentID:   strings.TrimSpace(agent.ID),
+		NetworkID: s.networkID,
+		FQID:      protocol.AgentFQID(s.networkID, strings.TrimSpace(agent.ID)),
+		Name:      strings.TrimSpace(agent.Name),
+		MessageID: event.Message.ID,
+		Reason:    agentWakeReason(s.networkID, agent, event),
+		Target:    &event.Message.Target,
+	})
+}
+
+func (s *Service) AgentWakeFailed(ctx context.Context, agent protocol.Actor, event protocol.Event, err error) {
+	if event.Message == nil {
+		return
+	}
+	failure := protocol.AgentEvent{
+		AgentID:   strings.TrimSpace(agent.ID),
+		NetworkID: s.networkID,
+		FQID:      protocol.AgentFQID(s.networkID, strings.TrimSpace(agent.ID)),
+		Name:      strings.TrimSpace(agent.Name),
+		MessageID: event.Message.ID,
+		Reason:    agentWakeReason(s.networkID, agent, event),
+		Target:    &event.Message.Target,
+	}
+	if err != nil {
+		failure.Error = strings.TrimSpace(err.Error())
+	}
+	s.publishAgentEvent(ctx, protocol.EventTypeAgentWakeFailed, failure)
+}
+
+func (s *Service) setAgentConnected(agent protocol.Actor, connected bool) protocol.AgentEvent {
+	agentID := strings.TrimSpace(agent.ID)
+	s.agentPresenceMu.Lock()
+	if connected {
+		s.connectedAgents[agentID] = true
+	} else {
+		delete(s.connectedAgents, agentID)
+	}
+	s.agentPresenceMu.Unlock()
+
+	return protocol.AgentEvent{
+		AgentID:   agentID,
+		NetworkID: s.networkID,
+		FQID:      protocol.AgentFQID(s.networkID, agentID),
+		Name:      strings.TrimSpace(agent.Name),
+	}
+}
+
+func (s *Service) publishAgentEvent(ctx context.Context, eventType string, agent protocol.AgentEvent) {
+	if strings.TrimSpace(agent.AgentID) == "" {
+		return
+	}
+	observability.Logger(ctx, "rooms.agent", "agent_id", agent.AgentID, "event_type", eventType).
+		Info("agent lifecycle event")
+	s.publishEvent(protocol.Event{
+		ID:        newPrefixedID("evt"),
+		Type:      eventType,
+		NetworkID: s.networkID,
+		Agent:     &agent,
+		CreatedAt: time.Now().UTC(),
+	})
+}
+
+func (s *Service) agentConnected(agentID string) bool {
+	s.agentPresenceMu.RLock()
+	defer s.agentPresenceMu.RUnlock()
+	return s.connectedAgents[strings.TrimSpace(agentID)]
+}
+
+func agentWakeReason(networkID string, agent protocol.Actor, event protocol.Event) string {
+	if event.Message == nil {
+		return ""
+	}
+	if event.Message.Target.Kind == protocol.TargetKindDM {
+		return "dm"
+	}
+	for _, mention := range event.Message.Mentions {
+		if protocol.ActorMatches(networkID, agent.ID, mention) || mention == agent.Name {
+			return "mention"
+		}
+	}
+	return "targeted"
+}
+
 func eventIDForMessage(messageID string) string {
 	return deterministicPrefixedID("evt", messageID)
 }

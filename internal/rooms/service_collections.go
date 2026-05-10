@@ -263,6 +263,9 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 		if err != nil {
 			return protocol.AgentPage{}, err
 		}
+		for index := range agents {
+			agents[index].Connected = s.agentConnected(agents[index].ID)
+		}
 		return paginateAgents(agents, page)
 	}
 
@@ -293,6 +296,7 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 	agents := make([]protocol.AgentSummary, 0, len(agentsByID))
 	for _, agent := range agentsByID {
 		slices.Sort(agent.Rooms)
+		agent.Connected = s.agentConnected(agent.ID)
 		agents = append(agents, *agent)
 	}
 	slices.SortFunc(agents, func(left, right protocol.AgentSummary) int {

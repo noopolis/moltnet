@@ -117,13 +117,17 @@ func handleAttachment(
 	}); err != nil {
 		return
 	}
+	service.AgentConnected(request.Context(), agent)
+	defer service.AgentDisconnected(context.Background(), agent)
 
 	ctx, cancel := context.WithCancel(request.Context())
 	defer cancel()
 
 	readErrCh := make(chan error, 1)
 	go func() {
-		readErrCh <- consumeAttachmentFrames(ctx, connection, writer, session, attachmentReadTimeout())
+		readErrCh <- consumeAttachmentFrames(ctx, connection, writer, session, attachmentReadTimeout(), func(event protocol.Event) {
+			service.AgentWakeDelivered(context.Background(), agent, event)
+		})
 	}()
 
 	heartbeatTicker := time.NewTicker(attachmentHeartbeatInterval() / 2)
@@ -140,6 +144,7 @@ func handleAttachment(
 				observability.Logger(request.Context(), "transport.attach", "agent_id", agent.ID).
 					Warn("attachment websocket read error", "error", err)
 			}
+			publishPendingWakeFailures(service, agent, session, err)
 			return
 		case <-heartbeatTicker.C:
 			if err := writer.write(protocol.AttachmentFrame{
@@ -156,6 +161,9 @@ func handleAttachment(
 				continue
 			}
 			session.NoteSent(event.ID)
+			if attachmentWakeEvent(event, service.Network().ID, agent) {
+				session.NoteWakeSent(event.ID, event)
+			}
 
 			if err := writer.write(protocol.AttachmentFrame{
 				Op:        protocol.AttachmentOpEvent,
@@ -164,9 +172,16 @@ func handleAttachment(
 				Cursor:    event.ID,
 				Event:     &event,
 			}); err != nil {
+				publishPendingWakeFailures(service, agent, session, err)
 				return
 			}
 		}
+	}
+}
+
+func publishPendingWakeFailures(service Service, agent protocol.Actor, session *attachmentSession, err error) {
+	for _, event := range session.PendingWakes() {
+		service.AgentWakeFailed(context.Background(), agent, event, err)
 	}
 }
 
@@ -253,6 +268,22 @@ func attachedAgentMessage(message *protocol.Message, networkID string, agentID s
 	return false
 }
 
+func attachmentWakeEvent(event protocol.Event, networkID string, agent protocol.Actor) bool {
+	if event.Type != protocol.EventTypeMessageCreated || event.Message == nil {
+		return false
+	}
+	message := event.Message
+	if message.Target.Kind == protocol.TargetKindDM {
+		return participantsIncludeAttachedAgent(message.Target.ParticipantIDs, networkID, agent.ID)
+	}
+	for _, mention := range message.Mentions {
+		if protocol.ActorMatches(networkID, agent.ID, mention) || mention == agent.Name {
+			return true
+		}
+	}
+	return false
+}
+
 func participantsIncludeAttachedAgent(participants []string, networkID string, agentID string) bool {
 	for _, participantID := range participants {
 		if protocol.ActorMatches(networkID, agentID, participantID) {
@@ -268,6 +299,7 @@ func consumeAttachmentFrames(
 	writer *attachmentWriter,
 	session *attachmentSession,
 	readTimeout time.Duration,
+	onWakeAck func(protocol.Event),
 ) error {
 	for {
 		select {
@@ -292,11 +324,15 @@ func consumeAttachmentFrames(
 
 		switch frame.Op {
 		case protocol.AttachmentOpAck:
-			if !session.Ack(frame.Cursor) {
+			event, wake, ok := session.Ack(frame.Cursor)
+			if !ok {
 				if err := writeAttachmentError(writer, "unexpected ACK cursor"); err != nil {
 					return err
 				}
 				return fmt.Errorf("unexpected ACK cursor %q", frame.Cursor)
+			}
+			if wake && onWakeAck != nil {
+				onWakeAck(event)
 			}
 		case protocol.AttachmentOpPong:
 			continue

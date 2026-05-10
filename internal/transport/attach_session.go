@@ -3,12 +3,15 @@ package transport
 import (
 	"strings"
 	"sync"
+
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 type attachmentSession struct {
 	mu           sync.Mutex
 	resumeCursor string
 	pending      map[string]struct{}
+	wakePending  map[string]protocol.Event
 	order        []string
 }
 
@@ -16,6 +19,7 @@ func newAttachmentSession(resumeCursor string) *attachmentSession {
 	return &attachmentSession{
 		resumeCursor: strings.TrimSpace(resumeCursor),
 		pending:      make(map[string]struct{}),
+		wakePending:  make(map[string]protocol.Event),
 		order:        make([]string, 0, maxPendingAttachmentAcks),
 	}
 }
@@ -35,22 +39,46 @@ func (s *attachmentSession) NoteSent(cursor string) {
 	s.compactPendingLocked()
 }
 
-func (s *attachmentSession) Ack(cursor string) bool {
+func (s *attachmentSession) NoteWakeSent(cursor string, event protocol.Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return
+	}
+	s.wakePending[cursor] = event
+}
+
+func (s *attachmentSession) Ack(cursor string) (protocol.Event, bool, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	cursor = strings.TrimSpace(cursor)
 	if cursor == "" {
-		return false
+		return protocol.Event{}, false, false
 	}
 	if _, ok := s.pending[cursor]; !ok {
-		return false
+		return protocol.Event{}, false, false
 	}
 
 	delete(s.pending, cursor)
+	event, wake := s.wakePending[cursor]
+	delete(s.wakePending, cursor)
 	s.resumeCursor = cursor
 	s.trimAckedPrefixLocked()
-	return true
+	return event, wake, true
+}
+
+func (s *attachmentSession) PendingWakes() []protocol.Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events := make([]protocol.Event, 0, len(s.wakePending))
+	for _, cursor := range s.order {
+		if event, ok := s.wakePending[cursor]; ok {
+			events = append(events, event)
+		}
+	}
+	return events
 }
 
 func (s *attachmentSession) ResumeCursor() string {
@@ -64,9 +92,11 @@ func (s *attachmentSession) compactPendingLocked() {
 		oldest := s.order[0]
 		s.order = s.order[1:]
 		if _, ok := s.pending[oldest]; !ok {
+			delete(s.wakePending, oldest)
 			continue
 		}
 		delete(s.pending, oldest)
+		delete(s.wakePending, oldest)
 		s.resumeCursor = oldest
 	}
 }

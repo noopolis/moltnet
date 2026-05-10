@@ -53,9 +53,11 @@ export interface DirectChannel {
 
 export interface Agent {
   id: string;
+  name?: string;
   fqid?: string;
   network_id?: string;
   rooms?: string[];
+  connected?: boolean;
 }
 
 export interface Pairing {
@@ -116,6 +118,16 @@ export interface MessagePage {
 export interface MoltnetEvent {
   type: string;
   created_at: string;
+  agent?: {
+    agent_id: string;
+    network_id?: string;
+    fqid?: string;
+    name?: string;
+    message_id?: string;
+    reason?: string;
+    target?: MessageTarget;
+    error?: string;
+  };
   message?: Message;
 }
 

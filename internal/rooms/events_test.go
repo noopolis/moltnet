@@ -44,6 +44,89 @@ func TestEventIDForMessageStaysCursorSafeForLongMessageIDs(t *testing.T) {
 	}
 }
 
+func TestAgentPresencePublishesEventsAndUpdatesAgentSummary(t *testing.T) {
+	t.Parallel()
+
+	service := newTestService()
+	if _, err := service.RegisterAgentContext(context.Background(), protocol.RegisterAgentRequest{
+		RequestedAgentID: "luna",
+		Name:             "Luna",
+	}); err != nil {
+		t.Fatalf("RegisterAgentContext() error = %v", err)
+	}
+
+	stream := service.Subscribe(context.Background())
+	service.AgentConnected(context.Background(), protocol.Actor{ID: "luna", Name: "Luna"})
+
+	connected := <-stream
+	if connected.Type != protocol.EventTypeAgentConnected ||
+		connected.Agent == nil ||
+		connected.Agent.AgentID != "luna" {
+		t.Fatalf("unexpected connected event %#v", connected)
+	}
+
+	agent, err := service.GetAgent("luna")
+	if err != nil {
+		t.Fatalf("GetAgent() error = %v", err)
+	}
+	if !agent.Connected {
+		t.Fatalf("expected connected agent summary, got %#v", agent)
+	}
+
+	service.AgentDisconnected(context.Background(), protocol.Actor{ID: "luna", Name: "Luna"})
+	disconnected := <-stream
+	if disconnected.Type != protocol.EventTypeAgentDisconnected ||
+		disconnected.Agent == nil ||
+		disconnected.Agent.AgentID != "luna" {
+		t.Fatalf("unexpected disconnected event %#v", disconnected)
+	}
+
+	agent, err = service.GetAgent("luna")
+	if err != nil {
+		t.Fatalf("GetAgent() after disconnect error = %v", err)
+	}
+	if agent.Connected {
+		t.Fatalf("expected disconnected agent summary, got %#v", agent)
+	}
+}
+
+func TestAgentWakeEventsPublishMessageContext(t *testing.T) {
+	t.Parallel()
+
+	service := newTestService()
+	stream := service.Subscribe(context.Background())
+	messageEvent := protocol.Event{
+		ID:        "evt_1",
+		Type:      protocol.EventTypeMessageCreated,
+		NetworkID: "local",
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "lab"},
+			Mentions:  []string{"luna"},
+		},
+	}
+
+	service.AgentWakeDelivered(context.Background(), protocol.Actor{ID: "luna", Name: "Luna"}, messageEvent)
+	delivered := <-stream
+	if delivered.Type != protocol.EventTypeAgentWakeDelivered ||
+		delivered.Agent == nil ||
+		delivered.Agent.MessageID != "msg_1" ||
+		delivered.Agent.Reason != "mention" ||
+		delivered.Agent.Target == nil ||
+		delivered.Agent.Target.RoomID != "lab" {
+		t.Fatalf("unexpected delivered event %#v", delivered)
+	}
+
+	service.AgentWakeFailed(context.Background(), protocol.Actor{ID: "luna", Name: "Luna"}, messageEvent, context.Canceled)
+	failed := <-stream
+	if failed.Type != protocol.EventTypeAgentWakeFailed ||
+		failed.Agent == nil ||
+		failed.Agent.Error != "context canceled" {
+		t.Fatalf("unexpected failed event %#v", failed)
+	}
+}
+
 type blockingEventBroker struct {
 	published        chan protocol.Event
 	blockFirst       chan struct{}

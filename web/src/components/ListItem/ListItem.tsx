@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 interface ListItemProps {
   active?: boolean;
   showMarker?: boolean;
+  marker?: ReactNode;
+  markerClassName?: string;
   onClick?: () => void;
   title: ReactNode;
   subtitle?: ReactNode;
@@ -12,6 +14,8 @@ interface ListItemProps {
 export function ListItem({
   active = false,
   showMarker = true,
+  marker,
+  markerClassName = "",
   onClick,
   title,
   subtitle,
@@ -32,9 +36,9 @@ export function ListItem({
             {showMarker ? (
               <span
                 aria-hidden="true"
-                className={`mr-1 inline-block ${active ? "text-green" : "invisible"}`}
+                className={`mr-1 inline-block ${markerClassName} ${active || marker !== undefined ? "" : "invisible"}`}
               >
-                {">"}
+                {active ? ">" : marker}
               </span>
             ) : null}
             {title}
