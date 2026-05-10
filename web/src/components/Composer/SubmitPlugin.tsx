@@ -5,7 +5,7 @@ import {
   $isElementNode,
   $isTextNode,
   CLEAR_EDITOR_COMMAND,
-  COMMAND_PRIORITY_EDITOR,
+  COMMAND_PRIORITY_HIGH,
   KEY_ENTER_COMMAND,
 } from "lexical";
 import { useEffect, useState } from "react";
@@ -124,7 +124,7 @@ export function SubmitPlugin() {
         sendMutation.mutate(body);
         return true;
       },
-      COMMAND_PRIORITY_EDITOR,
+      COMMAND_PRIORITY_HIGH,
     );
   }, [editor, selected, dms, sendMutation, directMessagesEnabled]);
 
