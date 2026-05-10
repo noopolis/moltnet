@@ -26,9 +26,13 @@ const MENU_MARGIN_PX = 8;
 const MENU_MAX_HEIGHT_PX = 360;
 const MENU_MIN_WIDTH_PX = 220;
 const MENU_MAX_WIDTH_PX = 360;
+const MENU_PREFERRED_HEIGHT_PX = 260;
 const LEXICAL_ANCHOR_OFFSET_PX = 3;
 
-type MenuPlacement = "up" | "down";
+interface StableAnchorRect {
+  top: number;
+  bottom: number;
+}
 
 class MentionMenuOption extends MenuOption {
   agent: Agent;
@@ -59,12 +63,12 @@ function MentionMenu({
   setHighlightedIndex,
 }: MentionMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const placementRef = useRef<MenuPlacement | null>(null);
+  const stableAnchorRef = useRef<StableAnchorRect | null>(null);
   const [style, setStyle] = useState<CSSProperties>({
-    left: 0,
+    left: -10000,
     maxHeight: MENU_MAX_HEIGHT_PX,
     position: "fixed",
-    top: 0,
+    top: -10000,
     visibility: "hidden",
     width: MENU_MAX_WIDTH_PX,
     zIndex: 60,
@@ -76,6 +80,23 @@ function MentionMenu({
 
     const updatePosition = () => {
       const anchorRect = anchorElement.getBoundingClientRect();
+      const anchorIsReady =
+        anchorRect.left > MENU_MARGIN_PX && anchorRect.top > MENU_MARGIN_PX;
+      if (!anchorIsReady) {
+        setStyle((current) => ({
+          ...current,
+          left: -10000,
+          top: -10000,
+          visibility: "hidden",
+        }));
+        return;
+      }
+
+      stableAnchorRef.current ??= {
+        bottom: anchorRect.bottom,
+        top: anchorRect.top,
+      };
+      const stableAnchor = stableAnchorRef.current;
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
       const width = Math.min(
@@ -84,11 +105,11 @@ function MentionMenu({
       );
       const textTop = Math.max(
         MENU_MARGIN_PX,
-        anchorRect.top - anchorRect.height - LEXICAL_ANCHOR_OFFSET_PX,
+        stableAnchor.top - LEXICAL_ANCHOR_OFFSET_PX,
       );
       const textBottom = Math.max(
         textTop,
-        anchorRect.top - LEXICAL_ANCHOR_OFFSET_PX,
+        stableAnchor.bottom + LEXICAL_ANCHOR_OFFSET_PX,
       );
       const availableAbove = Math.max(
         0,
@@ -99,10 +120,18 @@ function MentionMenu({
         viewportHeight - textBottom - MENU_MARGIN_PX - MENU_GAP_PX,
       );
       const naturalHeight = Math.min(menu.scrollHeight, MENU_MAX_HEIGHT_PX);
+      const placementHeight = Math.min(
+        Math.max(naturalHeight, MENU_PREFERRED_HEIGHT_PX),
+        MENU_MAX_HEIGHT_PX,
+      );
       const placement =
-        placementRef.current ??
-        (availableAbove > availableBelow ? "up" : "down");
-      placementRef.current = placement;
+        availableBelow >= placementHeight
+          ? "down"
+          : availableAbove >= placementHeight
+            ? "up"
+            : availableAbove > availableBelow
+              ? "up"
+              : "down";
       const openUp = placement === "up";
       const maxHeight = Math.max(
         96,
@@ -153,6 +182,7 @@ function MentionMenu({
   return (
     <div
       ref={menuRef}
+      data-mention-menu="true"
       role="listbox"
       className="bg-bg border border-line rounded shadow-lg p-1 overflow-auto"
       style={style}

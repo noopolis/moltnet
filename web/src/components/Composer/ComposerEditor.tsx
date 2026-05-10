@@ -14,6 +14,7 @@ export function ComposerEditor() {
         <PlainTextPlugin
           contentEditable={
             <ContentEditable
+              data-composer-input="true"
               className="min-h-[28px] outline-none text-ink whitespace-pre-wrap break-words py-1"
               aria-label="Compose a message"
             />

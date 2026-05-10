@@ -25,6 +25,10 @@ interface ExtractedMessage {
   mentions: string[];
 }
 
+function mentionMenuIsOpen(): boolean {
+  return document.querySelector('[data-mention-menu="true"]') !== null;
+}
+
 function extractMessage(): ExtractedMessage {
   const lines: string[] = [];
   const mentions: string[] = [];
@@ -92,6 +96,7 @@ export function SubmitPlugin() {
           // Allow newline insertion for these modifiers.
           return false;
         }
+        if (mentionMenuIsOpen()) return false;
         if (!isMessageTargetSelection(selected)) return false;
 
         event.preventDefault();
