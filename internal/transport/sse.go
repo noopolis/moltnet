@@ -115,6 +115,7 @@ func newFilteredEventStreamHandler(
 		response.Header().Set("Cache-Control", "no-cache")
 		response.Header().Set("Connection", "keep-alive")
 
+		stream := service.SubscribeFrom(request.Context(), readLastEventID(request))
 		if _, err := fmt.Fprint(response, ": stream-open\n\n"); err != nil {
 			return
 		}
@@ -127,7 +128,6 @@ func newFilteredEventStreamHandler(
 		heartbeatTicker := time.NewTicker(heartbeatInterval)
 		defer heartbeatTicker.Stop()
 
-		stream := service.SubscribeFrom(request.Context(), readLastEventID(request))
 		for {
 			select {
 			case <-request.Context().Done():
