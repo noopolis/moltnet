@@ -14,9 +14,10 @@ else
 	run_id="$(date -u +%Y%m%d%H%M%S)-$RANDOM"
 fi
 
-codex_token="SF-E2E-CODEX-$run_id"
-claude_token="SF-E2E-CLAUDE-$run_id"
-codex_final_token="SF-E2E-CODEX-FINAL-$run_id"
+codex_first_token="SF-E2E-CODEX-1-$run_id"
+claude_first_token="SF-E2E-CLAUDE-1-$run_id"
+codex_second_token="SF-E2E-CODEX-2-$run_id"
+claude_second_token="SF-E2E-CLAUDE-2-$run_id"
 
 server_pid=""
 node_pid=""
@@ -309,7 +310,7 @@ EOF
 
 send_seed_message() {
 	local text
-	text="<@molt://$network_id/agents/$codex_id> MOLTNET_REAL_RUNTIME_E2E run=$run_id. Step 1: read the recent room history, then send exactly one Moltnet room message using moltnet send. Your message must include $codex_token and must tag Claude by constructing the mention from these pieces: '<@' + 'molt://$network_id/agents/$claude_id' + '>'. In that same message, ask Claude to reply with $claude_token, to mention <@molt://$network_id/agents/$codex_id>, and to ask Codex to send the final token $codex_final_token back to Claude. Do not do anything except send the requested Moltnet message."
+	text="<@molt://$network_id/agents/$codex_id> MOLTNET_REAL_RUNTIME_E2E run=$run_id. Step 1: read the recent room history, then send exactly one Moltnet room message using moltnet send. Your message must include $codex_first_token and must tag Claude by constructing the mention from these pieces: '<@' + 'molt://$network_id/agents/$claude_id' + '>'. In that same message, ask Claude to reply with $claude_first_token, to mention <@molt://$network_id/agents/$codex_id>, and to ask Codex to send a second reply with $codex_second_token while tagging Claude and asking Claude for one final reply with $claude_second_token tagging Codex. Do not do anything except send the requested Moltnet message."
 
 	jq -nc \
 		--arg room "$room_id" \
@@ -363,9 +364,10 @@ wait_for_http "$base_url/v1/agents/$claude_id" "$claude_id registration"
 log "seeding Codex wake message"
 send_seed_message
 
-wait_for_agent_message "$codex_id" "$codex_token" "<@molt://$network_id/agents/$claude_id>" "Codex first reply tagging Claude"
-wait_for_agent_message "$claude_id" "$claude_token" "<@molt://$network_id/agents/$codex_id>" "Claude reply tagging Codex"
-wait_for_agent_message "$codex_id" "$codex_final_token" "<@molt://$network_id/agents/$claude_id>" "Codex final reply tagging Claude"
+wait_for_agent_message "$codex_id" "$codex_first_token" "<@molt://$network_id/agents/$claude_id>" "Codex first reply tagging Claude"
+wait_for_agent_message "$claude_id" "$claude_first_token" "<@molt://$network_id/agents/$codex_id>" "Claude first reply tagging Codex"
+wait_for_agent_message "$codex_id" "$codex_second_token" "<@molt://$network_id/agents/$claude_id>" "Codex second reply tagging Claude"
+wait_for_agent_message "$claude_id" "$claude_second_token" "<@molt://$network_id/agents/$codex_id>" "Claude second reply tagging Codex"
 
 log "real Codex and Claude Code Moltnet wake chain passed"
 fetch_messages | jq . > /work/logs/final-messages.json

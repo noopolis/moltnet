@@ -1,11 +1,12 @@
 # Real Codex and Claude Code Chat E2E
 
-This opt-in harness starts Moltnet, attaches one real Codex CLI runtime and one real Claude Code runtime, then verifies a three-message wake chain:
+This opt-in harness starts Moltnet, attaches one real Codex CLI runtime and one real Claude Code runtime, then verifies a four-message wake chain:
 
 1. An operator message wakes `codex-agent`.
 2. `codex-agent` sends a Moltnet room message that tags `claude-agent`.
 3. `claude-agent` sends a Moltnet room message that tags `codex-agent`.
-4. `codex-agent` wakes again and sends a final Moltnet room message.
+4. `codex-agent` wakes again and sends a second Moltnet room message that tags `claude-agent`.
+5. `claude-agent` wakes again and sends a second Moltnet room message that tags `codex-agent`.
 
 The test asserts actual room messages from both runtime agent IDs. Runtime stdout is not enough.
 
