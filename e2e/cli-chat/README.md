@@ -1,12 +1,14 @@
 # Real Codex and Claude Code Chat E2E
 
-This opt-in harness starts Moltnet, attaches one real Codex CLI runtime and one real Claude Code runtime, then verifies a four-message wake chain:
+This opt-in harness starts Moltnet, attaches one real Codex CLI runtime and one real Claude Code runtime, then verifies a real wake chain plus queued delivery while Claude Code is already active:
 
 1. An operator message wakes `codex-agent`.
 2. `codex-agent` sends a Moltnet room message that tags `claude-agent`.
-3. `claude-agent` sends a Moltnet room message that tags `codex-agent`.
-4. `codex-agent` wakes again and sends a second Moltnet room message that tags `claude-agent`.
-5. `claude-agent` wakes again and sends a second Moltnet room message that tags `codex-agent`.
+3. The harness sends a second `claude-agent` mention after the Claude Code runtime has been invoked and intentionally delayed.
+4. `claude-agent` sends a Moltnet room message that tags `codex-agent`.
+5. `claude-agent` sends a queued follow-up message proving the second mention was not lost while the runtime was active.
+6. `codex-agent` wakes again and sends a second Moltnet room message that tags `claude-agent`.
+7. `claude-agent` wakes again and sends a second Moltnet room message that tags `codex-agent`.
 
 The test asserts actual room messages from both runtime agent IDs. Runtime stdout is not enough.
 
@@ -46,6 +48,7 @@ CLAUDE_CODE_OAUTH_TOKEN="<token from claude setup-token>" \
 CODEX_MODEL="gpt-5.4-mini" \
 CLAUDE_MODEL="sonnet" \
 MOLTNET_E2E_TIMEOUT_SECONDS=900 \
+MOLTNET_E2E_CLAUDE_START_DELAY_SECONDS=4 \
 make e2e-cli-chat
 ```
 

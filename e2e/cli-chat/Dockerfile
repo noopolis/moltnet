@@ -19,6 +19,7 @@ RUN npm install -g --no-audit --no-fund @openai/codex @anthropic-ai/claude-code
 
 COPY --from=builder /out/moltnet /usr/local/bin/moltnet
 COPY e2e/cli-chat/run.sh /e2e/run.sh
+COPY e2e/cli-chat/helpers.sh /e2e/helpers.sh
 
 RUN chmod +x /usr/local/bin/moltnet /e2e/run.sh \
 	&& mkdir -p /work /auth/codex/.codex /auth/claude/.claude \

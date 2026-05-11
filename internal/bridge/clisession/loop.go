@@ -54,6 +54,8 @@ type Runner struct {
 	backoff  backoffPolicy
 	store    *SessionStore
 	locks    map[string]*sync.Mutex
+	queues   map[string]*wakeQueue
+	queueWG  sync.WaitGroup
 	mu       sync.Mutex
 }
 
@@ -75,6 +77,7 @@ func NewRunner(
 		backoff:  backoff,
 		store:    NewSessionStore(storePath),
 		locks:    map[string]*sync.Mutex{},
+		queues:   map[string]*wakeQueue{},
 	}
 }
 
@@ -129,7 +132,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			if !loop.ShouldHandle(r.config, event) {
 				return nil
 			}
-			return r.sendEventDelivery(ctx, event)
+			return r.enqueueEventDelivery(ctx, event)
 		})
 
 		if bootstrapStarted && err == nil {
@@ -152,6 +155,9 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 		cancelStream()
 		if err == nil || ctx.Err() != nil {
+			if err == nil {
+				r.waitForQueues()
+			}
 			return err
 		}
 		attempt++
@@ -191,12 +197,12 @@ func (r *Runner) sendBootstrapDeliveries(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runner) sendEventDelivery(ctx context.Context, event protocol.Event) error {
+func (r *Runner) eventDelivery(event protocol.Event) (Delivery, error) {
 	if event.Message == nil {
-		return fmt.Errorf("event has no message")
+		return Delivery{}, fmt.Errorf("event has no message")
 	}
 
-	return r.dispatch(ctx, Delivery{
+	return Delivery{
 		ContextKey: SessionKey(r.config, event.Message),
 		Prompt: bridgeutil.RenderCompactInboundMessage(
 			r.config.Moltnet.NetworkID,
@@ -205,7 +211,7 @@ func (r *Runner) sendEventDelivery(ctx context.Context, event protocol.Event) er
 		),
 		Target:    event.Message.Target,
 		MessageID: event.Message.ID,
-	})
+	}, nil
 }
 
 func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
@@ -239,17 +245,10 @@ func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
 	delivery.ExistingSession = exists
 	delivery.RuntimeSessionID = sessionID
 
-	spec, err := r.driver.BuildCommand(r.config, delivery)
+	spec, err := r.commandSpec(delivery)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(spec.Command) == "" {
-		spec.Command = r.driver.DefaultCommand()
-	}
-	if strings.TrimSpace(spec.Dir) == "" {
-		spec.Dir = strings.TrimSpace(r.config.Runtime.WorkspacePath)
-	}
-	spec.Env = append(BaseEnv(r.config), spec.Env...)
 	if workspacePath := strings.TrimSpace(r.config.Runtime.WorkspacePath); workspacePath != "" {
 		if err := os.MkdirAll(filepath.Join(workspacePath, ".moltnet"), 0o700); err != nil {
 			return fmt.Errorf("create runtime Moltnet workspace directory: %w", err)
@@ -257,6 +256,22 @@ func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
 	}
 
 	result, err := RunCommand(ctx, spec)
+	if err != nil && shouldRetryWithFreshSession(exists, err) {
+		if err := r.store.Delete(contextKey); err != nil {
+			return err
+		}
+		sessionID, err = GenerateUUID()
+		if err != nil {
+			return err
+		}
+		delivery.ExistingSession = false
+		delivery.RuntimeSessionID = sessionID
+		spec, err = r.commandSpec(delivery)
+		if err != nil {
+			return err
+		}
+		result, err = RunCommand(ctx, spec)
+	}
 	if err != nil {
 		return err
 	}

@@ -29,6 +29,21 @@ type CommandResult struct {
 	Stderr string
 }
 
+func (r *Runner) commandSpec(delivery Delivery) (CommandSpec, error) {
+	spec, err := r.driver.BuildCommand(r.config, delivery)
+	if err != nil {
+		return CommandSpec{}, err
+	}
+	if strings.TrimSpace(spec.Command) == "" {
+		spec.Command = r.driver.DefaultCommand()
+	}
+	if strings.TrimSpace(spec.Dir) == "" {
+		spec.Dir = strings.TrimSpace(r.config.Runtime.WorkspacePath)
+	}
+	spec.Env = append(BaseEnv(r.config), spec.Env...)
+	return spec, nil
+}
+
 func RunCommand(ctx context.Context, spec CommandSpec) (CommandResult, error) {
 	commandPath := strings.TrimSpace(spec.Command)
 	if commandPath == "" {

@@ -16,6 +16,7 @@ fi
 
 codex_first_token="SF-E2E-CODEX-1-$run_id"
 claude_first_token="SF-E2E-CLAUDE-1-$run_id"
+claude_queue_token="SF-E2E-CLAUDE-QUEUE-$run_id"
 codex_second_token="SF-E2E-CODEX-2-$run_id"
 claude_second_token="SF-E2E-CLAUDE-2-$run_id"
 
@@ -25,6 +26,9 @@ node_pid=""
 log() {
 	printf '[cli-chat-e2e] %s\n' "$*" >&2
 }
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${MOLTNET_E2E_HELPERS:-$script_dir/helpers.sh}"
 
 require_dir() {
 	local path="$1"
@@ -94,44 +98,6 @@ wait_for_http() {
 	return 1
 }
 
-fetch_messages() {
-	curl -fsS "$base_url/v1/rooms/$room_id/messages?limit=50"
-}
-
-wait_for_agent_message() {
-	local agent_id="$1"
-	local token="$2"
-	local mention="$3"
-	local label="$4"
-	local deadline=$((SECONDS + timeout_seconds))
-
-	while (( SECONDS < deadline )); do
-		if fetch_messages > /work/logs/messages.json 2>/dev/null; then
-			if jq -e \
-				--arg agent "$agent_id" \
-				--arg token "$token" \
-				--arg mention "$mention" \
-				'
-				.messages[]?
-				| select(.from.id == $agent)
-				| [ .parts[]? | select(.kind == "text") | .text ] | join("\n")
-				| select(contains($token) and contains($mention))
-				' /work/logs/messages.json >/dev/null; then
-				log "observed $label"
-				return 0
-			fi
-		fi
-		if [[ -n "$node_pid" ]] && ! kill -0 "$node_pid" >/dev/null 2>&1; then
-			log "node exited while waiting for $label"
-			return 1
-		fi
-		sleep 2
-	done
-
-	log "timed out waiting for $label"
-	return 1
-}
-
 write_runtime_wrapper() {
 	mkdir -p /work/bin /work/logs
 
@@ -182,6 +148,9 @@ if [[ -n "${CLAUDE_MODEL:-}" ]]; then
 	args+=(--model "$CLAUDE_MODEL")
 fi
 args+=("$@")
+if [[ -n "${MOLTNET_E2E_CLAUDE_START_DELAY_SECONDS:-}" && "${MOLTNET_E2E_CLAUDE_START_DELAY_SECONDS}" != "0" ]]; then
+	sleep "$MOLTNET_E2E_CLAUDE_START_DELAY_SECONDS"
+fi
 exec claude "${args[@]}"
 EOF
 
@@ -311,18 +280,13 @@ EOF
 send_seed_message() {
 	local text
 	text="<@molt://$network_id/agents/$codex_id> MOLTNET_REAL_RUNTIME_E2E run=$run_id. Step 1: read the recent room history, then send exactly one Moltnet room message using moltnet send. Your message must include $codex_first_token and must tag Claude by constructing the mention from these pieces: '<@' + 'molt://$network_id/agents/$claude_id' + '>'. In that same message, ask Claude to reply with $claude_first_token, to mention <@molt://$network_id/agents/$codex_id>, and to ask Codex to send a second reply with $codex_second_token while tagging Claude and asking Claude for one final reply with $claude_second_token tagging Codex. Do not do anything except send the requested Moltnet message."
+	send_room_text "$text" /work/logs/seed-response.json
+}
 
-	jq -nc \
-		--arg room "$room_id" \
-		--arg text "$text" \
-		'{
-			target: {kind: "room", room_id: $room},
-			from: {type: "human", id: "e2e-operator", name: "E2E Operator"},
-			parts: [{kind: "text", text: $text}]
-		}' \
-		| curl -fsS -X POST "$base_url/v1/messages" \
-			-H 'Content-Type: application/json' \
-			--data-binary @- >/work/logs/seed-response.json
+send_claude_queue_message() {
+	local text
+	text="<@molt://$network_id/agents/$claude_id> MOLTNET_REAL_RUNTIME_E2E queued wake run=$run_id. This message is intentionally sent while Claude is already handling another wake. After you finish the active wake, send exactly one Moltnet room message containing $claude_queue_token. Do not mention Codex in that queued reply."
+	send_room_text "$text" /work/logs/claude-queue-response.json
 }
 
 require_dir /auth/codex/.codex "Codex auth"
@@ -365,7 +329,11 @@ log "seeding Codex wake message"
 send_seed_message
 
 wait_for_agent_message "$codex_id" "$codex_first_token" "<@molt://$network_id/agents/$claude_id>" "Codex first reply tagging Claude"
+log "seeding Claude queued wake while Claude runtime is delayed"
+wait_for_file_contains /work/logs/claude-wrapper.log "claude" "Claude runtime invocation before queued wake"
+send_claude_queue_message
 wait_for_agent_message "$claude_id" "$claude_first_token" "<@molt://$network_id/agents/$codex_id>" "Claude first reply tagging Codex"
+wait_for_agent_text "$claude_id" "$claude_queue_token" "Claude queued follow-up reply"
 wait_for_agent_message "$codex_id" "$codex_second_token" "<@molt://$network_id/agents/$claude_id>" "Codex second reply tagging Claude"
 wait_for_agent_message "$claude_id" "$claude_second_token" "<@molt://$network_id/agents/$codex_id>" "Claude second reply tagging Codex"
 

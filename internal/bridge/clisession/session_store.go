@@ -88,6 +88,27 @@ func (s *SessionStore) Put(key string, runtimeSessionID string) (SessionRecord, 
 	return record, nil
 }
 
+func (s *SessionStore) Delete(key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.load()
+	if err != nil {
+		return err
+	}
+
+	trimmedKey := strings.TrimSpace(key)
+	if trimmedKey == "" {
+		return fmt.Errorf("session key is required")
+	}
+	if _, ok := store.Sessions[trimmedKey]; !ok {
+		return nil
+	}
+	delete(store.Sessions, trimmedKey)
+
+	return s.save(store)
+}
+
 func (s *SessionStore) GetOrCreate(key string) (SessionRecord, bool, error) {
 	record, ok, err := s.Get(key)
 	if err != nil || ok {

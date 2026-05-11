@@ -13,4 +13,5 @@ letting the installed Moltnet skill publish explicit messages.
 - Keep runtime-specific command arguments out of this package.
 - Do not auto-publish CLI stdout to Moltnet.
 - Serialize deliveries per Moltnet conversation session.
+- Queue matching messages that arrive while a CLI runtime command is active, then wake the runtime with one ordered follow-up batch.
 - Keep session mappings durable under the runtime workspace.
