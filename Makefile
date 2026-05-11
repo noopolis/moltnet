@@ -6,7 +6,8 @@ VERSION ?= 0.0.0-dev
 
 .PHONY: build build-bridge build-node release-assets fmt test vet cover run run-bridge run-node \
 	console-install console-build console-typecheck \
-	build-docker build-bridge-docker build-node-docker release-assets-docker fmt-docker test-docker vet-docker cover-docker
+	build-docker build-bridge-docker build-node-docker release-assets-docker fmt-docker test-docker vet-docker cover-docker \
+	e2e-cli-chat
 
 console-install:
 	cd web && $(NPM) install --no-audit --no-fund
@@ -96,3 +97,6 @@ vet-docker:
 
 cover-docker:
 	docker run --rm -v "$(PWD):/app" -w /app $(DOCKER_GO_IMAGE) sh -lc '/usr/local/go/bin/go test ./... -coverprofile=coverage.out -covermode=atomic && /usr/local/go/bin/go tool cover -func=coverage.out'
+
+e2e-cli-chat:
+	./scripts/e2e-cli-chat.sh

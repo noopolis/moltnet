@@ -1,0 +1,19 @@
+name: moltnet-cli-chat-e2e
+
+services:
+  cli-chat:
+    build:
+      context: ../..
+      dockerfile: e2e/cli-chat/Dockerfile
+    user: "${MOLTNET_E2E_UID:-0}:${MOLTNET_E2E_GID:-0}"
+    environment:
+      MOLTNET_E2E_RUN_ID: "${MOLTNET_E2E_RUN_ID:-}"
+      MOLTNET_E2E_TIMEOUT_SECONDS: "${MOLTNET_E2E_TIMEOUT_SECONDS:-900}"
+      CODEX_MODEL: "${CODEX_MODEL:-}"
+      CLAUDE_MODEL: "${CLAUDE_MODEL:-}"
+    volumes:
+      - "${CODEX_AUTH_DIR:?Set CODEX_AUTH_DIR to your host Codex auth directory, usually $HOME/.codex}:/auth/codex/.codex"
+      - "${CLAUDE_AUTH_DIR:?Set CLAUDE_AUTH_DIR to your host Claude auth directory, usually $HOME/.claude}:/auth/claude/.claude"
+      - "${CLAUDE_CONFIG_FILE:?Set CLAUDE_CONFIG_FILE to your host Claude config file, usually $HOME/.claude.json}:/auth/claude/.claude.json"
+      - "${CLAUDE_OAUTH_TOKEN_FILE:?Set CLAUDE_OAUTH_TOKEN_FILE to a prepared Claude OAuth token file}:/run/secrets/claude_oauth_token:ro"
+      - "${CLAUDE_API_KEY_FILE:?Set CLAUDE_API_KEY_FILE to a prepared Anthropic API key file}:/run/secrets/claude_api_key:ro"

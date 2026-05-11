@@ -1,0 +1,8 @@
+.git
+bin
+coverage.out
+dist/release
+web/node_modules
+website/node_modules
+website/.astro
+website/dist
