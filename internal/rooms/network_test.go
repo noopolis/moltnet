@@ -26,6 +26,18 @@ func TestServiceNetworkAdvertisesCompatibilityProtocols(t *testing.T) {
 	}
 }
 
+func TestServiceNetworkAdvertisesDebugEventsWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	service := newTestService()
+	service.debugEvents = true
+
+	network := service.Network()
+	if !network.Capabilities.DebugEvents {
+		t.Fatalf("expected debug event capability, got %#v", network.Capabilities)
+	}
+}
+
 func TestServiceNetworkIncludesPairingWarnings(t *testing.T) {
 	t.Parallel()
 

@@ -190,6 +190,50 @@ func (s *FileStore) UpdateRoomMembersContext(
 	return room, nil
 }
 
+func (s *FileStore) RemoveAgent(agentID string) error {
+	return s.RemoveAgentContext(context.Background(), agentID)
+}
+
+func (s *FileStore) RemoveAgentContext(_ context.Context, agentID string) error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+
+	working := memoryStoreFromSnapshot(s.snapshot())
+	if err := working.RemoveAgentContext(context.Background(), agentID); err != nil {
+		return err
+	}
+
+	next := snapshotFromMemoryStore(working)
+	if err := s.persistSnapshot(next); err != nil {
+		return err
+	}
+
+	s.restore(next)
+	return nil
+}
+
+func (s *FileStore) RemoveRoom(roomID string) error {
+	return s.RemoveRoomContext(context.Background(), roomID)
+}
+
+func (s *FileStore) RemoveRoomContext(_ context.Context, roomID string) error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+
+	working := memoryStoreFromSnapshot(s.snapshot())
+	if err := working.RemoveRoomContext(context.Background(), roomID); err != nil {
+		return err
+	}
+
+	next := snapshotFromMemoryStore(working)
+	if err := s.persistSnapshot(next); err != nil {
+		return err
+	}
+
+	s.restore(next)
+	return nil
+}
+
 func (s *FileStore) RegisterAgentContext(
 	_ context.Context,
 	registration protocol.AgentRegistration,
@@ -212,6 +256,24 @@ func (s *FileStore) RegisterAgentContext(
 	return registered, nil
 }
 
+func (s *FileStore) RemoveRegisteredAgentContext(_ context.Context, agentID string) error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+
+	working := memoryStoreFromSnapshot(s.snapshot())
+	if err := working.RemoveRegisteredAgentContext(context.Background(), agentID); err != nil {
+		return err
+	}
+
+	next := snapshotFromMemoryStore(working)
+	if err := s.persistSnapshot(next); err != nil {
+		return err
+	}
+
+	s.restore(next)
+	return nil
+}
+
 func (s *FileStore) load() error {
 	bytes, err := os.ReadFile(s.path)
 	if err != nil {
@@ -227,6 +289,7 @@ func (s *FileStore) load() error {
 	}
 
 	s.MemoryStore.rooms = cloneRooms(snapshot.Rooms)
+	s.MemoryStore.removedRooms = cloneRemovedRooms(snapshot.RemovedRooms)
 	s.MemoryStore.roomMessages = cloneMessages(snapshot.RoomMessages)
 	s.MemoryStore.threads = cloneThreads(snapshot.Threads)
 	s.MemoryStore.roomThreads = collectRoomThreads(s.MemoryStore.threads)

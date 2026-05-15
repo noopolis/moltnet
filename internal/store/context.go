@@ -11,6 +11,8 @@ type ContextRoomStore interface {
 	GetRoomContext(ctx context.Context, id string) (protocol.Room, bool, error)
 	GetThreadContext(ctx context.Context, id string) (protocol.Thread, bool, error)
 	ListRoomsContext(ctx context.Context) ([]protocol.Room, error)
+	RemoveAgentContext(ctx context.Context, agentID string) error
+	RemoveRoomContext(ctx context.Context, roomID string) error
 	UpdateRoomMembersContext(ctx context.Context, roomID string, add []string, remove []string) (protocol.Room, error)
 }
 
@@ -44,4 +46,5 @@ type ContextAgentRegistryStore interface {
 	ListRegisteredAgentsContext(ctx context.Context) ([]protocol.AgentRegistration, error)
 	GetRegisteredAgentContext(ctx context.Context, agentID string) (protocol.AgentRegistration, bool, error)
 	GetRegisteredAgentByCredentialKeyContext(ctx context.Context, credentialKey string) (protocol.AgentRegistration, bool, error)
+	RemoveRegisteredAgentContext(ctx context.Context, agentID string) error
 }

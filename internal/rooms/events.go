@@ -2,6 +2,7 @@ package rooms
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -16,11 +17,21 @@ func (s *Service) publishEvent(event protocol.Event) {
 
 func (s *Service) AgentConnected(ctx context.Context, agent protocol.Actor) {
 	eventAgent := s.setAgentConnected(agent, true)
+	if s.debugEvents {
+		eventAgent.Reason = "attachment_ready"
+	}
 	s.publishAgentEvent(ctx, protocol.EventTypeAgentConnected, eventAgent)
 }
 
-func (s *Service) AgentDisconnected(ctx context.Context, agent protocol.Actor) {
+func (s *Service) AgentDisconnected(ctx context.Context, agent protocol.Actor, reason string, err error) {
 	eventAgent := s.setAgentConnected(agent, false)
+	if s.debugEvents {
+		eventAgent.Reason = normalizeAgentEventReason(reason)
+		if eventAgent.Reason == "" {
+			eventAgent.Reason = "attachment_closed"
+		}
+		eventAgent.Error = agentEventError(err)
+	}
 	s.publishAgentEvent(ctx, protocol.EventTypeAgentDisconnected, eventAgent)
 }
 
@@ -110,6 +121,17 @@ func agentWakeReason(networkID string, agent protocol.Actor, event protocol.Even
 		}
 	}
 	return "targeted"
+}
+
+func normalizeAgentEventReason(reason string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(reason), " ", "_"))
+}
+
+func agentEventError(err error) string {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return ""
+	}
+	return strings.TrimSpace(err.Error())
 }
 
 func eventIDForMessage(messageID string) string {

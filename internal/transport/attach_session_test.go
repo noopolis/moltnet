@@ -209,6 +209,36 @@ func TestConsumeAttachmentFramesHandlesAckPingAndUnexpectedOp(t *testing.T) {
 	}
 }
 
+func TestConsumeAttachmentFramesAcceptsClientErrorFrame(t *testing.T) {
+	t.Parallel()
+
+	clientConn, serverConn := newAttachmentFrameTestPair(t)
+	session := newAttachmentSession("")
+	writer := &attachmentWriter{connection: serverConn}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- consumeAttachmentFrames(context.Background(), serverConn, writer, session, time.Second, nil)
+	}()
+
+	if err := clientConn.WriteJSON(protocol.AttachmentFrame{
+		Op:      protocol.AttachmentOpError,
+		Version: protocol.AttachmentProtocolV1,
+		Error:   "runtime command failed",
+	}); err != nil {
+		t.Fatalf("write client error: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		if err == nil || !strings.Contains(err.Error(), "runtime command failed") {
+			t.Fatalf("expected client error, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for client error")
+	}
+}
+
 func TestConsumeAttachmentFramesAllowsLegacyAckAndPongVersionOmission(t *testing.T) {
 	t.Parallel()
 

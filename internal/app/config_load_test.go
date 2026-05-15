@@ -50,6 +50,7 @@ network:
 server:
   listen_addr: 127.0.0.1:8787
   human_ingress: false
+  debug_events: true
   direct_messages: false
   allowed_origins:
     - http://localhost:8787
@@ -92,6 +93,9 @@ pairings:
 	if config.AllowHumanIngress {
 		t.Fatalf("expected human ingress disabled, got %#v", config)
 	}
+	if !config.DebugEvents {
+		t.Fatalf("expected debug events enabled, got %#v", config)
+	}
 	if !config.DisableDirectMessages {
 		t.Fatalf("expected direct messages disabled, got %#v", config)
 	}
@@ -130,6 +134,7 @@ server:
 	t.Setenv("MOLTNET_NETWORK_ID", "from_env")
 	t.Setenv("MOLTNET_NETWORK_NAME", "From Env")
 	t.Setenv("MOLTNET_ALLOW_HUMAN_INGRESS", "false")
+	t.Setenv("MOLTNET_DEBUG_EVENTS", "true")
 	t.Setenv("MOLTNET_ALLOW_DIRECT_MESSAGES", "false")
 
 	config, err := LoadConfig("1.2.3")
@@ -142,6 +147,9 @@ server:
 	}
 	if config.AllowHumanIngress {
 		t.Fatalf("expected env bool override, got %#v", config)
+	}
+	if !config.DebugEvents {
+		t.Fatalf("expected debug events env override, got %#v", config)
 	}
 	if !config.DisableDirectMessages {
 		t.Fatalf("expected direct messages env override, got %#v", config)

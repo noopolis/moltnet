@@ -296,6 +296,90 @@ func TestSQLiteStoreContextWrappersAndRoomMemberUpdates(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreSoftRemovesRoomsAndAgents(t *testing.T) {
+	t.Parallel()
+
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "moltnet.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore() error = %v", err)
+	}
+	defer store.Close()
+
+	room := protocol.Room{
+		ID:        "research",
+		NetworkID: "local",
+		FQID:      protocol.RoomFQID("local", "research"),
+		Name:      "Research",
+		Members:   []string{"alpha", "beta"},
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := store.CreateRoom(room); err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+	if _, err := store.RegisterAgentContext(t.Context(), protocol.AgentRegistration{
+		NetworkID:     "local",
+		AgentID:       "alpha",
+		ActorUID:      "actor_1",
+		ActorURI:      protocol.AgentFQID("local", "alpha"),
+		CredentialKey: "token:alpha",
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("RegisterAgentContext() error = %v", err)
+	}
+	if err := store.AppendMessage(protocol.Message{
+		ID:        "msg_keep",
+		NetworkID: "local",
+		Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+		From:      protocol.Actor{Type: "agent", ID: "alpha"},
+		Parts:     []protocol.Part{{Kind: protocol.PartKindText, Text: "keep"}},
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendMessage() error = %v", err)
+	}
+
+	if err := store.RemoveAgentContext(t.Context(), "alpha"); err != nil {
+		t.Fatalf("RemoveAgentContext() error = %v", err)
+	}
+	if err := store.RemoveRegisteredAgentContext(t.Context(), "alpha"); err != nil {
+		t.Fatalf("RemoveRegisteredAgentContext() error = %v", err)
+	}
+	agents, err := store.ListAgentsContext(t.Context())
+	if err != nil {
+		t.Fatalf("ListAgentsContext() error = %v", err)
+	}
+	if len(agents) != 1 || agents[0].ID != "beta" {
+		t.Fatalf("unexpected agents after removal %#v", agents)
+	}
+	if _, ok, err := store.GetRegisteredAgentContext(t.Context(), "alpha"); err != nil || ok {
+		t.Fatalf("expected registration removed ok=%v err=%v", ok, err)
+	}
+
+	if err := store.RemoveRoomContext(t.Context(), "research"); err != nil {
+		t.Fatalf("RemoveRoomContext() error = %v", err)
+	}
+	if _, ok, err := store.GetRoomContext(t.Context(), "research"); err != nil || ok {
+		t.Fatalf("expected removed room hidden ok=%v err=%v", ok, err)
+	}
+	rooms, err := store.ListRoomsContext(t.Context())
+	if err != nil {
+		t.Fatalf("ListRoomsContext() error = %v", err)
+	}
+	if len(rooms) != 0 {
+		t.Fatalf("expected no active rooms, got %#v", rooms)
+	}
+	page, err := store.ListRoomMessagesContext(t.Context(), "research", protocol.PageRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListRoomMessagesContext() error = %v", err)
+	}
+	if len(page.Messages) != 1 || page.Messages[0].ID != "msg_keep" {
+		t.Fatalf("expected soft removal to preserve messages, got %#v", page)
+	}
+	if err := store.RemoveRoomContext(t.Context(), "research"); !errors.Is(err, ErrRoomNotFound) {
+		t.Fatalf("expected ErrRoomNotFound for already removed room, got %v", err)
+	}
+}
+
 func TestSQLiteStoreAgentQueries(t *testing.T) {
 	t.Parallel()
 

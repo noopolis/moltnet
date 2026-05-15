@@ -188,6 +188,38 @@ func TestHTTPHandlerAuthScopes(t *testing.T) {
 		t.Fatalf("expected admin token to create room, got %d", response.Code)
 	}
 
+	request = httptest.NewRequest(http.MethodDelete, "/v1/rooms/research", nil)
+	request.Header.Set("Authorization", "Bearer write-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected write token to be forbidden for room removal, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, "/v1/rooms/research", nil)
+	request.Header.Set("Authorization", "Bearer admin-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected admin token to remove room, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, "/v1/agents/writer", nil)
+	request.Header.Set("Authorization", "Bearer write-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("expected write token to be forbidden for agent removal, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, "/v1/agents/writer", nil)
+	request.Header.Set("Authorization", "Bearer admin-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected admin token to remove agent, got %d", response.Code)
+	}
+
 	request = httptest.NewRequest(http.MethodGet, "/v1/rooms", nil)
 	request.Header.Set("Authorization", "Bearer pair-secret")
 	response = httptest.NewRecorder()

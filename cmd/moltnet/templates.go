@@ -10,6 +10,7 @@ network:
 server:
   listen_addr: ":8787"
   human_ingress: true
+  debug_events: false
 
 storage:
   kind: sqlite

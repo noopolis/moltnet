@@ -43,7 +43,7 @@ func (s *SQLStore) getRoomUsingQuerier(ctx context.Context, querier roomQuerier,
 		SELECT r.id, r.network_id, r.fqid, r.name, r.created_at, rm.member_id
 		FROM rooms r
 		LEFT JOIN room_members rm ON rm.room_id = r.id
-		WHERE r.id = ?
+		WHERE r.id = ? AND r.deleted_at IS NULL
 		ORDER BY rm.member_id ASC
 	`)
 	rows, err := querier.QueryContext(ctx, query, id)

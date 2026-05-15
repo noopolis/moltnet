@@ -209,6 +209,20 @@ func (s *Service) createRoom(ctx context.Context, room protocol.Room) error {
 	return s.store.CreateRoom(room)
 }
 
+func (s *Service) removeRoom(ctx context.Context, roomID string) error {
+	if s.contextStore != nil {
+		return s.contextStore.RemoveRoomContext(ctx, roomID)
+	}
+	return s.store.RemoveRoom(roomID)
+}
+
+func (s *Service) removeAgent(ctx context.Context, agentID string) error {
+	if s.contextStore != nil {
+		return s.contextStore.RemoveAgentContext(ctx, agentID)
+	}
+	return s.store.RemoveAgent(agentID)
+}
+
 func (s *Service) updateRoomMembers(ctx context.Context, roomID string, add []string, remove []string) (protocol.Room, error) {
 	if s.contextStore != nil {
 		return s.contextStore.UpdateRoomMembersContext(ctx, roomID, add, remove)

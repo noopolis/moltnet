@@ -143,6 +143,71 @@ func TestRunRegisterAgentWritesIdentity(t *testing.T) {
 	}
 }
 
+func TestRunRemoveAgentAndRoomUseAdminToken(t *testing.T) {
+	var requests []string
+	var authHeaders []string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests = append(requests, request.Method+" "+request.URL.Path)
+		authHeaders = append(authHeaders, request.Header.Get("Authorization"))
+		switch request.URL.Path {
+		case "/v1/agents/stale-agent":
+			_ = json.NewEncoder(response).Encode(protocol.RemoveResult{
+				Removed: true,
+				Kind:    "agent",
+				ID:      "stale-agent",
+				Mode:    "soft",
+			})
+		case "/v1/rooms/stale-room":
+			_ = json.NewEncoder(response).Encode(protocol.RemoveResult{
+				Removed: true,
+				Kind:    "room",
+				ID:      "stale-room",
+				Mode:    "soft",
+			})
+		default:
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("MOLTNET_ADMIN_TOKEN", "admin-secret")
+	output := captureStdout(t, func() {
+		if err := run(context.Background(), []string{
+			"remove-agent",
+			"--base-url", server.URL,
+			"--agent", "stale-agent",
+			"--token-env", "MOLTNET_ADMIN_TOKEN",
+		}, "test"); err != nil {
+			t.Fatalf("run() remove-agent error = %v", err)
+		}
+	})
+	if !strings.Contains(output, `"kind": "agent"`) {
+		t.Fatalf("unexpected remove-agent output %q", output)
+	}
+
+	output = captureStdout(t, func() {
+		if err := run(context.Background(), []string{
+			"remove-room",
+			"--base-url", server.URL,
+			"--room", "stale-room",
+			"--token-env", "MOLTNET_ADMIN_TOKEN",
+		}, "test"); err != nil {
+			t.Fatalf("run() remove-room error = %v", err)
+		}
+	})
+	if !strings.Contains(output, `"kind": "room"`) {
+		t.Fatalf("unexpected remove-room output %q", output)
+	}
+	if len(requests) != 2 ||
+		requests[0] != "DELETE /v1/agents/stale-agent" ||
+		requests[1] != "DELETE /v1/rooms/stale-room" {
+		t.Fatalf("unexpected requests %#v", requests)
+	}
+	if authHeaders[0] != "Bearer admin-secret" || authHeaders[1] != "Bearer admin-secret" {
+		t.Fatalf("unexpected auth headers %#v", authHeaders)
+	}
+}
+
 func TestRunSendPostsRoomMessage(t *testing.T) {
 	workspace := t.TempDir()
 	writeClientConfigFixture(t, workspace, clientconfig.Config{

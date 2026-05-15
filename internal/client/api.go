@@ -52,6 +52,14 @@ func (c *Client) GetRoom(ctx context.Context, roomID string) (protocol.Room, err
 	return room, nil
 }
 
+func (c *Client) RemoveRoom(ctx context.Context, roomID string) (protocol.RemoveResult, error) {
+	var result protocol.RemoveResult
+	if err := c.doJSON(ctx, http.MethodDelete, "/v1/rooms/"+url.PathEscape(roomID), nil, &result); err != nil {
+		return protocol.RemoveResult{}, err
+	}
+	return result, nil
+}
+
 func (c *Client) ListRoomMessages(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.MessagePage, error) {
 	var messages protocol.MessagePage
 	path := "/v1/rooms/" + url.PathEscape(roomID) + "/messages" + encodePage(page)
@@ -103,6 +111,14 @@ func (c *Client) RegisterAgent(
 		return protocol.AgentRegistration{}, err
 	}
 	return registration, nil
+}
+
+func (c *Client) RemoveAgent(ctx context.Context, agentID string) (protocol.RemoveResult, error) {
+	var result protocol.RemoveResult
+	if err := c.doJSON(ctx, http.MethodDelete, "/v1/agents/"+url.PathEscape(agentID), nil, &result); err != nil {
+		return protocol.RemoveResult{}, err
+	}
+	return result, nil
 }
 
 func (c *Client) doJSON(ctx context.Context, method string, requestPath string, body any, out any) error {

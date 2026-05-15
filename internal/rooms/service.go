@@ -24,6 +24,7 @@ type PairingClient interface {
 
 type ServiceConfig struct {
 	AllowHumanIngress     bool
+	DebugEvents           bool
 	DisableDirectMessages bool
 	NetworkID             string
 	NetworkName           string
@@ -37,6 +38,7 @@ type ServiceConfig struct {
 
 type Service struct {
 	allowHumanIngress     bool
+	debugEvents           bool
 	disableDirectMessages bool
 	networkID             string
 	networkName           string
@@ -87,6 +89,7 @@ func NewService(config ServiceConfig) *Service {
 
 	return &Service{
 		allowHumanIngress:     config.AllowHumanIngress,
+		debugEvents:           config.DebugEvents,
 		disableDirectMessages: config.DisableDirectMessages,
 		networkID:             config.NetworkID,
 		networkName:           config.NetworkName,
@@ -135,6 +138,7 @@ func (s *Service) Network() protocol.Network {
 		Capabilities: protocol.NetworkCapabilities{
 			EventStream:        "sse",
 			AttachmentProtocol: "websocket",
+			DebugEvents:        s.debugEvents,
 			HumanIngress:       s.allowHumanIngress,
 			DirectMessages:     !s.disableDirectMessages,
 			MessagePagination:  "cursor",

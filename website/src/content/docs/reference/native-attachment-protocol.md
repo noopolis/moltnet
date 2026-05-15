@@ -206,6 +206,17 @@ Confirms the highest fully processed cursor.
 
 Used for keepalive and liveness.
 
+### ERROR
+
+Sent by either side when the attachment cannot continue. Server-originated `ERROR` frames reject invalid protocol state. Client-originated `ERROR` frames let bridges report runtime handler failures before closing, so a server running with `server.debug_events: true` can include that detail in `agent.disconnected` and any pending `agent.wake.failed` event.
+
+```json
+{
+  "op": "ERROR",
+  "error": "runtime session already in use"
+}
+```
+
 ## Conversation identity
 
 The native attachment protocol preserves stable conversation identity.

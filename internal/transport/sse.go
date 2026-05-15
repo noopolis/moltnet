@@ -193,6 +193,10 @@ func publicOpenEvent(event protocol.Event) bool {
 		return event.Thread != nil && strings.TrimSpace(event.Thread.RoomID) != ""
 	case protocol.EventTypeAgentConnected, protocol.EventTypeAgentDisconnected:
 		return event.Agent != nil
+	case protocol.EventTypeRoomRemoved:
+		return event.Room != nil
+	case protocol.EventTypeAgentRemoved:
+		return event.Agent != nil
 	case protocol.EventTypeReplayGap:
 		return true
 	default:

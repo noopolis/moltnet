@@ -8,6 +8,7 @@ import (
 
 type snapshot struct {
 	Rooms          map[string]protocol.Room                 `json:"rooms"`
+	RemovedRooms   map[string]time.Time                     `json:"removed_rooms,omitempty"`
 	RoomMessages   map[string][]protocol.Message            `json:"room_messages"`
 	Threads        map[string]protocol.Thread               `json:"threads"`
 	ThreadMessages map[string][]protocol.Message            `json:"thread_messages"`
@@ -31,6 +32,22 @@ func cloneRooms(values map[string]protocol.Room) map[string]protocol.Room {
 	cloned := make(map[string]protocol.Room, len(values))
 	for key, value := range values {
 		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneRemovedRooms(values map[string]time.Time) map[string]struct{} {
+	cloned := make(map[string]struct{}, len(values))
+	for key := range values {
+		cloned[key] = struct{}{}
+	}
+	return cloned
+}
+
+func snapshotRemovedRooms(values map[string]struct{}) map[string]time.Time {
+	cloned := make(map[string]time.Time, len(values))
+	for key := range values {
+		cloned[key] = time.Time{}
 	}
 	return cloned
 }
@@ -128,6 +145,7 @@ func (s *FileStore) snapshot() snapshot {
 
 	return snapshot{
 		Rooms:          cloneRooms(s.MemoryStore.rooms),
+		RemovedRooms:   snapshotRemovedRooms(s.MemoryStore.removedRooms),
 		RoomMessages:   cloneMessages(s.MemoryStore.roomMessages),
 		Threads:        cloneThreads(s.MemoryStore.threads),
 		ThreadMessages: cloneMessages(s.MemoryStore.threadMessages),
@@ -142,6 +160,7 @@ func (s *FileStore) restore(state snapshot) {
 	defer s.MemoryStore.mu.Unlock()
 
 	s.MemoryStore.rooms = cloneRooms(state.Rooms)
+	s.MemoryStore.removedRooms = cloneRemovedRooms(state.RemovedRooms)
 	s.MemoryStore.roomMessages = cloneMessages(state.RoomMessages)
 	s.MemoryStore.threads = cloneThreads(state.Threads)
 	s.MemoryStore.roomThreads = collectRoomThreads(s.MemoryStore.threads)
@@ -162,6 +181,7 @@ func snapshotFromMemoryStore(memory *MemoryStore) snapshot {
 
 	return snapshot{
 		Rooms:          cloneRooms(memory.rooms),
+		RemovedRooms:   snapshotRemovedRooms(memory.removedRooms),
 		RoomMessages:   cloneMessages(memory.roomMessages),
 		Threads:        cloneThreads(memory.threads),
 		ThreadMessages: cloneMessages(memory.threadMessages),
@@ -174,6 +194,7 @@ func snapshotFromMemoryStore(memory *MemoryStore) snapshot {
 func memoryStoreFromSnapshot(state snapshot) *MemoryStore {
 	memory := NewMemoryStore()
 	memory.rooms = cloneRooms(state.Rooms)
+	memory.removedRooms = cloneRemovedRooms(state.RemovedRooms)
 	memory.roomMessages = cloneMessages(state.RoomMessages)
 	memory.threads = cloneThreads(state.Threads)
 	memory.roomThreads = collectRoomThreads(memory.threads)

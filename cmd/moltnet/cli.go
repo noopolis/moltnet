@@ -36,6 +36,10 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runRead(rest)
 	case "register-agent":
 		return runRegisterAgent(rest)
+	case "remove-agent":
+		return runRemoveAgent(rest)
+	case "remove-room":
+		return runRemoveRoom(rest)
 	case "send":
 		return runSend(rest)
 	case "skill":

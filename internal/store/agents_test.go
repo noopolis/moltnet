@@ -136,3 +136,48 @@ func TestAgentRegistryDoesNotStorePlaintextAgentToken(t *testing.T) {
 		t.Fatalf("store retained plaintext token %#v", fetched)
 	}
 }
+
+func TestRemoveRegisteredAgentAndMemberships(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore()
+	if _, err := store.RegisterAgentContext(context.Background(), protocol.AgentRegistration{
+		NetworkID:     "local",
+		AgentID:       "luna",
+		ActorUID:      "actor_1",
+		ActorURI:      protocol.AgentFQID("local", "luna"),
+		CredentialKey: "token:one",
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("RegisterAgentContext() error = %v", err)
+	}
+	if err := store.CreateRoom(protocol.Room{
+		ID:        "agora",
+		NetworkID: "local",
+		FQID:      protocol.RoomFQID("local", "agora"),
+		Name:      "Agora",
+		Members:   []string{"luna", "socrates"},
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+
+	if err := store.RemoveAgentContext(context.Background(), "luna"); err != nil {
+		t.Fatalf("RemoveAgentContext() error = %v", err)
+	}
+	if err := store.RemoveRegisteredAgentContext(context.Background(), "luna"); err != nil {
+		t.Fatalf("RemoveRegisteredAgentContext() error = %v", err)
+	}
+
+	room, ok, err := store.GetRoom("agora")
+	if err != nil || !ok {
+		t.Fatalf("GetRoom() ok=%v err=%v", ok, err)
+	}
+	if len(room.Members) != 1 || room.Members[0] != "socrates" {
+		t.Fatalf("unexpected members after removal %#v", room.Members)
+	}
+	if _, ok, err := store.GetRegisteredAgentContext(context.Background(), "luna"); err != nil || ok {
+		t.Fatalf("expected registration removed, ok=%v err=%v", ok, err)
+	}
+}

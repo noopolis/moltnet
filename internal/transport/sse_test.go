@@ -317,6 +317,29 @@ func TestEventStreamSkipsUnsafeEventFields(t *testing.T) {
 	})
 }
 
+func TestPublicOpenEventsIncludeCleanupTopology(t *testing.T) {
+	t.Parallel()
+
+	events := []protocol.Event{
+		{
+			Type: protocol.EventTypeRoomRemoved,
+			Room: &protocol.Room{ID: "stale-room"},
+		},
+		{
+			Type: protocol.EventTypeAgentRemoved,
+			Agent: &protocol.AgentEvent{
+				AgentID: "stale-agent",
+			},
+		},
+	}
+
+	for _, event := range events {
+		if !publicOpenEvent(event) {
+			t.Fatalf("expected cleanup event to be public %#v", event)
+		}
+	}
+}
+
 func TestStreamIdentityPrefersTokenThenRemoteAddr(t *testing.T) {
 	t.Parallel()
 

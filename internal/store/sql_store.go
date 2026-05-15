@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -50,7 +51,7 @@ func (s *SQLStore) GetRoomContext(ctx context.Context, id string) (protocol.Room
 		SELECT r.id, r.network_id, r.fqid, r.name, r.created_at, rm.member_id
 		FROM rooms r
 		LEFT JOIN room_members rm ON rm.room_id = r.id
-		WHERE r.id = ?
+		WHERE r.id = ? AND r.deleted_at IS NULL
 		ORDER BY rm.member_id ASC
 	`)
 	rows, err := s.db.QueryContext(ctx, query, id)
@@ -132,6 +133,7 @@ func (s *SQLStore) ListRoomsContext(ctx context.Context) ([]protocol.Room, error
 		SELECT r.id, r.network_id, r.fqid, r.name, r.created_at, rm.member_id
 		FROM rooms r
 		LEFT JOIN room_members rm ON rm.room_id = r.id
+		WHERE r.deleted_at IS NULL
 		ORDER BY r.id ASC, rm.member_id ASC
 	`)
 	rows, err := s.db.QueryContext(ctx, query)
@@ -193,7 +195,7 @@ func (s *SQLStore) UpdateRoomMembersContext(
 	}
 	defer rollback(tx)
 
-	checkQuery := bindQuery(s.dialect, `SELECT COUNT(1) FROM rooms WHERE id = ?`)
+	checkQuery := bindQuery(s.dialect, `SELECT COUNT(1) FROM rooms WHERE id = ? AND deleted_at IS NULL`)
 	var count int
 	if err := tx.QueryRowContext(ctx, checkQuery, roomID).Scan(&count); err != nil {
 		return protocol.Room{}, fmt.Errorf("check room %q: %w", roomID, err)
@@ -225,4 +227,48 @@ func (s *SQLStore) UpdateRoomMembersContext(
 	}
 
 	return room, nil
+}
+
+func (s *SQLStore) RemoveAgent(agentID string) error {
+	return s.RemoveAgentContext(context.Background(), agentID)
+}
+
+func (s *SQLStore) RemoveAgentContext(ctx context.Context, agentID string) error {
+	query := bindQuery(s.dialect, `DELETE FROM room_members WHERE member_id = ?`)
+	if _, err := s.db.ExecContext(ctx, query, agentID); err != nil {
+		return fmt.Errorf("remove room memberships for agent %q: %w", agentID, err)
+	}
+	return nil
+}
+
+func (s *SQLStore) RemoveRoom(roomID string) error {
+	return s.RemoveRoomContext(context.Background(), roomID)
+}
+
+func (s *SQLStore) RemoveRoomContext(ctx context.Context, roomID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin remove room: %w", err)
+	}
+	defer rollback(tx)
+
+	updateQuery := bindQuery(s.dialect, `UPDATE rooms SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL`)
+	result, err := tx.ExecContext(ctx, updateQuery, formatTime(time.Now().UTC()), roomID)
+	if err != nil {
+		return fmt.Errorf("remove room %q: %w", roomID, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check removed room %q: %w", roomID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: %q", ErrRoomNotFound, roomID)
+	}
+
+	deleteMembersQuery := bindQuery(s.dialect, `DELETE FROM room_members WHERE room_id = ?`)
+	if _, err := tx.ExecContext(ctx, deleteMembersQuery, roomID); err != nil {
+		return fmt.Errorf("remove room members for %q: %w", roomID, err)
+	}
+
+	return tx.Commit()
 }

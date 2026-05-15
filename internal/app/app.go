@@ -44,6 +44,7 @@ func New(config Config) (*App, error) {
 
 	service := rooms.NewService(rooms.ServiceConfig{
 		AllowHumanIngress:     config.AllowHumanIngress,
+		DebugEvents:           config.DebugEvents,
 		DisableDirectMessages: config.DisableDirectMessages,
 		NetworkID:             config.NetworkID,
 		NetworkName:           config.NetworkName,

@@ -22,6 +22,7 @@ func TestNetworkCompatibilityMetadataJSON(t *testing.T) {
 		Capabilities: NetworkCapabilities{
 			EventStream:        "sse",
 			AttachmentProtocol: "websocket",
+			DebugEvents:        true,
 			HumanIngress:       true,
 			DirectMessages:     false,
 			MessagePagination:  "cursor",
@@ -47,6 +48,7 @@ func TestNetworkCompatibilityMetadataJSON(t *testing.T) {
 		`"pair":["moltnet.pair.v1"]`,
 		`"docs_url":"https://moltnet.dev/docs/guides/operating-moltnet/"`,
 		`"direct_messages":false`,
+		`"debug_events":true`,
 		`"attachment_protocol":"websocket"`,
 	} {
 		if !strings.Contains(text, want) {

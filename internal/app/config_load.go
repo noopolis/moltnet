@@ -81,6 +81,9 @@ func mergeFileConfig(config Config, fileConfig rawConfigFile) Config {
 	if fileConfig.Server.HumanIngress != nil {
 		config.AllowHumanIngress = *fileConfig.Server.HumanIngress
 	}
+	if fileConfig.Server.DebugEvents != nil {
+		config.DebugEvents = *fileConfig.Server.DebugEvents
+	}
 	if fileConfig.Server.DirectMessages != nil {
 		config.DisableDirectMessages = !*fileConfig.Server.DirectMessages
 	}
@@ -118,6 +121,9 @@ func mergeEnvConfig(config Config) (Config, error) {
 	}
 	if value, ok := envBoolValue("MOLTNET_ALLOW_HUMAN_INGRESS"); ok {
 		config.AllowHumanIngress = value
+	}
+	if value, ok := envBoolValue("MOLTNET_DEBUG_EVENTS"); ok {
+		config.DebugEvents = value
 	}
 	if value, ok := envBoolValue("MOLTNET_ALLOW_DIRECT_MESSAGES"); ok {
 		config.DisableDirectMessages = !value
