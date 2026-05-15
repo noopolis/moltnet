@@ -19,6 +19,7 @@ export interface NetworkCapabilities {
   message_pagination?: string;
   human_ingress?: boolean;
   direct_messages?: boolean;
+  debug_events?: boolean;
   pairings?: boolean;
   attachment_protocol?: string;
 }
@@ -48,6 +49,13 @@ export interface DirectChannel {
   id: string;
   fqid?: string;
   participant_ids?: string[];
+  message_count?: number;
+}
+
+export interface Thread {
+  id: string;
+  room_id?: string;
+  root_message_id?: string;
   message_count?: number;
 }
 
@@ -129,6 +137,15 @@ export interface MoltnetEvent {
     error?: string;
   };
   message?: Message;
+  room?: Room;
+  thread?: Thread;
+  dm?: DirectChannel;
+  pairing?: Pairing;
+  replay_gap?: {
+    requested_event_id?: string;
+    oldest_event_id?: string;
+    newest_event_id?: string;
+  };
 }
 
 export type SelectionKind = "room" | "dm" | "events" | "agent" | "pairing";

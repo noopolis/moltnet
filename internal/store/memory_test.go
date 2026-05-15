@@ -46,6 +46,19 @@ func TestMemoryStoreRooms(t *testing.T) {
 	if rooms[0].ID != "a-room" || rooms[1].ID != "b-room" {
 		t.Fatalf("rooms not sorted: %#v", rooms)
 	}
+
+	if err := store.RemoveRoom("a-room"); err != nil {
+		t.Fatalf("RemoveRoom() error = %v", err)
+	}
+	if _, ok, err := store.GetRoom("a-room"); err != nil || ok {
+		t.Fatalf("expected removed room to be hidden, ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := store.GetRoom("b-room"); err != nil || !ok {
+		t.Fatalf("expected unrelated room to remain, ok=%v err=%v", ok, err)
+	}
+	if err := store.CreateRoom(protocol.Room{ID: "a-room", Name: "A"}); !errors.Is(err, ErrRoomExists) {
+		t.Fatalf("expected removed room id to stay reserved, got %v", err)
+	}
 }
 
 func TestMemoryStoreHistory(t *testing.T) {

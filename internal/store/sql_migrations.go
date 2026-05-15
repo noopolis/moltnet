@@ -251,4 +251,16 @@ var sqlMigrations = []migration{
 			`CREATE INDEX IF NOT EXISTS idx_agents_credential_key ON agents (credential_key)`,
 		},
 	},
+	{
+		Version: 7,
+		Name:    "soft_removed_rooms",
+		SQLiteStatements: []string{
+			`ALTER TABLE rooms ADD COLUMN deleted_at TEXT`,
+			`CREATE INDEX IF NOT EXISTS idx_rooms_deleted_at ON rooms (deleted_at)`,
+		},
+		PostgresStatements: []string{
+			`ALTER TABLE rooms ADD COLUMN deleted_at TIMESTAMPTZ`,
+			`CREATE INDEX IF NOT EXISTS idx_rooms_deleted_at ON rooms (deleted_at)`,
+		},
+	},
 }

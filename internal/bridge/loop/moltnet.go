@@ -135,7 +135,7 @@ func (c *MoltnetClient) StreamEventsReady(
 					return fmt.Errorf("attachment event frame is missing event payload")
 				}
 				if err := handle(*result.frame.Event); err != nil {
-					return err
+					return reportAttachmentHandlerError(write, err)
 				}
 				if err := write(protocol.AttachmentFrame{
 					Op:      protocol.AttachmentOpAck,
@@ -152,6 +152,24 @@ func (c *MoltnetClient) StreamEventsReady(
 			}
 		}
 	}
+}
+
+func reportAttachmentHandlerError(write func(protocol.AttachmentFrame) error, err error) error {
+	if err == nil {
+		return nil
+	}
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		message = "bridge handler failed"
+	}
+	if writeErr := write(protocol.AttachmentFrame{
+		Op:      protocol.AttachmentOpError,
+		Version: protocol.AttachmentProtocolV1,
+		Error:   message,
+	}); writeErr != nil {
+		return fmt.Errorf("%w; report attachment error: %v", err, writeErr)
+	}
+	return err
 }
 
 func (c *MoltnetClient) SendMessage(

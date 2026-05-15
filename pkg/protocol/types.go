@@ -29,6 +29,7 @@ type NetworkConsole struct {
 type NetworkCapabilities struct {
 	EventStream        string `json:"event_stream,omitempty"`
 	AttachmentProtocol string `json:"attachment_protocol,omitempty"`
+	DebugEvents        bool   `json:"debug_events,omitempty"`
 	HumanIngress       bool   `json:"human_ingress"`
 	DirectMessages     bool   `json:"direct_messages"`
 	MessagePagination  string `json:"message_pagination,omitempty"`
@@ -155,6 +156,13 @@ type CreateRoomRequest struct {
 type UpdateRoomMembersRequest struct {
 	Add    []string `json:"add,omitempty"`
 	Remove []string `json:"remove,omitempty"`
+}
+
+type RemoveResult struct {
+	Removed bool   `json:"removed"`
+	Kind    string `json:"kind"`
+	ID      string `json:"id"`
+	Mode    string `json:"mode"`
 }
 
 type SendMessageRequest struct {

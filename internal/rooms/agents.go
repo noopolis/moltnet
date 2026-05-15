@@ -96,6 +96,13 @@ func (s *Service) registeredAgent(
 	return s.agentRegistry.GetRegisteredAgentContext(ctx, strings.TrimSpace(agentID))
 }
 
+func (s *Service) removeRegisteredAgent(ctx context.Context, agentID string) error {
+	if s.agentRegistry == nil {
+		return nil
+	}
+	return s.agentRegistry.RemoveRegisteredAgentContext(ctx, strings.TrimSpace(agentID))
+}
+
 func (s *Service) AuthenticateAgentTokenContext(
 	ctx context.Context,
 	token string,

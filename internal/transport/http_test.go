@@ -48,8 +48,12 @@ type fakeService struct {
 	artifactPage       protocol.ArtifactPage
 	createdRoom        protocol.CreateRoomRequest
 	registeredAgent    protocol.RegisterAgentRequest
+	removedAgentID     string
+	removedRoomID      string
 	connectedAgents    []protocol.Actor
 	disconnectedAgents []protocol.Actor
+	disconnectReasons  []string
+	disconnectErrors   []string
 	deliveredWakes     []protocol.Event
 	failedWakes        []protocol.Event
 	updatedRoom        protocol.UpdateRoomMembersRequest
@@ -127,10 +131,16 @@ func (f *fakeService) AgentConnected(ctx context.Context, agent protocol.Actor) 
 	defer f.mu.Unlock()
 	f.connectedAgents = append(f.connectedAgents, agent)
 }
-func (f *fakeService) AgentDisconnected(ctx context.Context, agent protocol.Actor) {
+func (f *fakeService) AgentDisconnected(ctx context.Context, agent protocol.Actor, reason string, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.disconnectedAgents = append(f.disconnectedAgents, agent)
+	f.disconnectReasons = append(f.disconnectReasons, reason)
+	if err != nil {
+		f.disconnectErrors = append(f.disconnectErrors, err.Error())
+		return
+	}
+	f.disconnectErrors = append(f.disconnectErrors, "")
 }
 func (f *fakeService) AgentWakeDelivered(ctx context.Context, agent protocol.Actor, event protocol.Event) {
 	f.mu.Lock()
@@ -215,6 +225,14 @@ func (f *fakeService) RegisterAgentContext(ctx context.Context, request protocol
 		ActorURI:    protocol.AgentFQID("local", agentID),
 		DisplayName: request.Name,
 	}, nil
+}
+func (f *fakeService) RemoveAgentContext(ctx context.Context, agentID string) (protocol.RemoveResult, error) {
+	f.removedAgentID = agentID
+	return protocol.RemoveResult{Removed: true, Kind: "agent", ID: agentID, Mode: "soft"}, nil
+}
+func (f *fakeService) RemoveRoomContext(ctx context.Context, roomID string) (protocol.RemoveResult, error) {
+	f.removedRoomID = roomID
+	return protocol.RemoveResult{Removed: true, Kind: "room", ID: roomID, Mode: "soft"}, nil
 }
 func (f *fakeService) ListRoomMessagesContext(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.MessagePage, error) {
 	f.roomID = roomID

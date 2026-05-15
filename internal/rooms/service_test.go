@@ -486,6 +486,75 @@ func TestServiceUpdateRoomMembersNoOpDoesNotEmitEvent(t *testing.T) {
 	}
 }
 
+func TestServiceRemovesAgentsAndRoomsSoftly(t *testing.T) {
+	t.Parallel()
+
+	service := newTestService()
+	if _, err := service.RegisterAgentContext(context.Background(), protocol.RegisterAgentRequest{
+		RequestedAgentID: "alpha",
+		Name:             "Alpha",
+	}); err != nil {
+		t.Fatalf("RegisterAgentContext() error = %v", err)
+	}
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:      "research",
+		Members: []string{"alpha", "beta"},
+	}); err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+	if _, err := service.SendMessage(protocol.SendMessageRequest{
+		Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+		From:   protocol.Actor{Type: "agent", ID: "alpha"},
+		Parts:  []protocol.Part{{Kind: protocol.PartKindText, Text: "keep me"}},
+	}); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream := service.Subscribe(ctx)
+
+	agentResult, err := service.RemoveAgentContext(context.Background(), "alpha")
+	if err != nil {
+		t.Fatalf("RemoveAgentContext() error = %v", err)
+	}
+	if !agentResult.Removed || agentResult.Kind != "agent" || agentResult.Mode != "soft" {
+		t.Fatalf("unexpected agent removal result %#v", agentResult)
+	}
+	agentEvent := <-stream
+	if agentEvent.Type != protocol.EventTypeAgentRemoved || agentEvent.Agent.AgentID != "alpha" {
+		t.Fatalf("unexpected agent removal event %#v", agentEvent)
+	}
+	if _, err := service.GetAgent("alpha"); !errors.Is(err, ErrUnknownAgent) {
+		t.Fatalf("expected removed agent unknown, got %v", err)
+	}
+	agents, err := service.ListAgents()
+	if err != nil {
+		t.Fatalf("ListAgents() error = %v", err)
+	}
+	if len(agents) != 1 || agents[0].ID != "beta" {
+		t.Fatalf("unexpected agents after removal %#v", agents)
+	}
+
+	roomResult, err := service.RemoveRoomContext(context.Background(), "research")
+	if err != nil {
+		t.Fatalf("RemoveRoomContext() error = %v", err)
+	}
+	if !roomResult.Removed || roomResult.Kind != "room" || roomResult.Mode != "soft" {
+		t.Fatalf("unexpected room removal result %#v", roomResult)
+	}
+	roomEvent := <-stream
+	if roomEvent.Type != protocol.EventTypeRoomRemoved || roomEvent.Room.ID != "research" {
+		t.Fatalf("unexpected room removal event %#v", roomEvent)
+	}
+	if _, err := service.GetRoom("research"); !errors.Is(err, ErrUnknownRoom) {
+		t.Fatalf("expected removed room unknown, got %v", err)
+	}
+	if _, err := service.ListRoomMessages("research", "", 10); !errors.Is(err, ErrUnknownRoom) {
+		t.Fatalf("expected removed room messages hidden, got %v", err)
+	}
+}
+
 func TestServiceRejectsHumanIngressWhenDisabledAndListsPairings(t *testing.T) {
 	t.Parallel()
 

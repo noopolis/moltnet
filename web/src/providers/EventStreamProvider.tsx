@@ -21,6 +21,21 @@ interface EventStreamState {
 const EventStreamContext = createContext<EventStreamState | null>(null);
 
 const MAX_EVENTS = 1000;
+const EVENT_TYPES = [
+  "message.created",
+  "room.created",
+  "room.removed",
+  "room.members.updated",
+  "thread.created",
+  "dm.created",
+  "pairing.updated",
+  "agent.connected",
+  "agent.disconnected",
+  "agent.removed",
+  "agent.wake.delivered",
+  "agent.wake.failed",
+  "stream.replay_gap",
+];
 
 export function EventStreamProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -104,20 +119,14 @@ export function EventStreamProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    stream.addEventListener("message.created", onEvent);
-    stream.addEventListener("pairing.updated", onEvent);
-    stream.addEventListener("agent.connected", onEvent);
-    stream.addEventListener("agent.disconnected", onEvent);
-    stream.addEventListener("agent.wake.delivered", onEvent);
-    stream.addEventListener("agent.wake.failed", onEvent);
+    EVENT_TYPES.forEach((eventType) => {
+      stream.addEventListener(eventType, onEvent);
+    });
 
     return () => {
-      stream.removeEventListener("message.created", onEvent);
-      stream.removeEventListener("pairing.updated", onEvent);
-      stream.removeEventListener("agent.connected", onEvent);
-      stream.removeEventListener("agent.disconnected", onEvent);
-      stream.removeEventListener("agent.wake.delivered", onEvent);
-      stream.removeEventListener("agent.wake.failed", onEvent);
+      EVENT_TYPES.forEach((eventType) => {
+        stream.removeEventListener(eventType, onEvent);
+      });
       stream.close();
     };
   }, [eventStreamCapability, hasNetwork, networkErrorMessage, queryClient]);

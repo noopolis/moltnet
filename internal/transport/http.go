@@ -24,10 +24,12 @@ type Service interface {
 	PairingAgentsContext(ctx context.Context, pairingID string, page protocol.PageRequest) (protocol.AgentPage, error)
 	ListRoomsContext(ctx context.Context, page protocol.PageRequest) (protocol.RoomPage, error)
 	CreateRoomContext(ctx context.Context, request protocol.CreateRoomRequest) (protocol.Room, error)
+	RemoveRoomContext(ctx context.Context, roomID string) (protocol.RemoveResult, error)
 	UpdateRoomMembers(ctx context.Context, roomID string, request protocol.UpdateRoomMembersRequest) (protocol.Room, error)
 	RegisterAgentContext(ctx context.Context, request protocol.RegisterAgentRequest) (protocol.AgentRegistration, error)
+	RemoveAgentContext(ctx context.Context, agentID string) (protocol.RemoveResult, error)
 	AgentConnected(ctx context.Context, agent protocol.Actor)
-	AgentDisconnected(ctx context.Context, agent protocol.Actor)
+	AgentDisconnected(ctx context.Context, agent protocol.Actor, reason string, err error)
 	AgentWakeDelivered(ctx context.Context, agent protocol.Actor, event protocol.Event)
 	AgentWakeFailed(ctx context.Context, agent protocol.Actor, event protocol.Event, err error)
 	ListRoomMessagesContext(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.MessagePage, error)
@@ -128,6 +130,16 @@ func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
 
 	mux.HandleFunc("POST /v1/agents/register", handleRegisterAgent(service, policy))
 
+	mux.HandleFunc("DELETE /v1/agents/{agentID}", authorizedWithVerifier(policy, service, authn.ScopeAdmin, func(response http.ResponseWriter, request *http.Request) {
+		result, err := service.RemoveAgentContext(request.Context(), request.PathValue("agentID"))
+		if err != nil {
+			writeError(response, statusForError(err), err)
+			return
+		}
+
+		writeJSON(response, http.StatusOK, result)
+	}))
+
 	mux.HandleFunc("GET /v1/pairings", authorizedWithVerifier(policy, service, authn.ScopeObserve, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
@@ -193,6 +205,16 @@ func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
 		}
 
 		writeJSON(response, http.StatusCreated, room)
+	}))
+
+	mux.HandleFunc("DELETE /v1/rooms/{roomID}", authorizedWithVerifier(policy, service, authn.ScopeAdmin, func(response http.ResponseWriter, request *http.Request) {
+		result, err := service.RemoveRoomContext(request.Context(), request.PathValue("roomID"))
+		if err != nil {
+			writeError(response, statusForError(err), err)
+			return
+		}
+
+		writeJSON(response, http.StatusOK, result)
 	}))
 
 	mux.HandleFunc("PATCH /v1/rooms/{roomID}/members", authorizedWithVerifier(policy, service, authn.ScopeAdmin, func(response http.ResponseWriter, request *http.Request) {

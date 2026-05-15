@@ -2,10 +2,12 @@ package rooms
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/noopolis/moltnet/internal/events"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -73,7 +75,7 @@ func TestAgentPresencePublishesEventsAndUpdatesAgentSummary(t *testing.T) {
 		t.Fatalf("expected connected agent summary, got %#v", agent)
 	}
 
-	service.AgentDisconnected(context.Background(), protocol.Actor{ID: "luna", Name: "Luna"})
+	service.AgentDisconnected(context.Background(), protocol.Actor{ID: "luna", Name: "Luna"}, "", nil)
 	disconnected := <-stream
 	if disconnected.Type != protocol.EventTypeAgentDisconnected ||
 		disconnected.Agent == nil ||
@@ -87,6 +89,53 @@ func TestAgentPresencePublishesEventsAndUpdatesAgentSummary(t *testing.T) {
 	}
 	if agent.Connected {
 		t.Fatalf("expected disconnected agent summary, got %#v", agent)
+	}
+}
+
+func TestAgentPresenceDebugEventsIncludeLifecycleReasons(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(ServiceConfig{
+		DebugEvents: true,
+		NetworkID:   "local",
+		NetworkName: "Local",
+		Store:       nil,
+		Messages:    nil,
+		Broker:      events.NewBroker(),
+	})
+
+	stream := service.Subscribe(context.Background())
+	service.AgentConnected(context.Background(), protocol.Actor{ID: "luna", Name: "Luna"})
+
+	connected := <-stream
+	if connected.Agent == nil || connected.Agent.Reason != "attachment_ready" || connected.Agent.Error != "" {
+		t.Fatalf("unexpected debug connected event %#v", connected)
+	}
+
+	service.AgentDisconnected(
+		context.Background(),
+		protocol.Actor{ID: "luna", Name: "Luna"},
+		"read error",
+		context.Canceled,
+	)
+	disconnected := <-stream
+	if disconnected.Agent == nil ||
+		disconnected.Agent.Reason != "read_error" ||
+		disconnected.Agent.Error != "" {
+		t.Fatalf("unexpected debug disconnected event %#v", disconnected)
+	}
+
+	service.AgentDisconnected(
+		context.Background(),
+		protocol.Actor{ID: "luna", Name: "Luna"},
+		"event_write_failed",
+		errors.New("write tcp: broken pipe"),
+	)
+	failedDisconnect := <-stream
+	if failedDisconnect.Agent == nil ||
+		failedDisconnect.Agent.Reason != "event_write_failed" ||
+		failedDisconnect.Agent.Error != "write tcp: broken pipe" {
+		t.Fatalf("unexpected debug disconnect error event %#v", failedDisconnect)
 	}
 }
 

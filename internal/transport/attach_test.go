@@ -110,6 +110,112 @@ func TestAttachmentEndpoint(t *testing.T) {
 	})
 }
 
+func TestAttachmentEndpointRecordsDisconnectReason(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeService{
+		network: protocol.Network{ID: "local"},
+		stream:  make(chan protocol.Event),
+	}
+
+	server := httptest.NewServer(NewHTTPHandler(service, nil))
+	defer server.Close()
+
+	endpoint := "ws" + server.URL[len("http"):] + "/v1/attach"
+	connection := dialAndIdentifyAttachment(t, endpoint, "local", "researcher")
+	deadline := time.Now().Add(time.Second)
+	if err := connection.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+		deadline,
+	); err != nil {
+		t.Fatalf("write close control: %v", err)
+	}
+	_ = connection.Close()
+
+	waitForCondition(t, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return len(service.disconnectReasons) == 1 &&
+			service.disconnectReasons[0] == "client_closed" &&
+			service.disconnectErrors[0] == ""
+	})
+}
+
+func TestAttachmentEndpointRecordsClientReportedError(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeService{
+		network: protocol.Network{ID: "local"},
+		stream:  make(chan protocol.Event),
+	}
+
+	server := httptest.NewServer(NewHTTPHandler(service, nil))
+	defer server.Close()
+
+	endpoint := "ws" + server.URL[len("http"):] + "/v1/attach"
+	connection := dialAndIdentifyAttachment(t, endpoint, "local", "researcher")
+	defer connection.Close()
+
+	if err := connection.WriteJSON(protocol.AttachmentFrame{
+		Op:      protocol.AttachmentOpError,
+		Version: protocol.AttachmentProtocolV1,
+		Error:   "runtime session already in use",
+	}); err != nil {
+		t.Fatalf("write client error: %v", err)
+	}
+
+	waitForCondition(t, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return len(service.disconnectReasons) == 1 &&
+			service.disconnectReasons[0] == "client_error" &&
+			strings.Contains(service.disconnectErrors[0], "runtime session already in use")
+	})
+}
+
+func TestAttachmentEndpointClosesRemovedAgent(t *testing.T) {
+	t.Parallel()
+
+	stream := make(chan protocol.Event, 1)
+	service := &fakeService{
+		network: protocol.Network{ID: "local"},
+		stream:  stream,
+	}
+
+	server := httptest.NewServer(NewHTTPHandler(service, nil))
+	defer server.Close()
+
+	endpoint := "ws" + server.URL[len("http"):] + "/v1/attach"
+	connection := dialAndIdentifyAttachment(t, endpoint, "local", "researcher")
+	defer connection.Close()
+
+	stream <- protocol.Event{
+		ID:        "evt_removed",
+		Type:      protocol.EventTypeAgentRemoved,
+		NetworkID: "local",
+		Agent: &protocol.AgentEvent{
+			AgentID:   "researcher",
+			NetworkID: "local",
+		},
+	}
+
+	var errorFrame protocol.AttachmentFrame
+	if err := connection.ReadJSON(&errorFrame); err != nil {
+		t.Fatalf("read removal error frame: %v", err)
+	}
+	if errorFrame.Op != protocol.AttachmentOpError ||
+		!strings.Contains(errorFrame.Error, "removed") {
+		t.Fatalf("unexpected removal error frame %#v", errorFrame)
+	}
+	waitForCondition(t, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return len(service.disconnectReasons) == 1 &&
+			service.disconnectReasons[0] == "agent_removed"
+	})
+}
+
 func TestAttachmentEndpointPublishesWakeFailedWhenTargetedEventIsNotAcked(t *testing.T) {
 	t.Parallel()
 

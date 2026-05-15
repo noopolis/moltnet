@@ -152,6 +152,14 @@ func (s *SQLStore) GetRegisteredAgentByCredentialKeyContext(
 	return agent, true, nil
 }
 
+func (s *SQLStore) RemoveRegisteredAgentContext(ctx context.Context, agentID string) error {
+	query := bindQuery(s.dialect, `DELETE FROM agents WHERE agent_id = ?`)
+	if _, err := s.db.ExecContext(ctx, query, strings.TrimSpace(agentID)); err != nil {
+		return fmt.Errorf("remove registered agent %q: %w", agentID, err)
+	}
+	return nil
+}
+
 type agentQuerier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }

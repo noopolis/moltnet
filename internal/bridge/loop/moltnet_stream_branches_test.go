@@ -61,6 +61,15 @@ func TestMoltnetClientPostReadyErrorAndHandlerError(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("write event: %v", err)
 			}
+			var errorFrame protocol.AttachmentFrame
+			if err := connection.ReadJSON(&errorFrame); err != nil {
+				t.Fatalf("read handler error frame: %v", err)
+			}
+			if errorFrame.Op != protocol.AttachmentOpError ||
+				errorFrame.Version != protocol.AttachmentProtocolV1 ||
+				!strings.Contains(errorFrame.Error, "context canceled") {
+				t.Fatalf("unexpected handler error frame %#v", errorFrame)
+			}
 		})
 		defer server.Close()
 

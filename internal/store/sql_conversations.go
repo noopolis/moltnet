@@ -104,6 +104,7 @@ func (s *SQLStore) ListAgentsContext(ctx context.Context) ([]protocol.AgentSumma
 		SELECT rm.member_id, r.network_id, r.id
 		FROM room_members rm
 		JOIN rooms r ON r.id = rm.room_id
+		WHERE r.deleted_at IS NULL
 		ORDER BY rm.member_id ASC, r.id ASC
 	`)
 	rows, err := s.db.QueryContext(ctx, query)
@@ -144,7 +145,7 @@ func (s *SQLStore) GetAgentContext(ctx context.Context, agentID string) (protoco
 		SELECT rm.member_id, r.network_id, r.id
 		FROM room_members rm
 		JOIN rooms r ON r.id = rm.room_id
-		WHERE rm.member_id = ?
+		WHERE rm.member_id = ? AND r.deleted_at IS NULL
 		ORDER BY r.id ASC
 	`)
 	rows, err := s.db.QueryContext(ctx, query, agentID)

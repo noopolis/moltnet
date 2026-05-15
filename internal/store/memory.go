@@ -15,6 +15,8 @@ type RoomStore interface {
 	GetRoom(id string) (protocol.Room, bool, error)
 	GetThread(id string) (protocol.Thread, bool, error)
 	ListRooms() ([]protocol.Room, error)
+	RemoveAgent(agentID string) error
+	RemoveRoom(roomID string) error
 	UpdateRoomMembers(roomID string, add []string, remove []string) (protocol.Room, error)
 }
 
@@ -22,6 +24,7 @@ type MemoryStore struct {
 	mu             sync.RWMutex
 	messageIDs     map[string]struct{}
 	rooms          map[string]protocol.Room
+	removedRooms   map[string]struct{}
 	roomMessages   map[string][]protocol.Message
 	threads        map[string]protocol.Thread
 	roomThreads    map[string]map[string]struct{}
@@ -35,6 +38,7 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		messageIDs:     make(map[string]struct{}),
 		rooms:          make(map[string]protocol.Room),
+		removedRooms:   make(map[string]struct{}),
 		roomMessages:   make(map[string][]protocol.Message),
 		threads:        make(map[string]protocol.Thread),
 		roomThreads:    make(map[string]map[string]struct{}),
@@ -58,6 +62,9 @@ func (s *MemoryStore) CreateRoomContext(_ context.Context, room protocol.Room) e
 	defer s.mu.Unlock()
 
 	if _, exists := s.rooms[room.ID]; exists {
+		return fmt.Errorf("%w: %q", ErrRoomExists, room.ID)
+	}
+	if _, exists := s.removedRooms[room.ID]; exists {
 		return fmt.Errorf("%w: %q", ErrRoomExists, room.ID)
 	}
 
@@ -162,6 +169,56 @@ func (s *MemoryStore) ListRegisteredAgentsContext(_ context.Context) ([]protocol
 		return strings.Compare(left.AgentID, right.AgentID)
 	})
 	return agents, nil
+}
+
+func (s *MemoryStore) RemoveRegisteredAgentContext(_ context.Context, agentID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.agents, strings.TrimSpace(agentID))
+	return nil
+}
+
+func (s *MemoryStore) RemoveAgent(agentID string) error {
+	return s.RemoveAgentContext(context.Background(), agentID)
+}
+
+func (s *MemoryStore) RemoveAgentContext(_ context.Context, agentID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := strings.TrimSpace(agentID)
+	for roomID, room := range s.rooms {
+		members := make([]string, 0, len(room.Members))
+		for _, memberID := range room.Members {
+			if memberID != id {
+				members = append(members, memberID)
+			}
+		}
+		room.Members = members
+		s.rooms[roomID] = room
+	}
+	return nil
+}
+
+func (s *MemoryStore) RemoveRoom(roomID string) error {
+	return s.RemoveRoomContext(context.Background(), roomID)
+}
+
+func (s *MemoryStore) RemoveRoomContext(_ context.Context, roomID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := strings.TrimSpace(roomID)
+	if _, ok := s.rooms[id]; !ok {
+		return fmt.Errorf("%w: %q", ErrRoomNotFound, id)
+	}
+	delete(s.rooms, id)
+	if s.removedRooms == nil {
+		s.removedRooms = make(map[string]struct{})
+	}
+	s.removedRooms[id] = struct{}{}
+	return nil
 }
 
 func (s *MemoryStore) GetRegisteredAgentContext(

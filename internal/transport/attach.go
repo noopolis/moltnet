@@ -118,7 +118,11 @@ func handleAttachment(
 		return
 	}
 	service.AgentConnected(request.Context(), agent)
-	defer service.AgentDisconnected(context.Background(), agent)
+	disconnectReason := "attachment_closed"
+	var disconnectErr error
+	defer func() {
+		service.AgentDisconnected(context.Background(), agent, disconnectReason, disconnectErr)
+	}()
 
 	ctx, cancel := context.WithCancel(request.Context())
 	defer cancel()
@@ -138,8 +142,11 @@ func handleAttachment(
 	for {
 		select {
 		case <-ctx.Done():
+			disconnectReason = "request_context_done"
+			disconnectErr = ctx.Err()
 			return
 		case err := <-readErrCh:
+			disconnectReason, disconnectErr = attachmentDisconnectCause(err)
 			if err != nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				observability.Logger(request.Context(), "transport.attach", "agent_id", agent.ID).
 					Warn("attachment websocket read error", "error", err)
@@ -151,10 +158,19 @@ func handleAttachment(
 				Op:      protocol.AttachmentOpPing,
 				Version: protocol.AttachmentProtocolV1,
 			}); err != nil {
+				disconnectReason = "heartbeat_write_failed"
+				disconnectErr = err
+				publishPendingWakeFailures(service, agent, session, err)
 				return
 			}
 		case event, ok := <-stream:
 			if !ok {
+				disconnectReason = "event_stream_closed"
+				return
+			}
+			if attachmentRemovedEvent(event, service.Network().ID, agent.ID) {
+				disconnectReason = "agent_removed"
+				disconnectErr = writeAttachmentError(writer, "agent was removed from the network")
 				return
 			}
 			if filter != nil && !filter(event) {
@@ -172,10 +188,33 @@ func handleAttachment(
 				Cursor:    event.ID,
 				Event:     &event,
 			}); err != nil {
+				disconnectReason = "event_write_failed"
+				disconnectErr = err
 				publishPendingWakeFailures(service, agent, session, err)
 				return
 			}
 		}
+	}
+}
+
+func attachmentDisconnectCause(err error) (string, error) {
+	if err == nil {
+		return "client_closed", nil
+	}
+	var clientErr attachmentClientError
+	switch {
+	case errors.As(err, &clientErr):
+		return "client_error", err
+	case websocket.IsCloseError(err, websocket.CloseNormalClosure):
+		return "client_closed", nil
+	case websocket.IsCloseError(err, websocket.CloseGoingAway):
+		return "client_going_away", nil
+	case errors.Is(err, context.Canceled):
+		return "request_context_done", nil
+	case errors.Is(err, context.DeadlineExceeded):
+		return "read_timeout", err
+	default:
+		return "read_error", err
 	}
 }
 
@@ -284,6 +323,12 @@ func attachmentWakeEvent(event protocol.Event, networkID string, agent protocol.
 	return false
 }
 
+func attachmentRemovedEvent(event protocol.Event, networkID string, agentID string) bool {
+	return event.Type == protocol.EventTypeAgentRemoved &&
+		event.Agent != nil &&
+		protocol.ActorMatches(networkID, agentID, event.Agent.AgentID)
+}
+
 func participantsIncludeAttachedAgent(participants []string, networkID string, agentID string) bool {
 	for _, participantID := range participants {
 		if protocol.ActorMatches(networkID, agentID, participantID) {
@@ -343,6 +388,8 @@ func consumeAttachmentFrames(
 			}); err != nil {
 				return err
 			}
+		case protocol.AttachmentOpError:
+			return attachmentClientError(strings.TrimSpace(frame.Error))
 		default:
 			if err := writeAttachmentError(writer, fmt.Sprintf("unexpected frame op %q", frame.Op)); err != nil {
 				return err
@@ -399,6 +446,16 @@ func invalidAttachmentFrameError(message string, err error) error {
 		message: strings.TrimSpace(message),
 		err:     err,
 	}
+}
+
+type attachmentClientError string
+
+func (e attachmentClientError) Error() string {
+	message := strings.TrimSpace(string(e))
+	if message == "" {
+		return "attachment client error"
+	}
+	return "attachment client error: " + message
 }
 
 func attachmentFrameErrorMessage(err error) (string, bool) {

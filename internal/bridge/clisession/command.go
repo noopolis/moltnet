@@ -3,17 +3,20 @@ package clisession
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 )
 
 const defaultCommandTimeout = 5 * time.Minute
+const textFileBusyRetries = 5
 
 type CommandSpec struct {
 	Command string
@@ -63,7 +66,27 @@ func RunCommand(ctx context.Context, spec CommandSpec) (CommandResult, error) {
 		return CommandResult{}, err
 	}
 
-	cmd := exec.CommandContext(commandCtx, resolvedCommand, spec.Args...)
+	result, err := runResolvedCommand(commandCtx, resolvedCommand, spec)
+	for attempt := 0; isTextFileBusy(err) && attempt < textFileBusyRetries; attempt++ {
+		delay := time.Duration(attempt+1) * 10 * time.Millisecond
+		timer := time.NewTimer(delay)
+		select {
+		case <-commandCtx.Done():
+			timer.Stop()
+			return result, fmt.Errorf("run runtime command: %w", commandCtx.Err())
+		case <-timer.C:
+		}
+		result, err = runResolvedCommand(commandCtx, resolvedCommand, spec)
+	}
+	if err != nil {
+		return result, formatCommandError(result, err)
+	}
+
+	return result, nil
+}
+
+func runResolvedCommand(ctx context.Context, resolvedCommand string, spec CommandSpec) (CommandResult, error) {
+	cmd := exec.CommandContext(ctx, resolvedCommand, spec.Args...)
 	cmd.Dir = strings.TrimSpace(spec.Dir)
 	cmd.Env = append(cmd.Environ(), spec.Env...)
 	if spec.Stdin != "" {
@@ -75,18 +98,27 @@ func RunCommand(ctx context.Context, spec CommandSpec) (CommandResult, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
-		stderrText := strings.TrimSpace(stderr.String())
-		if stderrText == "" {
-			stderrText = strings.TrimSpace(stdout.String())
-		}
-		if stderrText != "" {
-			return CommandResult{Stdout: stdout.String(), Stderr: stderr.String()}, fmt.Errorf("run runtime command: %w: %s", err, stderrText)
-		}
-		return CommandResult{Stdout: stdout.String(), Stderr: stderr.String()}, fmt.Errorf("run runtime command: %w", err)
-	}
+	err := cmd.Run()
+	return CommandResult{Stdout: stdout.String(), Stderr: stderr.String()}, err
+}
 
-	return CommandResult{Stdout: stdout.String(), Stderr: stderr.String()}, nil
+func formatCommandError(result CommandResult, err error) error {
+	stderrText := strings.TrimSpace(result.Stderr)
+	if stderrText == "" {
+		stderrText = strings.TrimSpace(result.Stdout)
+	}
+	if stderrText != "" {
+		return fmt.Errorf("run runtime command: %w: %s", err, stderrText)
+	}
+	return fmt.Errorf("run runtime command: %w", err)
+}
+
+func isTextFileBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, syscall.ETXTBSY) ||
+		strings.Contains(strings.ToLower(strings.TrimSpace(err.Error())), "text file busy")
 }
 
 func BaseEnv(config bridgeconfig.Config) []string {

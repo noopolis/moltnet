@@ -31,6 +31,7 @@ const (
 
 type Config struct {
 	AllowHumanIngress     bool
+	DebugEvents           bool
 	DisableDirectMessages bool
 	Auth                  authn.Config
 	ListenAddr            string
