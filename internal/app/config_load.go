@@ -51,6 +51,7 @@ func defaultConfig(version string) Config {
 		AllowHumanIngress: true,
 		Auth: authn.Config{
 			Mode:                authn.ModeNone,
+			AgentRegistration:   authn.AgentRegistrationDisabled,
 			ListenAddr:          defaultListenAddr,
 			TrustForwardedProto: false,
 		},
@@ -81,6 +82,12 @@ func mergeFileConfig(config Config, fileConfig rawConfigFile) Config {
 	if fileConfig.Server.HumanIngress != nil {
 		config.AllowHumanIngress = *fileConfig.Server.HumanIngress
 	}
+	if fileConfig.Server.Console.Analytics.Provider != "" || fileConfig.Server.Console.Analytics.MeasurementID != "" {
+		config.Console.Analytics = ConsoleAnalyticsConfig{
+			Provider:      strings.TrimSpace(fileConfig.Server.Console.Analytics.Provider),
+			MeasurementID: strings.TrimSpace(fileConfig.Server.Console.Analytics.MeasurementID),
+		}
+	}
 	if fileConfig.Server.DebugEvents != nil {
 		config.DebugEvents = *fileConfig.Server.DebugEvents
 	}
@@ -93,6 +100,16 @@ func mergeFileConfig(config Config, fileConfig rawConfigFile) Config {
 	config.Auth.TrustForwardedProto = fileConfig.Server.TrustForwardedProto
 	if strings.TrimSpace(fileConfig.Auth.Mode) != "" {
 		config.Auth.Mode = strings.TrimSpace(fileConfig.Auth.Mode)
+	}
+	if fileConfig.Auth.PublicRead != nil {
+		config.Auth.PublicRead = *fileConfig.Auth.PublicRead
+	}
+	if strings.TrimSpace(fileConfig.Auth.AgentRegistration) != "" {
+		config.Auth.AgentRegistration = strings.TrimSpace(fileConfig.Auth.AgentRegistration)
+	}
+	if config.Auth.Mode == authn.ModeOpen {
+		config.Auth.PublicRead = true
+		config.Auth.AgentRegistration = authn.AgentRegistrationOpen
 	}
 	if fileConfig.Auth.Tokens != nil {
 		config.Auth.Tokens = authTokenConfigs(fileConfig.Auth.Tokens)
@@ -128,12 +145,21 @@ func mergeEnvConfig(config Config) (Config, error) {
 	if value, ok := envBoolValue("MOLTNET_ALLOW_DIRECT_MESSAGES"); ok {
 		config.DisableDirectMessages = !value
 	}
+	if value, ok := envValue("MOLTNET_CONSOLE_ANALYTICS_PROVIDER"); ok {
+		config.Console.Analytics.Provider = value
+	}
+	if value, ok := envValue("MOLTNET_CONSOLE_ANALYTICS_MEASUREMENT_ID"); ok {
+		config.Console.Analytics.MeasurementID = value
+	}
 	if pairings, ok, err := envPairingsValue("MOLTNET_PAIRINGS_JSON"); err != nil {
 		return Config{}, err
 	} else if ok {
 		config.Pairings = pairings
 	}
 	config.Storage = mergeEnvStorage(config.Storage)
+	if err := validateConsoleAnalytics(config.Console.Analytics.Provider, config.Console.Analytics.MeasurementID); err != nil {
+		return Config{}, err
+	}
 
 	return config, nil
 }

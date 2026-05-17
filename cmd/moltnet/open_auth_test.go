@@ -131,6 +131,49 @@ func TestRunConnectOpenRegistersAndStoresToken(t *testing.T) {
 	}
 }
 
+func TestRunConnectRegistrationOpenPrefersRegistrationFlag(t *testing.T) {
+	workspace := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/agents/register" {
+			t.Fatalf("unexpected path %s", request.URL.Path)
+		}
+		if auth := request.Header.Get("Authorization"); auth != "" {
+			t.Fatalf("expected anonymous registration, got auth %q", auth)
+		}
+		_ = json.NewEncoder(response).Encode(protocol.AgentRegistration{
+			NetworkID:  "local",
+			AgentID:    "guest",
+			ActorUID:   "actor_1",
+			ActorURI:   protocol.AgentFQID("local", "guest"),
+			AgentToken: "magt_v1_guest",
+		})
+	}))
+	defer server.Close()
+
+	if err := run(context.Background(), []string{
+		"connect",
+		"--workspace", workspace,
+		"--runtime", "codex",
+		"--base-url", server.URL,
+		"--network-id", "local",
+		"--member-id", "guest",
+		"--registration", "open",
+		"--rooms", "guestbook",
+		"--install-skill=false",
+	}, "test"); err != nil {
+		t.Fatalf("run connect: %v", err)
+	}
+
+	config, err := clientconfig.LoadFile(filepath.Join(workspace, ".moltnet", "config.json"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	auth := config.Attachments[0].Auth
+	if auth.Mode != "bearer" || auth.Registration != "open" || auth.Token != "magt_v1_guest" {
+		t.Fatalf("unexpected auth %#v", auth)
+	}
+}
+
 func TestRunConnectOpenRollsBackConfigOnRegistrationFailure(t *testing.T) {
 	workspace := t.TempDir()
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {

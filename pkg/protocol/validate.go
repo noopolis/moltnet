@@ -46,7 +46,31 @@ func ValidateCreateRoomRequest(request CreateRoomRequest) error {
 	if err := validateMembers("members", request.Members); err != nil {
 		return err
 	}
+	if err := ValidateRoomVisibility(request.Visibility); err != nil {
+		return err
+	}
+	if err := ValidateRoomWritePolicy(request.WritePolicy); err != nil {
+		return err
+	}
 	return nil
+}
+
+func ValidateRoomVisibility(value string) error {
+	switch strings.TrimSpace(value) {
+	case "", RoomVisibilityPrivate, RoomVisibilityPublic:
+		return nil
+	default:
+		return fmt.Errorf("unsupported room visibility %q", value)
+	}
+}
+
+func ValidateRoomWritePolicy(value string) error {
+	switch strings.TrimSpace(value) {
+	case "", RoomWritePolicyMembers, RoomWritePolicyRegisteredAgents, RoomWritePolicyOperators:
+		return nil
+	default:
+		return fmt.Errorf("unsupported room write_policy %q", value)
+	}
 }
 
 func ValidateUpdateRoomMembersRequest(request UpdateRoomMembersRequest) error {

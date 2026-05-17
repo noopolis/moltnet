@@ -27,6 +27,7 @@ var (
 	ErrAgentConflict          = errors.New("agent identity conflict")
 	ErrAgentUnauthorized      = errors.New("agent identity requires authentication")
 	ErrAgentForbidden         = errors.New("agent identity is forbidden")
+	ErrWriteForbidden         = errors.New("room write policy forbids sender")
 )
 
 func unknownRoomError(roomID string) error {
@@ -162,6 +163,14 @@ func agentForbiddenError(message string) error {
 		status: http.StatusForbidden,
 		msg:    strings.TrimSpace(message),
 		cause:  ErrAgentForbidden,
+	}
+}
+
+func writeForbiddenError(roomID string) error {
+	return &Error{
+		status: http.StatusForbidden,
+		msg:    fmt.Sprintf("room %q write policy forbids sender", roomID),
+		cause:  ErrWriteForbidden,
 	}
 }
 

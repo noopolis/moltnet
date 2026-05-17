@@ -37,18 +37,10 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		return protocol.MessageAccepted{}, err
 	}
 
-	if request.Target.Kind == protocol.TargetKindRoom {
-		if _, ok, err := s.getRoom(ctx, request.Target.RoomID); err != nil {
+	from := protocol.NormalizeActor(s.networkID, request.From)
+	if request.Target.Kind == protocol.TargetKindRoom || request.Target.Kind == protocol.TargetKindThread {
+		if err := s.enforceTargetWritePolicy(ctx, request.Target, from); err != nil {
 			return protocol.MessageAccepted{}, err
-		} else if !ok {
-			return protocol.MessageAccepted{}, unknownRoomError(request.Target.RoomID)
-		}
-	}
-	if request.Target.Kind == protocol.TargetKindThread {
-		if _, ok, err := s.getRoom(ctx, request.Target.RoomID); err != nil {
-			return protocol.MessageAccepted{}, err
-		} else if !ok {
-			return protocol.MessageAccepted{}, unknownRoomError(request.Target.RoomID)
 		}
 	}
 
@@ -58,7 +50,6 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	}
 
 	now := time.Now().UTC()
-	from := protocol.NormalizeActor(s.networkID, request.From)
 	target := s.normalizeTarget(request.Target, from)
 	origin := s.normalizeOrigin(request.Origin, messageID)
 	message := protocol.Message{
@@ -201,7 +192,7 @@ func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Act
 		}
 		return nil
 	}
-	if mode == authn.ModeOpen && hasClaims && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite) {
+	if hasClaims && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite) {
 		return nil
 	}
 	if hasClaims && claims.AgentToken() {
@@ -239,13 +230,15 @@ func (s *Service) remoteOriginRequiresPairCheck(
 }
 
 func (s *Service) validateHumanSender(ctx context.Context, origin protocol.MessageOrigin) error {
+	remoteOrigin := false
 	if originNetworkID := strings.TrimSpace(origin.NetworkID); originNetworkID != "" && originNetworkID != s.networkID {
+		remoteOrigin = true
 		claims, ok := authn.ClaimsFromContext(ctx)
 		if !ok || !claims.Allows(authn.ScopePair) {
 			return agentForbiddenError("remote-origin human sender requires pair scope")
 		}
 	}
-	if authn.ModeFromContext(ctx) != authn.ModeOpen {
+	if authn.ModeFromContext(ctx) == authn.ModeNone {
 		return nil
 	}
 	claims, ok := authn.ClaimsFromContext(ctx)
@@ -256,7 +249,10 @@ func (s *Service) validateHumanSender(ctx context.Context, origin protocol.Messa
 			cause:  ErrAgentUnauthorized,
 		}
 	}
-	if claims.AgentToken() || !claims.Allows(authn.ScopeWrite) {
+	if remoteOrigin && claims.Allows(authn.ScopePair) {
+		return nil
+	}
+	if claims.AgentToken() || !claims.StaticToken() || !claims.Allows(authn.ScopeWrite) {
 		return agentForbiddenError("human ingress requires a static write token")
 	}
 	return nil

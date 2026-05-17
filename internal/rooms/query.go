@@ -69,24 +69,43 @@ func (s *Service) Health(ctx context.Context) error {
 }
 
 func (s *Service) GetRoom(roomID string) (protocol.Room, error) {
-	room, ok, err := s.getRoom(context.Background(), strings.TrimSpace(roomID))
+	return s.GetRoomContext(context.Background(), roomID)
+}
+
+func (s *Service) GetRoomContext(ctx context.Context, roomID string) (protocol.Room, error) {
+	room, ok, err := s.getRoom(ctx, strings.TrimSpace(roomID))
 	if err != nil {
 		return protocol.Room{}, err
 	}
 	if !ok {
 		return protocol.Room{}, unknownRoomError(roomID)
 	}
+	readable, ok := s.readableRoom(ctx, room)
+	if !ok {
+		return protocol.Room{}, readForbiddenError(room.ID)
+	}
 
-	return room, nil
+	return readable, nil
 }
 
 func (s *Service) GetThread(threadID string) (protocol.Thread, error) {
-	thread, ok, err := s.getThread(context.Background(), strings.TrimSpace(threadID))
+	return s.GetThreadContext(context.Background(), threadID)
+}
+
+func (s *Service) GetThreadContext(ctx context.Context, threadID string) (protocol.Thread, error) {
+	thread, ok, err := s.getThread(ctx, strings.TrimSpace(threadID))
 	if err != nil {
 		return protocol.Thread{}, err
 	}
 	if !ok {
 		return protocol.Thread{}, unknownThreadError(threadID)
+	}
+	if room, ok, err := s.getRoom(ctx, thread.RoomID); err != nil {
+		return protocol.Thread{}, err
+	} else if !ok {
+		return protocol.Thread{}, unknownRoomError(thread.RoomID)
+	} else if _, readable := s.readableRoom(ctx, room); !readable {
+		return protocol.Thread{}, readForbiddenError(thread.RoomID)
 	}
 
 	return thread, nil
@@ -113,23 +132,39 @@ func (s *Service) GetDirectConversation(dmID string) (protocol.DirectConversatio
 }
 
 func (s *Service) GetAgent(agentID string) (protocol.AgentSummary, error) {
+	return s.GetAgentContext(context.Background(), agentID)
+}
+
+func (s *Service) GetAgentContext(ctx context.Context, agentID string) (protocol.AgentSummary, error) {
 	id := strings.TrimSpace(agentID)
 	if id == "" {
 		return protocol.AgentSummary{}, unknownAgentError(id)
 	}
-	if registration, ok, err := s.registeredAgent(context.Background(), id); err != nil {
+	rooms, err := s.listRooms(ctx)
+	if err != nil {
+		return protocol.AgentSummary{}, err
+	}
+	readableRooms := make([]protocol.Room, 0, len(rooms))
+	for _, room := range rooms {
+		if readable, ok := s.readableRoom(ctx, room); ok {
+			readableRooms = append(readableRooms, readable)
+		}
+	}
+	if registration, ok, err := s.registeredAgent(ctx, id); err != nil {
 		return protocol.AgentSummary{}, err
 	} else if ok {
-		rooms, err := s.listRooms(context.Background())
-		if err != nil {
-			return protocol.AgentSummary{}, err
+		agent := registeredAgentSummary(registration, readableRooms)
+		if len(agent.Rooms) == 0 && !s.canReadPrivateRoster(ctx) {
+			return protocol.AgentSummary{}, unknownAgentError(id)
 		}
-		agent := registeredAgentSummary(registration, rooms)
 		agent.Connected = s.agentConnected(agent.ID)
 		return agent, nil
 	}
 	if s.contextAgents != nil {
-		agent, ok, err := s.contextAgents.GetAgentContext(context.Background(), id)
+		if !s.canReadPrivateRoster(ctx) {
+			return protocol.AgentSummary{}, unknownAgentError(id)
+		}
+		agent, ok, err := s.contextAgents.GetAgentContext(ctx, id)
 		if err != nil {
 			return protocol.AgentSummary{}, err
 		}
@@ -139,17 +174,13 @@ func (s *Service) GetAgent(agentID string) (protocol.AgentSummary, error) {
 		}
 		return protocol.AgentSummary{}, unknownAgentError(id)
 	}
-	rooms, err := s.listRooms(context.Background())
-	if err != nil {
-		return protocol.AgentSummary{}, err
-	}
 	agent := protocol.AgentSummary{
 		ID:        id,
 		FQID:      protocol.AgentFQID(s.networkID, id),
 		NetworkID: s.networkID,
 	}
 	found := false
-	for _, room := range rooms {
+	for _, room := range readableRooms {
 		for _, memberID := range room.Members {
 			if memberID == id {
 				agent.Rooms = append(agent.Rooms, room.ID)
@@ -228,6 +259,13 @@ func (s *Service) updateRoomMembers(ctx context.Context, roomID string, add []st
 		return s.contextStore.UpdateRoomMembersContext(ctx, roomID, add, remove)
 	}
 	return s.store.UpdateRoomMembers(roomID, add, remove)
+}
+
+func (s *Service) reconcileRoom(ctx context.Context, room protocol.Room) (protocol.Room, error) {
+	if s.contextStore != nil {
+		return s.contextStore.ReconcileRoomContext(ctx, room)
+	}
+	return s.store.ReconcileRoom(room)
 }
 
 func (s *Service) appendMessage(ctx context.Context, message protocol.Message) error {

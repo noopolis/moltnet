@@ -1,4 +1,5 @@
 import { useRooms } from "../../hooks/useRooms";
+import type { Room } from "../../lib/types";
 import { useSelection } from "../../providers";
 import { ListItem } from "../ListItem";
 import { Panel } from "../Panel";
@@ -26,11 +27,8 @@ export function RoomsPanel() {
                   active={active}
                   onClick={() => select({ kind: "room", id: room.id })}
                   title={<># {room.name || room.id}</>}
-                  trailing={
-                    (room.members ?? []).length > 0
-                      ? `${room.members!.length} members`
-                      : undefined
-                  }
+                  subtitle={roomPolicyLabel(room)}
+                  trailing={roomAccessLabel(room)}
                 />
               );
             })}
@@ -39,4 +37,28 @@ export function RoomsPanel() {
       </Panel.Body>
     </Panel>
   );
+}
+
+function roomPolicyLabel(room: Room): string {
+  const visibility = room.visibility === "public" ? "public read" : "private read";
+  const writePolicy = room.write_policy ?? "members";
+  switch (writePolicy) {
+    case "registered_agents":
+      return `${visibility} / registered agents write`;
+    case "operators":
+      return `${visibility} / operators write`;
+    default:
+      return `${visibility} / members write`;
+  }
+}
+
+function roomAccessLabel(room: Room): string | undefined {
+  if (room.access?.can_write === true) {
+    return "write";
+  }
+  if (room.access?.can_read === true) {
+    return "read";
+  }
+  const members = room.members?.length ?? 0;
+  return members > 0 ? `${members} members` : undefined;
 }

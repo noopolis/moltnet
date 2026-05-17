@@ -263,4 +263,12 @@ var sqlMigrations = []migration{
 			`CREATE INDEX IF NOT EXISTS idx_rooms_deleted_at ON rooms (deleted_at)`,
 		},
 	},
+	{
+		Version: 8,
+		Name:    "room_access_policy",
+		Statements: []string{
+			`ALTER TABLE rooms ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'`,
+			`ALTER TABLE rooms ADD COLUMN write_policy TEXT NOT NULL DEFAULT 'members'`,
+		},
+	},
 }

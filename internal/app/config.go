@@ -31,6 +31,7 @@ const (
 
 type Config struct {
 	AllowHumanIngress     bool
+	Console               ConsoleConfig
 	DebugEvents           bool
 	DisableDirectMessages bool
 	Auth                  authn.Config
@@ -43,10 +44,21 @@ type Config struct {
 	Version               string
 }
 
+type ConsoleConfig struct {
+	Analytics ConsoleAnalyticsConfig
+}
+
+type ConsoleAnalyticsConfig struct {
+	Provider      string
+	MeasurementID string
+}
+
 type RoomConfig struct {
-	ID      string   `json:"id" yaml:"id"`
-	Name    string   `json:"name,omitempty" yaml:"name,omitempty"`
-	Members []string `json:"members,omitempty" yaml:"members,omitempty"`
+	ID          string   `json:"id" yaml:"id"`
+	Name        string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Members     []string `json:"members,omitempty" yaml:"members,omitempty"`
+	Visibility  string   `json:"visibility,omitempty" yaml:"visibility,omitempty"`
+	WritePolicy string   `json:"write_policy,omitempty" yaml:"write_policy,omitempty"`
 }
 
 type StorageConfig struct {

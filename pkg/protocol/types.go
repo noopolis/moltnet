@@ -12,6 +12,17 @@ const (
 	TargetKindDM     = "dm"
 )
 
+const (
+	RoomVisibilityPrivate = "private"
+	RoomVisibilityPublic  = "public"
+)
+
+const (
+	RoomWritePolicyMembers          = "members"
+	RoomWritePolicyRegisteredAgents = "registered_agents"
+	RoomWritePolicyOperators        = "operators"
+)
+
 type Network struct {
 	ID           string              `json:"id"`
 	Name         string              `json:"name"`
@@ -29,6 +40,8 @@ type NetworkConsole struct {
 type NetworkCapabilities struct {
 	EventStream        string `json:"event_stream,omitempty"`
 	AttachmentProtocol string `json:"attachment_protocol,omitempty"`
+	PublicRead         bool   `json:"public_read"`
+	AgentRegistration  string `json:"agent_registration,omitempty"`
 	DebugEvents        bool   `json:"debug_events,omitempty"`
 	HumanIngress       bool   `json:"human_ingress"`
 	DirectMessages     bool   `json:"direct_messages"`
@@ -93,12 +106,21 @@ type Event struct {
 }
 
 type Room struct {
-	ID        string    `json:"id"`
-	NetworkID string    `json:"network_id,omitempty"`
-	FQID      string    `json:"fqid,omitempty"`
-	Name      string    `json:"name"`
-	Members   []string  `json:"members,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string      `json:"id"`
+	NetworkID   string      `json:"network_id,omitempty"`
+	FQID        string      `json:"fqid,omitempty"`
+	Name        string      `json:"name"`
+	Members     []string    `json:"members,omitempty"`
+	Visibility  string      `json:"visibility,omitempty"`
+	WritePolicy string      `json:"write_policy,omitempty"`
+	Access      *RoomAccess `json:"access,omitempty"`
+	CreatedAt   time.Time   `json:"created_at"`
+}
+
+type RoomAccess struct {
+	CanRead  bool   `json:"can_read"`
+	CanWrite bool   `json:"can_write"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 type DirectConversation struct {
@@ -148,9 +170,11 @@ type Pairing struct {
 }
 
 type CreateRoomRequest struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name,omitempty"`
-	Members []string `json:"members,omitempty"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name,omitempty"`
+	Members     []string `json:"members,omitempty"`
+	Visibility  string   `json:"visibility,omitempty"`
+	WritePolicy string   `json:"write_policy,omitempty"`
 }
 
 type UpdateRoomMembersRequest struct {

@@ -23,7 +23,10 @@ func TestFileStoreOpenAgentTokenAuthenticatesAfterReload(t *testing.T) {
 		t.Fatalf("NewFileStore() error = %v", err)
 	}
 	service := newFileStoreOpenAuthService(fileStore)
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "agora"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "agora",
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	}); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
 

@@ -9,7 +9,12 @@ import (
 	web "github.com/noopolis/moltnet/web"
 )
 
-func attachUIRoutes(mux *http.ServeMux, policy *authn.Policy, verifier agentTokenVerifier) {
+func attachUIRoutes(
+	mux *http.ServeMux,
+	policy *authn.Policy,
+	verifier agentTokenVerifier,
+	config ConsoleConfig,
+) {
 	staticFiles, err := fs.Sub(web.Files, "dist")
 	if err != nil {
 		assetUnavailable := func(response http.ResponseWriter, request *http.Request) {
@@ -22,7 +27,7 @@ func attachUIRoutes(mux *http.ServeMux, policy *authn.Policy, verifier agentToke
 	}
 
 	fileServer := http.FileServerFS(staticFiles)
-	spa := spaFallback(staticFiles, fileServer)
+	spa := spaFallback(staticFiles, fileServer, config)
 
 	mux.HandleFunc("GET /", func(response http.ResponseWriter, request *http.Request) {
 		if maybeSetConsoleAuthCookie(policy, response, request) {
@@ -47,19 +52,38 @@ func attachUIRoutes(mux *http.ServeMux, policy *authn.Policy, verifier agentToke
 // spaFallback serves built assets when they exist; otherwise it rewrites the
 // request to "/" so the SPA's index.html is returned. This lets client-side
 // routes (e.g. /console/room/lobby) survive a hard refresh.
-func spaFallback(files fs.FS, fileServer http.Handler) http.Handler {
+func spaFallback(files fs.FS, fileServer http.Handler, config ConsoleConfig) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		path := strings.TrimPrefix(request.URL.Path, "/")
 		if path == "" {
-			fileServer.ServeHTTP(response, request)
+			serveConsoleIndex(response, files, config)
+			return
+		}
+		if path == "index.html" {
+			serveConsoleIndex(response, files, config)
 			return
 		}
 		if _, err := fs.Stat(files, path); err == nil {
 			fileServer.ServeHTTP(response, request)
 			return
 		}
-		clone := request.Clone(request.Context())
-		clone.URL.Path = "/"
-		fileServer.ServeHTTP(response, clone)
+		serveConsoleIndex(response, files, config)
 	})
+}
+
+func serveConsoleIndex(
+	response http.ResponseWriter,
+	files fs.FS,
+	config ConsoleConfig,
+) {
+	contents, err := fs.ReadFile(files, "index.html")
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, err)
+		return
+	}
+
+	body := injectConsoleAnalytics(string(contents), config.Analytics)
+	response.Header().Set("Content-Type", "text/html; charset=utf-8")
+	response.WriteHeader(http.StatusOK)
+	_, _ = response.Write([]byte(body))
 }

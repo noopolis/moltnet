@@ -49,6 +49,11 @@ func (m MoltnetTokenConfig) HasTokenSource() bool {
 }
 
 func (m MoltnetConfig) ValidateAuth() error {
+	switch strings.TrimSpace(m.Registration) {
+	case "", "disabled", "token", "open":
+	default:
+		return fmt.Errorf("bridge config moltnet.registration %q is unsupported", m.Registration)
+	}
 	switch m.EffectiveAuthMode() {
 	case AuthModeNone:
 		if m.StaticToken {

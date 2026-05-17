@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -27,6 +28,44 @@ func TestAuthorizedAnyWithoutPolicyReturnsNext(t *testing.T) {
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("unexpected status %d", response.Code)
 	}
+}
+
+func TestBearerAuthAcceptsRegisteredAgentToken(t *testing.T) {
+	t.Parallel()
+
+	policy, err := authn.NewPolicy(authn.Config{
+		Mode:       authn.ModeBearer,
+		ListenAddr: ":8787",
+		Tokens: []authn.TokenConfig{
+			{ID: "observer", Value: "observe-secret", Scopes: []authn.Scope{authn.ScopeObserve}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPolicy() error = %v", err)
+	}
+	token := "magt_v1_test"
+	verifier := agentTokenVerifierFunc(func(context.Context, string) (authn.Claims, bool, error) {
+		return authn.NewAgentTokenClaims("guest", authn.AgentTokenCredentialKey(token)), true, nil
+	})
+	request := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+
+	claims, err := authenticateAnyWithVerifier(policy, verifier, request, []authn.Scope{authn.ScopeWrite})
+	if err != nil {
+		t.Fatalf("authenticateAnyWithVerifier() error = %v", err)
+	}
+	if !claims.AgentToken() || !claims.AllowsAgent("guest") {
+		t.Fatalf("unexpected claims %#v", claims)
+	}
+}
+
+type agentTokenVerifierFunc func(context.Context, string) (authn.Claims, bool, error)
+
+func (f agentTokenVerifierFunc) AuthenticateAgentTokenContext(
+	ctx context.Context,
+	token string,
+) (authn.Claims, bool, error) {
+	return f(ctx, token)
 }
 
 func TestAuthenticateAnySelectsMatchingScope(t *testing.T) {

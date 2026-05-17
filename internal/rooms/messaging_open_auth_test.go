@@ -13,7 +13,10 @@ func TestOpenModeWriteTokenRejectsUnpairedRemoteOriginActor(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:      "research",
+		Members: []string{"remote:remote-agent"},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	request := protocol.SendMessageRequest{
@@ -49,7 +52,10 @@ func TestPairRemoteOriginRequiresExplicitConsistentActorNetwork(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:      "research",
+		Members: []string{"remote:luna"},
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -88,7 +94,10 @@ func TestPairRemoteOriginRequiresExplicitConsistentHumanNetwork(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:      "research",
+		Members: []string{"remote:operator"},
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -126,7 +135,10 @@ func TestRemoteOriginHumanRequiresPairScope(t *testing.T) {
 	t.Parallel()
 
 	service := newTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:      "research",
+		Members: []string{"remote:operator"},
+	}); err != nil {
 		t.Fatal(err)
 	}
 

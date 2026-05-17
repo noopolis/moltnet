@@ -149,7 +149,8 @@ func registrationCredential(ctx context.Context) (string, string, error) {
 	if credentialKey, ok := credentialKeyFromContext(ctx); ok {
 		return credentialKey, "", nil
 	}
-	if authn.ModeFromContext(ctx) == authn.ModeOpen {
+	if authn.AgentRegistrationFromContext(ctx) == authn.AgentRegistrationOpen ||
+		authn.ModeFromContext(ctx) == authn.ModeOpen {
 		token, err := authn.GenerateAgentToken()
 		if err != nil {
 			return "", "", err

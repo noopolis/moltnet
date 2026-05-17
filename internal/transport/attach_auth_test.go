@@ -171,7 +171,11 @@ func TestOpenAgentTokenAttachmentFiltersUnrelatedPrivateAndAdminEvents(t *testin
 	service := &agentTokenAttachmentService{
 		fakeService: &fakeService{
 			network: protocol.Network{ID: "local"},
-			stream:  stream,
+			rooms: []protocol.Room{{
+				ID:         "agora",
+				Visibility: protocol.RoomVisibilityPublic,
+			}},
+			stream: stream,
 		},
 		token:  token,
 		claims: authn.NewAgentTokenClaims("luna", authn.AgentTokenCredentialKey(token)),

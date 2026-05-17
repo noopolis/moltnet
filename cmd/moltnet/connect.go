@@ -22,6 +22,7 @@ func runConnect(args []string) error {
 		installSkill = flags.Bool("install-skill", true, "install the Moltnet skill into the runtime workspace")
 		memberID     = flags.String("member-id", "", "Moltnet member id")
 		networkID    = flags.String("network-id", "", "Moltnet network id")
+		registration = flags.String("registration", "", "agent registration mode: disabled, token, or open")
 		roomList     = flags.String("rooms", "", "comma-separated room ids")
 		runtime      = flags.String("runtime", "openclaw", "runtime name")
 		token        = flags.String("token", "", "plain bearer token")
@@ -52,14 +53,24 @@ func runConnect(args []string) error {
 	}
 
 	authModeSet := flagWasSet(flags, "auth-mode")
+	registrationSet := flagWasSet(flags, "registration")
+	registrationMode := strings.TrimSpace(*registration)
+	if !registrationSet && strings.TrimSpace(*authMode) == bridgeconfig.AuthModeOpen {
+		registrationMode = "open"
+	}
+	authModeValue := strings.TrimSpace(*authMode)
+	if registrationMode == "open" && !authModeSet {
+		authModeValue = bridgeconfig.AuthModeBearer
+	}
 	sourceExplicit := flagWasSet(flags, "token") || flagWasSet(flags, "token-env") || flagWasSet(flags, "token-path")
 	attachment := clientconfig.AttachmentConfig{
 		AgentName: *agentName,
 		Auth: clientconfig.AuthConfig{
-			Mode:      strings.TrimSpace(*authMode),
-			Token:     strings.TrimSpace(*token),
-			TokenEnv:  strings.TrimSpace(*tokenEnv),
-			TokenPath: strings.TrimSpace(*tokenPath),
+			Mode:         authModeValue,
+			Registration: registrationMode,
+			Token:        strings.TrimSpace(*token),
+			TokenEnv:     strings.TrimSpace(*tokenEnv),
+			TokenPath:    strings.TrimSpace(*tokenPath),
 		},
 		BaseURL:   strings.TrimSpace(*baseURL),
 		MemberID:  strings.TrimSpace(*memberID),
@@ -82,14 +93,15 @@ func runConnect(args []string) error {
 		config.Agent.Runtime = *runtime
 	}
 
-	if strings.TrimSpace(attachment.Auth.Mode) == bridgeconfig.AuthModeOpen {
-		if _, err := attachment.ResolveToken(); err != nil {
+	if strings.TrimSpace(attachment.Auth.Registration) == "open" {
+		registrationAttachment := attachment
+		if !registrationAttachment.Auth.HasTokenSource() {
+			registrationAttachment.Auth.Mode = bridgeconfig.AuthModeOpen
+		}
+		if _, err := registrationAttachment.ResolveToken(); err != nil {
 			return err
 		}
-		if err := writeClientConfig(path, config); err != nil {
-			return err
-		}
-		registration, err := registerAttachmentAgent(attachment)
+		registration, err := registerAttachmentAgent(registrationAttachment)
 		if err != nil {
 			_ = rollback.restore(path)
 			return err
@@ -97,9 +109,9 @@ func runConnect(args []string) error {
 		if strings.TrimSpace(registration.AgentToken) != "" {
 			attachment.Auth = applyAgentTokenToAuth(attachment.Auth, registration.AgentToken)
 			upsertAttachment(&config, attachment)
-			if err := writeClientConfig(path, config); err != nil {
-				return err
-			}
+		}
+		if err := writeClientConfig(path, config); err != nil {
+			return err
 		}
 		if err := writeIdentityFile(*workspace, registration); err != nil {
 			return err
@@ -109,7 +121,7 @@ func runConnect(args []string) error {
 	}
 
 	if *installSkill {
-		skillPath, err := installMoltnetSkill(*runtime, *workspace, moltnetSkillContent())
+		skillPath, err := installMoltnetSkill(*runtime, *workspace, moltnetSkillContentForAttachment(attachment))
 		if err != nil {
 			return err
 		}

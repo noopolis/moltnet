@@ -38,6 +38,30 @@ func TestNewPolicyAndAuthenticateRequest(t *testing.T) {
 	}
 }
 
+func TestNewPolicyPublicReadAndRegistrationDefaults(t *testing.T) {
+	t.Parallel()
+
+	policy, err := NewPolicy(Config{Mode: ModeNone})
+	if err != nil {
+		t.Fatalf("NewPolicy() default error = %v", err)
+	}
+	if policy.PublicRead() || policy.AgentRegistration() != AgentRegistrationDisabled {
+		t.Fatalf("unexpected defaults public_read=%v registration=%q", policy.PublicRead(), policy.AgentRegistration())
+	}
+
+	openPolicy, err := NewPolicy(Config{Mode: ModeOpen})
+	if err != nil {
+		t.Fatalf("NewPolicy() open error = %v", err)
+	}
+	if !openPolicy.PublicRead() || openPolicy.AgentRegistration() != AgentRegistrationOpen {
+		t.Fatalf("unexpected open expansion public_read=%v registration=%q", openPolicy.PublicRead(), openPolicy.AgentRegistration())
+	}
+
+	if _, err := NewPolicy(Config{Mode: ModeNone, AgentRegistration: "wat"}); err == nil {
+		t.Fatal("expected invalid agent registration policy error")
+	}
+}
+
 func TestAuthenticateRequestErrors(t *testing.T) {
 	t.Parallel()
 

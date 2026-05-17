@@ -39,13 +39,14 @@ type AgentConfig struct {
 }
 
 type MoltnetConfig struct {
-	AuthMode    string `json:"auth_mode,omitempty" yaml:"auth_mode,omitempty"`
-	BaseURL     string `json:"base_url" yaml:"base_url"`
-	NetworkID   string `json:"network_id" yaml:"network_id"`
-	StaticToken bool   `json:"static_token,omitempty" yaml:"static_token,omitempty"`
-	Token       string `json:"token,omitempty" yaml:"token,omitempty"`
-	TokenEnv    string `json:"token_env,omitempty" yaml:"token_env,omitempty"`
-	TokenPath   string `json:"token_path,omitempty" yaml:"token_path,omitempty"`
+	AuthMode     string `json:"auth_mode,omitempty" yaml:"auth_mode,omitempty"`
+	BaseURL      string `json:"base_url" yaml:"base_url"`
+	NetworkID    string `json:"network_id" yaml:"network_id"`
+	Registration string `json:"registration,omitempty" yaml:"registration,omitempty"`
+	StaticToken  bool   `json:"static_token,omitempty" yaml:"static_token,omitempty"`
+	Token        string `json:"token,omitempty" yaml:"token,omitempty"`
+	TokenEnv     string `json:"token_env,omitempty" yaml:"token_env,omitempty"`
+	TokenPath    string `json:"token_path,omitempty" yaml:"token_path,omitempty"`
 }
 
 type MoltnetTokenConfig struct {
@@ -74,9 +75,19 @@ type RuntimeConfig struct {
 }
 
 type RoomBinding struct {
-	ID    string      `json:"id" yaml:"id"`
-	Read  ReadConfig  `json:"read,omitempty" yaml:"read,omitempty"`
-	Reply ReplyConfig `json:"reply,omitempty" yaml:"reply,omitempty"`
+	ID          string      `json:"id" yaml:"id"`
+	Read        ReadConfig  `json:"read,omitempty" yaml:"read,omitempty"`
+	Reply       ReplyConfig `json:"reply,omitempty" yaml:"reply,omitempty"`
+	Visibility  string      `json:"visibility,omitempty" yaml:"visibility,omitempty"`
+	WritePolicy string      `json:"write_policy,omitempty" yaml:"write_policy,omitempty"`
+	CanWrite    *bool       `json:"can_write,omitempty" yaml:"can_write,omitempty"`
+	Access      *RoomAccess `json:"access,omitempty" yaml:"access,omitempty"`
+}
+
+type RoomAccess struct {
+	CanRead  bool   `json:"can_read" yaml:"can_read"`
+	CanWrite bool   `json:"can_write" yaml:"can_write"`
+	Reason   string `json:"reason,omitempty" yaml:"reason,omitempty"`
 }
 
 type DMConfig struct {

@@ -30,7 +30,9 @@ func (s *Service) ListRoomsContext(ctx context.Context, page protocol.PageReques
 
 	items := make([]roomItem, 0, len(rooms))
 	for _, room := range rooms {
-		items = append(items, roomItem{Room: room})
+		if readable, ok := s.readableRoom(ctx, room); ok {
+			items = append(items, roomItem{Room: readable})
+		}
 	}
 	selected, info, err := paginate(items, page)
 	if err != nil {

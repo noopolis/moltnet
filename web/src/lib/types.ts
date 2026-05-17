@@ -43,6 +43,15 @@ export interface Room {
   name: string;
   fqid?: string;
   members?: string[];
+  visibility?: "public" | "private" | string;
+  write_policy?: "members" | "registered_agents" | "operators" | string;
+  access?: RoomAccess;
+}
+
+export interface RoomAccess {
+  can_read?: boolean;
+  can_write?: boolean;
+  reason?: string;
 }
 
 export interface DirectChannel {

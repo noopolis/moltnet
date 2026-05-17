@@ -67,7 +67,10 @@ func TestOpenModeSendOwnership(t *testing.T) {
 	t.Parallel()
 
 	service := newAgentRegistryTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "agora"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "agora",
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	luna := registerOpenAgentForTest(t, service, "luna")
@@ -95,11 +98,93 @@ func TestOpenModeSendOwnership(t *testing.T) {
 	}
 }
 
+func TestGeneratedAgentTokenCannotSendHumanInBearerOpenRegistration(t *testing.T) {
+	t.Parallel()
+
+	service := newAgentRegistryTestService()
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "agora",
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	luna := registerOpenAgentForTest(t, service, "luna")
+	ctx := authn.WithMode(authn.WithClaims(context.Background(), luna), authn.ModeBearer)
+
+	_, err := service.SendMessageContext(ctx, protocol.SendMessageRequest{
+		Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "agora"},
+		From:   protocol.Actor{Type: "human", ID: "luna"},
+		Parts:  []protocol.Part{{Kind: protocol.PartKindText, Text: "not an agent send"}},
+	})
+	if !errors.Is(err, ErrAgentForbidden) {
+		t.Fatalf("expected generated agent token human send rejection, got %v", err)
+	}
+}
+
+func TestGeneratedAgentTokenDoesNotReadPrivateMemberRoom(t *testing.T) {
+	t.Parallel()
+
+	service := newAgentRegistryTestService()
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:         "private-room",
+		Members:    []string{"luna"},
+		Visibility: protocol.RoomVisibilityPrivate,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	luna := registerOpenAgentForTest(t, service, "luna")
+	ctx := authn.WithMode(authn.WithClaims(context.Background(), luna), authn.ModeBearer)
+
+	page, err := service.ListRoomsContext(ctx, protocol.PageRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListRoomsContext() error = %v", err)
+	}
+	if len(page.Rooms) != 0 {
+		t.Fatalf("generated agent token should not observe private rooms, got %#v", page.Rooms)
+	}
+}
+
+func TestPairTokenDoesNotReadPrivateRoomsOrRoster(t *testing.T) {
+	t.Parallel()
+
+	service := newAgentRegistryTestService()
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:         "private-room",
+		Members:    []string{"luna"},
+		Visibility: protocol.RoomVisibilityPrivate,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	registerOpenAgentForTest(t, service, "luna")
+	ctx := authn.WithMode(
+		authn.WithClaims(context.Background(), staticClaims("pair", authn.ScopePair)),
+		authn.ModeBearer,
+	)
+
+	rooms, err := service.ListRoomsContext(ctx, protocol.PageRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListRoomsContext() error = %v", err)
+	}
+	if len(rooms.Rooms) != 0 {
+		t.Fatalf("pair token should not observe private rooms, got %#v", rooms.Rooms)
+	}
+	agents, err := service.ListAgentsContext(ctx, protocol.PageRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAgentsContext() error = %v", err)
+	}
+	if len(agents.Agents) != 0 {
+		t.Fatalf("pair token should not observe private roster, got %#v", agents.Agents)
+	}
+}
+
 func TestOpenModeStaticOwnershipAndAdminOverride(t *testing.T) {
 	t.Parallel()
 
 	service := newAgentRegistryTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "agora"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "agora",
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	registerOpenAgentForTest(t, service, "luna")
@@ -122,7 +207,10 @@ func TestNoneModeAnonymousRegistrationCanSend(t *testing.T) {
 	t.Parallel()
 
 	service := newAgentRegistryTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "agora"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "agora",
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.RegisterAgentContext(context.Background(), protocol.RegisterAgentRequest{

@@ -25,8 +25,18 @@ func (s *SQLStore) CreateRoomContext(ctx context.Context, room protocol.Room) er
 	}
 	defer rollback(tx)
 
-	query := bindQuery(s.dialect, `INSERT INTO rooms (id, network_id, fqid, name, created_at) VALUES (?, ?, ?, ?, ?)`)
-	if _, err := tx.ExecContext(ctx, query, room.ID, room.NetworkID, room.FQID, room.Name, formatTime(room.CreatedAt)); err != nil {
+	query := bindQuery(s.dialect, `INSERT INTO rooms (id, network_id, fqid, name, visibility, write_policy, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+	if _, err := tx.ExecContext(
+		ctx,
+		query,
+		room.ID,
+		room.NetworkID,
+		room.FQID,
+		room.Name,
+		protocol.NormalizeRoomVisibility(room.Visibility),
+		protocol.NormalizeRoomWritePolicy(room.WritePolicy),
+		formatTime(room.CreatedAt),
+	); err != nil {
 		if isDuplicateRoomError(err) {
 			return fmt.Errorf("%w: %q", ErrRoomExists, room.ID)
 		}
@@ -48,7 +58,7 @@ func (s *SQLStore) GetRoom(id string) (protocol.Room, bool, error) {
 
 func (s *SQLStore) GetRoomContext(ctx context.Context, id string) (protocol.Room, bool, error) {
 	query := bindQuery(s.dialect, `
-		SELECT r.id, r.network_id, r.fqid, r.name, r.created_at, rm.member_id
+		SELECT r.id, r.network_id, r.fqid, r.name, r.visibility, r.write_policy, r.created_at, rm.member_id
 		FROM rooms r
 		LEFT JOIN room_members rm ON rm.room_id = r.id
 		WHERE r.id = ? AND r.deleted_at IS NULL
@@ -67,20 +77,23 @@ func (s *SQLStore) GetRoomContext(ctx context.Context, id string) (protocol.Room
 	for rows.Next() {
 		var (
 			roomID, networkID, fqid, name string
+			visibility, writePolicy       string
 			createdAt                     any
 			memberID                      sql.NullString
 		)
-		if err := rows.Scan(&roomID, &networkID, &fqid, &name, &createdAt, &memberID); err != nil {
+		if err := rows.Scan(&roomID, &networkID, &fqid, &name, &visibility, &writePolicy, &createdAt, &memberID); err != nil {
 			return protocol.Room{}, false, fmt.Errorf("scan room %q: %w", id, err)
 		}
 		if !found {
 			found = true
 			room = protocol.Room{
-				ID:        roomID,
-				NetworkID: networkID,
-				FQID:      fqid,
-				Name:      name,
-				CreatedAt: parseTime(createdAt),
+				ID:          roomID,
+				NetworkID:   networkID,
+				FQID:        fqid,
+				Name:        name,
+				Visibility:  protocol.NormalizeRoomVisibility(visibility),
+				WritePolicy: protocol.NormalizeRoomWritePolicy(writePolicy),
+				CreatedAt:   parseTime(createdAt),
 			}
 		}
 		if memberID.Valid {
@@ -130,7 +143,7 @@ func (s *SQLStore) ListRooms() ([]protocol.Room, error) {
 
 func (s *SQLStore) ListRoomsContext(ctx context.Context) ([]protocol.Room, error) {
 	query := bindQuery(s.dialect, `
-		SELECT r.id, r.network_id, r.fqid, r.name, r.created_at, rm.member_id
+		SELECT r.id, r.network_id, r.fqid, r.name, r.visibility, r.write_policy, r.created_at, rm.member_id
 		FROM rooms r
 		LEFT JOIN room_members rm ON rm.room_id = r.id
 		WHERE r.deleted_at IS NULL
@@ -147,20 +160,23 @@ func (s *SQLStore) ListRoomsContext(ctx context.Context) ([]protocol.Room, error
 	for rows.Next() {
 		var (
 			roomID, networkID, fqid, name string
+			visibility, writePolicy       string
 			createdAt                     any
 			memberID                      sql.NullString
 		)
-		if err := rows.Scan(&roomID, &networkID, &fqid, &name, &createdAt, &memberID); err != nil {
+		if err := rows.Scan(&roomID, &networkID, &fqid, &name, &visibility, &writePolicy, &createdAt, &memberID); err != nil {
 			return nil, fmt.Errorf("scan room: %w", err)
 		}
 		room, ok := roomsByID[roomID]
 		if !ok {
 			room = &protocol.Room{
-				ID:        roomID,
-				NetworkID: networkID,
-				FQID:      fqid,
-				Name:      name,
-				CreatedAt: parseTime(createdAt),
+				ID:          roomID,
+				NetworkID:   networkID,
+				FQID:        fqid,
+				Name:        name,
+				Visibility:  protocol.NormalizeRoomVisibility(visibility),
+				WritePolicy: protocol.NormalizeRoomWritePolicy(writePolicy),
+				CreatedAt:   parseTime(createdAt),
 			}
 			roomsByID[roomID] = room
 			rooms = append(rooms, *room)
@@ -181,6 +197,58 @@ func (s *SQLStore) ListRoomsContext(ctx context.Context) ([]protocol.Room, error
 
 func (s *SQLStore) UpdateRoomMembers(roomID string, add []string, remove []string) (protocol.Room, error) {
 	return s.UpdateRoomMembersContext(context.Background(), roomID, add, remove)
+}
+
+func (s *SQLStore) ReconcileRoom(room protocol.Room) (protocol.Room, error) {
+	return s.ReconcileRoomContext(context.Background(), room)
+}
+
+func (s *SQLStore) ReconcileRoomContext(ctx context.Context, room protocol.Room) (protocol.Room, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return protocol.Room{}, fmt.Errorf("begin reconcile room: %w", err)
+	}
+	defer rollback(tx)
+
+	checkQuery := bindQuery(s.dialect, `SELECT COUNT(1) FROM rooms WHERE id = ? AND deleted_at IS NULL`)
+	var count int
+	if err := tx.QueryRowContext(ctx, checkQuery, room.ID).Scan(&count); err != nil {
+		return protocol.Room{}, fmt.Errorf("check room %q: %w", room.ID, err)
+	}
+	if count == 0 {
+		return protocol.Room{}, fmt.Errorf("%w: %q", ErrRoomNotFound, room.ID)
+	}
+
+	updateQuery := bindQuery(s.dialect, `UPDATE rooms SET name = ?, visibility = ?, write_policy = ? WHERE id = ?`)
+	if _, err := tx.ExecContext(
+		ctx,
+		updateQuery,
+		room.Name,
+		protocol.NormalizeRoomVisibility(room.Visibility),
+		protocol.NormalizeRoomWritePolicy(room.WritePolicy),
+		room.ID,
+	); err != nil {
+		return protocol.Room{}, fmt.Errorf("update room: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, bindQuery(s.dialect, `DELETE FROM room_members WHERE room_id = ?`), room.ID); err != nil {
+		return protocol.Room{}, fmt.Errorf("delete room members: %w", err)
+	}
+	insertQuery := bindQuery(s.dialect, `INSERT INTO room_members (room_id, member_id) VALUES (?, ?)`)
+	for _, memberID := range protocol.SortedUniqueTrimmedStrings(room.Members) {
+		if _, err := tx.ExecContext(ctx, insertQuery, room.ID, memberID); err != nil {
+			return protocol.Room{}, fmt.Errorf("insert room member: %w", err)
+		}
+	}
+
+	reconciled, err := s.getRoomUsingQuerier(ctx, tx, room.ID)
+	if err != nil {
+		return protocol.Room{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return protocol.Room{}, fmt.Errorf("commit reconcile room: %w", err)
+	}
+	return reconciled, nil
 }
 
 func (s *SQLStore) UpdateRoomMembersContext(

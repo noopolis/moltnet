@@ -323,20 +323,55 @@ func TestPublicOpenEventsIncludeCleanupTopology(t *testing.T) {
 	events := []protocol.Event{
 		{
 			Type: protocol.EventTypeRoomRemoved,
-			Room: &protocol.Room{ID: "stale-room"},
-		},
-		{
-			Type: protocol.EventTypeAgentRemoved,
-			Agent: &protocol.AgentEvent{
-				AgentID: "stale-agent",
-			},
+			Room: &protocol.Room{ID: "stale-room", Visibility: protocol.RoomVisibilityPublic},
 		},
 	}
+	filter := publicOpenEvent(&fakeService{
+		rooms: []protocol.Room{{ID: "stale-room", Visibility: "public"}},
+	})
 
 	for _, event := range events {
-		if !publicOpenEvent(event) {
+		if !filter(context.Background(), event) {
 			t.Fatalf("expected cleanup event to be public %#v", event)
 		}
+	}
+}
+
+func TestAdminTokenGetsFullPublicOpenEventStream(t *testing.T) {
+	t.Parallel()
+
+	policy, err := authn.NewPolicy(authn.Config{
+		Mode:       authn.ModeBearer,
+		PublicRead: true,
+		Tokens: []authn.TokenConfig{
+			{ID: "admin", Value: "admin-secret", Scopes: []authn.Scope{authn.ScopeAdmin}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPolicy() error = %v", err)
+	}
+	stream := make(chan protocol.Event, 1)
+	stream <- protocol.Event{
+		ID:        "evt_agent_connected",
+		Type:      protocol.EventTypeAgentConnected,
+		NetworkID: "local",
+		Agent:     &protocol.AgentEvent{AgentID: "operator"},
+	}
+	close(stream)
+
+	handler := authorizedEventStream(
+		policy,
+		nil,
+		&fakeService{stream: stream},
+		newStreamLimiter(1),
+	)
+	response := newSignalRecorder("")
+	request := httptest.NewRequest(http.MethodGet, "/v1/events/stream", nil)
+	request.Header.Set("Authorization", "Bearer admin-secret")
+	handler.ServeHTTP(response, request)
+
+	if body := response.body.String(); !strings.Contains(body, "event: agent.connected") {
+		t.Fatalf("admin stream should receive private/admin events, got %q", body)
 	}
 }
 

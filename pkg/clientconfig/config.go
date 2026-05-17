@@ -48,10 +48,11 @@ type AttachmentConfig struct {
 }
 
 type AuthConfig struct {
-	Mode      string `json:"mode"`
-	Token     string `json:"token,omitempty"`
-	TokenEnv  string `json:"token_env,omitempty"`
-	TokenPath string `json:"token_path,omitempty"`
+	Mode         string `json:"mode"`
+	Registration string `json:"registration,omitempty"`
+	Token        string `json:"token,omitempty"`
+	TokenEnv     string `json:"token_env,omitempty"`
+	TokenPath    string `json:"token_path,omitempty"`
 }
 
 func LoadFile(path string) (Config, error) {
@@ -163,6 +164,11 @@ func (a AttachmentConfig) Validate() error {
 	case "open":
 	default:
 		return fmt.Errorf("unsupported auth.mode %q", a.Auth.Mode)
+	}
+	switch strings.TrimSpace(a.Auth.Registration) {
+	case "", "disabled", "token", "open":
+	default:
+		return fmt.Errorf("unsupported auth.registration %q", a.Auth.Registration)
 	}
 
 	return nil

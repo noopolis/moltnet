@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -84,11 +85,15 @@ type fakeService struct {
 	healthErr          error
 	stream             chan protocol.Event
 	replayStream       chan protocol.Event
+	agentTokenClaims   map[string]authn.Claims
 }
 
 func (f *fakeService) Health(ctx context.Context) error { return f.healthErr }
 func (f *fakeService) Network() protocol.Network        { return f.network }
 func (f *fakeService) GetAgent(agentID string) (protocol.AgentSummary, error) {
+	return f.GetAgentContext(context.Background(), agentID)
+}
+func (f *fakeService) GetAgentContext(ctx context.Context, agentID string) (protocol.AgentSummary, error) {
 	for _, agent := range f.agents {
 		if agent.ID == agentID {
 			return agent, nil
@@ -105,6 +110,9 @@ func (f *fakeService) GetDirectConversation(dmID string) (protocol.DirectConvers
 	return protocol.DirectConversation{}, fakeStatusError{status: http.StatusNotFound, msg: "unknown dm"}
 }
 func (f *fakeService) GetRoom(roomID string) (protocol.Room, error) {
+	return f.GetRoomContext(context.Background(), roomID)
+}
+func (f *fakeService) GetRoomContext(ctx context.Context, roomID string) (protocol.Room, error) {
 	for _, room := range f.rooms {
 		if room.ID == roomID {
 			return room, nil
@@ -113,6 +121,9 @@ func (f *fakeService) GetRoom(roomID string) (protocol.Room, error) {
 	return protocol.Room{}, fakeStatusError{status: http.StatusNotFound, msg: "unknown room"}
 }
 func (f *fakeService) GetThread(threadID string) (protocol.Thread, error) {
+	return f.GetThreadContext(context.Background(), threadID)
+}
+func (f *fakeService) GetThreadContext(ctx context.Context, threadID string) (protocol.Thread, error) {
 	for _, thread := range f.threads {
 		if thread.ID == threadID {
 			return thread, nil

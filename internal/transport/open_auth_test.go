@@ -32,7 +32,7 @@ func TestOpenPublicRouteAuthSemantics(t *testing.T) {
 func TestOpenPublicEventStreamFiltersPrivateEvents(t *testing.T) {
 	t.Parallel()
 
-	stream := make(chan protocol.Event, 5)
+	stream := make(chan protocol.Event, 7)
 	stream <- protocol.Event{
 		ID:   "evt_room",
 		Type: protocol.EventTypeMessageCreated,
@@ -66,6 +66,16 @@ func TestOpenPublicEventStreamFiltersPrivateEvents(t *testing.T) {
 		Type: protocol.EventTypeRoomCreated,
 		Room: &protocol.Room{ID: "agora"},
 	}
+	stream <- protocol.Event{
+		ID:   "evt_room_removed_public",
+		Type: protocol.EventTypeRoomRemoved,
+		Room: &protocol.Room{ID: "removed-public", Visibility: protocol.RoomVisibilityPublic},
+	}
+	stream <- protocol.Event{
+		ID:   "evt_room_removed_private",
+		Type: protocol.EventTypeRoomRemoved,
+		Room: &protocol.Room{ID: "removed-private", Visibility: protocol.RoomVisibilityPrivate},
+	}
 	close(stream)
 
 	policy, err := authn.NewPolicy(authn.Config{Mode: authn.ModeOpen})
@@ -74,7 +84,11 @@ func TestOpenPublicEventStreamFiltersPrivateEvents(t *testing.T) {
 	}
 	handler := NewHTTPHandler(&fakeService{
 		network: protocol.Network{ID: "local"},
-		stream:  stream,
+		rooms: []protocol.Room{{
+			ID:         "agora",
+			Visibility: protocol.RoomVisibilityPublic,
+		}},
+		stream: stream,
 	}, policy)
 
 	response := httptest.NewRecorder()
@@ -84,12 +98,12 @@ func TestOpenPublicEventStreamFiltersPrivateEvents(t *testing.T) {
 		t.Fatalf("unexpected public stream status %d body=%s", response.Code, response.Body.String())
 	}
 	body := response.Body.String()
-	for _, want := range []string{"evt_room", "public room", "evt_room_created"} {
+	for _, want := range []string{"evt_room", "public room", "evt_room_created", "evt_room_removed_public"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("public stream missing %q:\n%s", want, body)
 		}
 	}
-	for _, blocked := range []string{"evt_dm", "private dm", "evt_pair", "pair_1", "evt_members", "room.members.updated"} {
+	for _, blocked := range []string{"evt_dm", "private dm", "evt_pair", "pair_1", "evt_members", "room.members.updated", "evt_room_removed_private"} {
 		if strings.Contains(body, blocked) {
 			t.Fatalf("public stream leaked %q:\n%s", blocked, body)
 		}
@@ -155,7 +169,11 @@ func newOpenHTTPHandlerForTest(t *testing.T, tokens []authn.TokenConfig) http.Ha
 		Messages:          memory,
 		Broker:            events.NewBroker(),
 	})
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "agora"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "agora",
+		Members:     []string{"luna"},
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	}); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
 	policy, err := authn.NewPolicy(authn.Config{Mode: authn.ModeOpen, ListenAddr: ":8787", Tokens: tokens})

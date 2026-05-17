@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,7 +86,7 @@ func newEventStreamHandler(service Service, limiter *streamLimiter, heartbeatInt
 	return newFilteredEventStreamHandler(service, limiter, heartbeatInterval, nil)
 }
 
-type eventFilter func(protocol.Event) bool
+type eventFilter func(context.Context, protocol.Event) bool
 
 func newFilteredEventStreamHandler(
 	service Service,
@@ -141,7 +142,7 @@ func newFilteredEventStreamHandler(
 				if !ok {
 					return
 				}
-				if filter != nil && !filter(event) {
+				if filter != nil && !filter(request.Context(), event) {
 					continue
 				}
 
@@ -180,39 +181,47 @@ func newFilteredEventStreamHandler(
 }
 
 func handlePublicOpenEventStream(service Service, limiter *streamLimiter) http.HandlerFunc {
-	return newFilteredEventStreamHandler(service, limiter, sseHeartbeatInterval, publicOpenEvent)
+	return newFilteredEventStreamHandler(service, limiter, sseHeartbeatInterval, publicOpenEvent(service))
 }
 
-func publicOpenEvent(event protocol.Event) bool {
-	switch event.Type {
-	case protocol.EventTypeMessageCreated:
-		return event.Message != nil && publicOpenMessageTarget(event.Message.Target)
-	case protocol.EventTypeRoomCreated:
-		return event.Room != nil
-	case protocol.EventTypeThreadCreated:
-		return event.Thread != nil && strings.TrimSpace(event.Thread.RoomID) != ""
-	case protocol.EventTypeAgentConnected, protocol.EventTypeAgentDisconnected:
-		return event.Agent != nil
-	case protocol.EventTypeRoomRemoved:
-		return event.Room != nil
-	case protocol.EventTypeAgentRemoved:
-		return event.Agent != nil
-	case protocol.EventTypeReplayGap:
-		return true
-	default:
-		return false
+func publicOpenEvent(service Service) eventFilter {
+	return func(ctx context.Context, event protocol.Event) bool {
+		switch event.Type {
+		case protocol.EventTypeMessageCreated:
+			return event.Message != nil && publicOpenMessageTarget(ctx, service, event.Message.Target)
+		case protocol.EventTypeRoomCreated:
+			return event.Room != nil && publicOpenRoom(ctx, service, event.Room.ID)
+		case protocol.EventTypeThreadCreated:
+			return event.Thread != nil && publicOpenRoom(ctx, service, event.Thread.RoomID)
+		case protocol.EventTypeRoomRemoved:
+			return event.Room != nil &&
+				protocol.NormalizeRoomVisibility(event.Room.Visibility) == protocol.RoomVisibilityPublic
+		case protocol.EventTypeReplayGap:
+			return true
+		default:
+			return false
+		}
 	}
 }
 
-func publicOpenMessageTarget(target protocol.Target) bool {
+func publicOpenMessageTarget(ctx context.Context, service Service, target protocol.Target) bool {
 	switch target.Kind {
 	case protocol.TargetKindRoom:
-		return strings.TrimSpace(target.RoomID) != ""
+		return publicOpenRoom(ctx, service, target.RoomID)
 	case protocol.TargetKindThread:
-		return strings.TrimSpace(target.RoomID) != ""
+		return publicOpenRoom(ctx, service, target.RoomID)
 	default:
 		return false
 	}
+}
+
+func publicOpenRoom(ctx context.Context, service Service, roomID string) bool {
+	id := strings.TrimSpace(roomID)
+	if id == "" {
+		return false
+	}
+	_, err := service.GetRoomContext(ctx, id)
+	return err == nil
 }
 
 func streamIdentity(request *http.Request) string {
