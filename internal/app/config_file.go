@@ -28,18 +28,30 @@ type rawNetworkConfig struct {
 }
 
 type rawServerConfig struct {
-	ListenAddr          string   `json:"listen_addr" yaml:"listen_addr"`
-	DataPath            string   `json:"data_path,omitempty" yaml:"data_path,omitempty"`
-	HumanIngress        *bool    `json:"human_ingress" yaml:"human_ingress"`
-	DebugEvents         *bool    `json:"debug_events" yaml:"debug_events"`
-	DirectMessages      *bool    `json:"direct_messages" yaml:"direct_messages"`
-	AllowedOrigins      []string `json:"allowed_origins,omitempty" yaml:"allowed_origins,omitempty"`
-	TrustForwardedProto bool     `json:"trust_forwarded_proto,omitempty" yaml:"trust_forwarded_proto,omitempty"`
+	ListenAddr          string           `json:"listen_addr" yaml:"listen_addr"`
+	DataPath            string           `json:"data_path,omitempty" yaml:"data_path,omitempty"`
+	Console             rawConsoleConfig `json:"console,omitempty" yaml:"console,omitempty"`
+	HumanIngress        *bool            `json:"human_ingress" yaml:"human_ingress"`
+	DebugEvents         *bool            `json:"debug_events" yaml:"debug_events"`
+	DirectMessages      *bool            `json:"direct_messages" yaml:"direct_messages"`
+	AllowedOrigins      []string         `json:"allowed_origins,omitempty" yaml:"allowed_origins,omitempty"`
+	TrustForwardedProto bool             `json:"trust_forwarded_proto,omitempty" yaml:"trust_forwarded_proto,omitempty"`
+}
+
+type rawConsoleConfig struct {
+	Analytics rawConsoleAnalyticsConfig `json:"analytics,omitempty" yaml:"analytics,omitempty"`
+}
+
+type rawConsoleAnalyticsConfig struct {
+	Provider      string `json:"provider" yaml:"provider"`
+	MeasurementID string `json:"measurement_id" yaml:"measurement_id"`
 }
 
 type rawAuthConfig struct {
-	Mode   string               `json:"mode" yaml:"mode"`
-	Tokens []rawAuthTokenConfig `json:"tokens" yaml:"tokens"`
+	Mode              string               `json:"mode" yaml:"mode"`
+	PublicRead        *bool                `json:"public_read,omitempty" yaml:"public_read,omitempty"`
+	AgentRegistration string               `json:"agent_registration,omitempty" yaml:"agent_registration,omitempty"`
+	Tokens            []rawAuthTokenConfig `json:"tokens" yaml:"tokens"`
 }
 
 type rawAuthTokenConfig struct {
@@ -120,7 +132,13 @@ func validateConfigFile(config rawConfigFile) error {
 	if err := validateAuth(config.Auth, config.Server.AllowedOrigins); err != nil {
 		return err
 	}
+	if err := validateConsole(config.Server.Console); err != nil {
+		return err
+	}
 	if err := validatePairings(config.Pairings); err != nil {
+		return err
+	}
+	if err := validateRooms(config.Rooms); err != nil {
 		return err
 	}
 
@@ -151,13 +169,58 @@ func validateStorage(storage rawStorageConfig) error {
 	}
 }
 
+func validateConsole(config rawConsoleConfig) error {
+	analytics := config.Analytics
+	return validateConsoleAnalytics(analytics.Provider, analytics.MeasurementID)
+}
+
+func validateConsoleAnalytics(providerValue string, measurementIDValue string) error {
+	provider := strings.TrimSpace(providerValue)
+	measurementID := strings.TrimSpace(measurementIDValue)
+	if provider == "" && measurementID == "" {
+		return nil
+	}
+	if provider == "" {
+		return fmt.Errorf("server.console.analytics.provider is required")
+	}
+	if provider != "google" {
+		return fmt.Errorf("unsupported server.console.analytics.provider %q", provider)
+	}
+	if measurementID == "" {
+		return fmt.Errorf("server.console.analytics.measurement_id is required")
+	}
+	if !strings.HasPrefix(measurementID, "G-") {
+		return fmt.Errorf("server.console.analytics.measurement_id must be a Google Analytics measurement ID")
+	}
+
+	return nil
+}
+
 func validateAuth(config rawAuthConfig, allowedOrigins []string) error {
+	publicRead := false
+	if config.PublicRead != nil {
+		publicRead = *config.PublicRead
+	}
 	_, err := authn.NewPolicy(authn.Config{
-		Mode:           strings.TrimSpace(config.Mode),
-		AllowedOrigins: append([]string(nil), allowedOrigins...),
-		Tokens:         authTokenConfigs(config.Tokens),
+		Mode:              strings.TrimSpace(config.Mode),
+		PublicRead:        publicRead,
+		AgentRegistration: strings.TrimSpace(config.AgentRegistration),
+		AllowedOrigins:    append([]string(nil), allowedOrigins...),
+		Tokens:            authTokenConfigs(config.Tokens),
 	})
 	return err
+}
+
+func validateRooms(rooms []RoomConfig) error {
+	for index, room := range rooms {
+		if err := protocol.ValidateRoomVisibility(room.Visibility); err != nil {
+			return fmt.Errorf("rooms[%d].visibility: %w", index, err)
+		}
+		if err := protocol.ValidateRoomWritePolicy(room.WritePolicy); err != nil {
+			return fmt.Errorf("rooms[%d].write_policy: %w", index, err)
+		}
+	}
+	return nil
 }
 
 func authTokenConfigs(tokens []rawAuthTokenConfig) []authn.TokenConfig {

@@ -29,3 +29,23 @@ func SortedUniqueTrimmedStrings(values []string) []string {
 	slices.Sort(unique)
 	return unique
 }
+
+func NormalizeRoomVisibility(value string) string {
+	switch strings.TrimSpace(value) {
+	case RoomVisibilityPublic:
+		return RoomVisibilityPublic
+	default:
+		return RoomVisibilityPrivate
+	}
+}
+
+func NormalizeRoomWritePolicy(value string) string {
+	switch strings.TrimSpace(value) {
+	case RoomWritePolicyRegisteredAgents:
+		return RoomWritePolicyRegisteredAgents
+	case RoomWritePolicyOperators:
+		return RoomWritePolicyOperators
+	default:
+		return RoomWritePolicyMembers
+	}
+}

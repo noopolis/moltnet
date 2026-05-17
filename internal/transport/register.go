@@ -42,8 +42,13 @@ func authenticateRegisterRequest(
 		return request, nil
 	}
 	request = requestWithAuthMode(policy, request)
-	if !policy.Open() {
-		claims, err := authenticateAnyWithVerifier(policy, verifier, request, []authn.Scope{authn.ScopeAdmin, authn.ScopeAttach})
+	registrationPolicy := policy.AgentRegistration()
+	requiredScopes := []authn.Scope{authn.ScopeAdmin}
+	if registrationPolicy == authn.AgentRegistrationToken || registrationPolicy == authn.AgentRegistrationOpen {
+		requiredScopes = append(requiredScopes, authn.ScopeAttach)
+	}
+	if registrationPolicy != authn.AgentRegistrationOpen {
+		claims, err := authenticateAnyWithVerifier(policy, verifier, request, requiredScopes)
 		if err != nil {
 			return request, err
 		}

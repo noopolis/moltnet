@@ -12,6 +12,8 @@ func TestConfigFromEnv(t *testing.T) {
 	t.Setenv("MOLTNET_LISTEN_ADDR", ":9999")
 	t.Setenv("MOLTNET_NETWORK_ID", "lab")
 	t.Setenv("MOLTNET_NETWORK_NAME", "Lab")
+	t.Setenv("MOLTNET_CONSOLE_ANALYTICS_PROVIDER", "google")
+	t.Setenv("MOLTNET_CONSOLE_ANALYTICS_MEASUREMENT_ID", "G-ABC123")
 	t.Setenv("MOLTNET_PAIRINGS_JSON", `[{"id":"pair_1","remote_network_id":"remote","remote_network_name":"Remote Lab","status":"connected"}]`)
 
 	config, err := ConfigFromEnv("1.2.3")
@@ -30,6 +32,9 @@ func TestConfigFromEnv(t *testing.T) {
 	if config.ListenAddr != ":9999" || config.NetworkID != "lab" || config.NetworkName != "Lab" || config.Version != "1.2.3" {
 		t.Fatalf("unexpected config %#v", config)
 	}
+	if config.Console.Analytics.Provider != "google" || config.Console.Analytics.MeasurementID != "G-ABC123" {
+		t.Fatalf("unexpected console analytics %#v", config.Console.Analytics)
+	}
 	if len(config.Pairings) != 1 || config.Pairings[0].RemoteNetworkID != "remote" {
 		t.Fatalf("unexpected pairings %#v", config.Pairings)
 	}
@@ -40,6 +45,15 @@ func TestConfigFromEnvRejectsInvalidPairingsJSON(t *testing.T) {
 
 	if _, err := ConfigFromEnv("1.2.3"); err == nil {
 		t.Fatal("expected invalid pairings env error")
+	}
+}
+
+func TestConfigFromEnvRejectsInvalidConsoleAnalytics(t *testing.T) {
+	t.Setenv("MOLTNET_CONSOLE_ANALYTICS_PROVIDER", "plausible")
+	t.Setenv("MOLTNET_CONSOLE_ANALYTICS_MEASUREMENT_ID", "G-ABC123")
+
+	if _, err := ConfigFromEnv("1.2.3"); err == nil {
+		t.Fatal("expected invalid console analytics provider error")
 	}
 }
 

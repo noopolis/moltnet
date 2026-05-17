@@ -67,7 +67,10 @@ func TestOpenModeSendOwnership(t *testing.T) {
 	t.Parallel()
 
 	service := newAgentRegistryTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "agora"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "agora",
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	luna := registerOpenAgentForTest(t, service, "luna")
@@ -99,7 +102,10 @@ func TestOpenModeStaticOwnershipAndAdminOverride(t *testing.T) {
 	t.Parallel()
 
 	service := newAgentRegistryTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "agora"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "agora",
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	registerOpenAgentForTest(t, service, "luna")
@@ -122,7 +128,10 @@ func TestNoneModeAnonymousRegistrationCanSend(t *testing.T) {
 	t.Parallel()
 
 	service := newAgentRegistryTestService()
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "agora"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "agora",
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.RegisterAgentContext(context.Background(), protocol.RegisterAgentRequest{

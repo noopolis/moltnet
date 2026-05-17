@@ -61,7 +61,14 @@ func New(config Config) (*App, error) {
 		return nil, fmt.Errorf("build auth policy: %w", err)
 	}
 
-	handler := transport.NewHTTPHandler(service, policy)
+	handler := transport.NewHTTPHandler(service, policy, transport.HTTPConfig{
+		Console: transport.ConsoleConfig{
+			Analytics: transport.ConsoleAnalyticsConfig{
+				Provider:      config.Console.Analytics.Provider,
+				MeasurementID: config.Console.Analytics.MeasurementID,
+			},
+		},
+	})
 
 	server := &http.Server{
 		Addr:              config.ListenAddr,
@@ -161,12 +168,18 @@ func (a *App) close() {
 
 func seedRooms(service *rooms.Service, roomConfigs []RoomConfig) error {
 	for _, roomConfig := range roomConfigs {
-		if _, err := service.CreateRoom(protocol.CreateRoomRequest{
-			ID:      roomConfig.ID,
-			Name:    roomConfig.Name,
-			Members: append([]string(nil), roomConfig.Members...),
-		}); err != nil {
+		request := protocol.CreateRoomRequest{
+			ID:          roomConfig.ID,
+			Name:        roomConfig.Name,
+			Members:     append([]string(nil), roomConfig.Members...),
+			Visibility:  roomConfig.Visibility,
+			WritePolicy: roomConfig.WritePolicy,
+		}
+		if _, err := service.CreateRoom(request); err != nil {
 			if errors.Is(err, rooms.ErrRoomExists) {
+				if _, reconcileErr := service.ReconcileRoomContext(context.Background(), request); reconcileErr != nil {
+					return fmt.Errorf("reconcile room %q: %w", roomConfig.ID, reconcileErr)
+				}
 				continue
 			}
 			return fmt.Errorf("seed room %q: %w", roomConfig.ID, err)

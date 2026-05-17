@@ -77,7 +77,7 @@ func TestDiscoveryRoutesOpenMode(t *testing.T) {
 			"--base-url http://127.0.0.1:19888",
 			"--network-id local_lab",
 			"--rooms lab,workshop",
-			"--auth-mode open",
+			"--registration open",
 			"moltnet read --network local_lab --target room:lab",
 			"http://127.0.0.1:19888/skill.md",
 		} {
@@ -100,8 +100,24 @@ func TestDiscoveryRoutesOpenMode(t *testing.T) {
 		if response.Code != http.StatusOK {
 			t.Fatalf("unexpected status %d", response.Code)
 		}
-		if body := response.Body.String(); !strings.Contains(body, "name: moltnet") || !strings.Contains(body, "moltnet read") {
-			t.Fatalf("unexpected skill body %s", body)
+		body := response.Body.String()
+		for _, want := range []string{
+			"name: moltnet",
+			"Current access: public read access",
+			"Public-readable rooms: `lab`, `workshop`",
+			"Direct messages are disabled",
+			"moltnet read --network local_lab --target room:lab --limit 20",
+			"--registration open",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("skill markdown missing %q\n%s", want, body)
+			}
+		}
+		if strings.Contains(body, "moltnet send --network local_lab --target room:lab") {
+			t.Fatalf("open public skill should not expose send for member-default rooms\n%s", body)
+		}
+		if strings.Contains(body, "moltnet remove-agent --base-url") {
+			t.Fatalf("open public skill should not expose admin command\n%s", body)
 		}
 	})
 
@@ -143,7 +159,10 @@ func TestDiscoveryRoutesRequireObserveWhenBearerProtected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPolicy() error = %v", err)
 	}
-	handler := NewHTTPHandler(&fakeService{network: protocol.Network{ID: "private"}}, policy)
+	handler := NewHTTPHandler(&fakeService{
+		network: protocol.Network{ID: "private"},
+		rooms:   []protocol.Room{{ID: "ops", Name: "Ops"}},
+	}, policy)
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/install.md", nil)
@@ -158,5 +177,83 @@ func TestDiscoveryRoutesRequireObserveWhenBearerProtected(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected authorized install guide, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/skill.md", nil)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized skill, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/skill.md", nil)
+	request.Header.Set("Authorization", "Bearer observe-secret")
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected authorized skill, got %d", response.Code)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, "Current access: read-only access") ||
+		!strings.Contains(body, "Read recent room history:") ||
+		strings.Contains(body, "Send to a room:") ||
+		strings.Contains(body, "moltnet remove-agent --base-url") {
+		t.Fatalf("unexpected observe-only skill\n%s", body)
+	}
+}
+
+func TestSkillRouteUsesBearerTokenCapabilities(t *testing.T) {
+	t.Parallel()
+
+	policy, err := authn.NewPolicy(authn.Config{
+		Mode: authn.ModeBearer,
+		Tokens: []authn.TokenConfig{
+			{ID: "writer", Value: "write-secret", Scopes: []authn.Scope{authn.ScopeWrite}},
+			{ID: "admin", Value: "admin-secret", Scopes: []authn.Scope{authn.ScopeAdmin}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPolicy() error = %v", err)
+	}
+	service := &fakeService{
+		network: protocol.Network{
+			ID:   "private",
+			Name: "Private",
+			Capabilities: protocol.NetworkCapabilities{
+				DirectMessages: true,
+			},
+		},
+		rooms: []protocol.Room{{ID: "hidden", Name: "Hidden"}},
+	}
+	handler := NewHTTPHandler(service, policy)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/skill.md", nil)
+	request.Header.Set("Authorization", "Bearer write-secret")
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected writer skill, got %d", response.Code)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, "Current access: write-only access") ||
+		!strings.Contains(body, "Public-readable rooms: unavailable with this token") ||
+		!strings.Contains(body, "Send commands are not available with the current access") ||
+		strings.Contains(body, "Read recent room history:") {
+		t.Fatalf("unexpected write-only skill\n%s", body)
+	}
+	if service.limit != 0 {
+		t.Fatalf("write-only skill should not list rooms, got limit %d", service.limit)
+	}
+
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/skill.md", nil)
+	request.Header.Set("Authorization", "Bearer admin-secret")
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected admin skill, got %d", response.Code)
+	}
+	if body := response.Body.String(); !strings.Contains(body, "Current access: admin access") ||
+		!strings.Contains(body, "moltnet remove-agent --base-url") {
+		t.Fatalf("unexpected admin skill\n%s", body)
 	}
 }

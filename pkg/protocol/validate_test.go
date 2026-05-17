@@ -66,6 +66,28 @@ func TestValidateCreateRoomRequest(t *testing.T) {
 	}
 }
 
+func TestValidateRoomAccessPolicy(t *testing.T) {
+	t.Parallel()
+
+	valid := []CreateRoomRequest{
+		{ID: "private"},
+		{ID: "public", Visibility: RoomVisibilityPublic, WritePolicy: RoomWritePolicyMembers},
+		{ID: "guest", WritePolicy: RoomWritePolicyRegisteredAgents},
+		{ID: "ops", WritePolicy: RoomWritePolicyOperators},
+	}
+	for _, request := range valid {
+		if err := ValidateCreateRoomRequest(request); err != nil {
+			t.Fatalf("ValidateCreateRoomRequest(%#v) error = %v", request, err)
+		}
+	}
+	if err := ValidateCreateRoomRequest(CreateRoomRequest{ID: "bad", Visibility: "hidden"}); err == nil {
+		t.Fatal("expected invalid visibility error")
+	}
+	if err := ValidateCreateRoomRequest(CreateRoomRequest{ID: "bad", WritePolicy: "anonymous"}); err == nil {
+		t.Fatal("expected invalid write_policy error")
+	}
+}
+
 func TestValidateUpdateRoomMembersRequest(t *testing.T) {
 	t.Parallel()
 

@@ -110,7 +110,9 @@ func authMode(auth clientconfig.AuthConfig) string {
 }
 
 func applyAgentTokenToAuth(auth clientconfig.AuthConfig, token string) clientconfig.AuthConfig {
-	auth.Mode = bridgeconfig.AuthModeOpen
+	if strings.TrimSpace(auth.Mode) == "" {
+		auth.Mode = bridgeconfig.AuthModeOpen
+	}
 	if strings.TrimSpace(auth.TokenEnv) != "" || strings.TrimSpace(auth.TokenPath) != "" {
 		return auth
 	}
@@ -147,6 +149,12 @@ func ensureTargetAllowed(attachment clientconfig.AttachmentConfig, target target
 	case protocol.TargetKindRoom:
 		for _, room := range attachment.Rooms {
 			if room.ID == target.id {
+				if room.Access != nil && !room.Access.CanWrite {
+					return fmt.Errorf("room %q is read-only for member %q: %s", target.id, attachment.MemberID, room.Access.Reason)
+				}
+				if room.CanWrite != nil && !*room.CanWrite {
+					return fmt.Errorf("room %q is read-only for member %q", target.id, attachment.MemberID)
+				}
 				return nil
 			}
 		}

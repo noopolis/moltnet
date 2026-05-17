@@ -10,7 +10,6 @@ import (
 	"text/template"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
-	"github.com/noopolis/moltnet/internal/skills"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -27,9 +26,7 @@ func attachDiscoveryRoutes(mux *http.ServeMux, policy *authn.Policy, service Ser
 		writeMarkdown(response, renderInstallMarkdown(request, policy, service.Network(), rooms.Rooms))
 	}))
 
-	mux.HandleFunc("GET /skill.md", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
-		writeMarkdown(response, skills.MoltnetSkill())
-	}))
+	mux.HandleFunc("GET /skill.md", skillDiscoveryRoute(policy, service))
 
 	mux.HandleFunc("GET /llms.txt", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
 		response.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -64,11 +61,13 @@ func writeDiscoveryLine(builder *strings.Builder, label string, value string) {
 func renderInstallMarkdown(request *http.Request, policy *authn.Policy, network protocol.Network, rooms []protocol.Room) string {
 	baseURL := requestBaseURL(request)
 	networkID := strings.TrimSpace(network.ID)
-	roomIDs := roomIDsForInstall(rooms)
-	roomList := strings.Join(roomIDs, ",")
 	authMode := authn.ModeNone
+	publicRead := false
+	registration := authn.AgentRegistrationDisabled
 	if policy != nil {
 		authMode = policy.Mode()
+		publicRead = policy.PublicRead()
+		registration = policy.AgentRegistration()
 	}
 	if authMode == authn.ModeBearer {
 		authMode = authn.ModeBearer
@@ -82,27 +81,43 @@ func renderInstallMarkdown(request *http.Request, policy *authn.Policy, network 
 	if title == "" {
 		title = networkID
 	}
+	roomInfos := roomInfosForRequest(request, authMode, publicRead, registration, rooms)
+	roomIDs := roomIDsFromInfos(roomInfos)
+	writableAfterConnectIDs := roomIDsWithConnectWrite(roomInfos)
+	readOnlyIDs := roomIDsWithoutNowOrConnectWrite(roomInfos)
+	roomList := strings.Join(roomIDs, ",")
+	registrationOpen := registration == authn.AgentRegistrationOpen
+	nodeAuthMode := authMode
+	if registrationOpen {
+		nodeAuthMode = authn.ModeOpen
+	}
 
 	var buffer bytes.Buffer
 	if err := template.Must(template.New("install.md").Parse(installMarkdownTemplate)).Execute(&buffer, installMarkdownData{
-		AuthMode:              authMode,
-		AuthModeShell:         shellQuote(authMode),
-		BaseURL:               baseURL,
-		BaseURLShell:          shellQuote(baseURL),
-		BearerAuth:            authMode == authn.ModeBearer,
-		DirectMessages:        enabledDisabled(network.Capabilities.DirectMessages),
-		DirectMessagesEnabled: network.Capabilities.DirectMessages,
-		NetworkID:             networkID,
-		NetworkIDShell:        shellQuote(networkID),
-		OpenAuth:              authMode == authn.ModeOpen,
-		PrimaryRoomID:         firstString(roomIDs),
-		PrimaryRoomIDShell:    shellQuote(firstString(roomIDs)),
-		RoomIDs:               roomIDs,
-		RoomListMarkdown:      markdownCodeList(roomIDs),
-		RoomListShell:         shellQuote(roomList),
-		RoomsYAML:             roomsYAML(roomIDs),
-		DMsYAML:               dmsYAML(network.Capabilities.DirectMessages),
-		Title:                 title,
+		AuthMode:                             authMode,
+		AuthModeShell:                        shellQuote(authMode),
+		BaseURL:                              baseURL,
+		BaseURLShell:                         shellQuote(baseURL),
+		BearerAuth:                           authMode == authn.ModeBearer,
+		DirectMessages:                       enabledDisabled(network.Capabilities.DirectMessages),
+		DirectMessagesEnabled:                network.Capabilities.DirectMessages,
+		NetworkID:                            networkID,
+		NetworkIDShell:                       shellQuote(networkID),
+		NodeAuthMode:                         nodeAuthMode,
+		OpenAuth:                             authMode == authn.ModeOpen,
+		PrimaryRoomID:                        firstString(roomIDs),
+		PrimaryRoomIDShell:                   shellQuote(firstString(roomIDs)),
+		PrimaryWritableAfterConnectID:        firstString(writableAfterConnectIDs),
+		PrimaryWritableAfterConnectShell:     shellQuote(firstString(writableAfterConnectIDs)),
+		ReadOnlyRoomListMarkdown:             markdownCodeList(readOnlyIDs),
+		RegistrationOpen:                     registrationOpen,
+		RoomIDs:                              roomIDs,
+		RoomListMarkdown:                     markdownCodeList(roomIDs),
+		RoomListShell:                        shellQuote(roomList),
+		RoomsYAML:                            roomsYAML(roomIDs),
+		WritableAfterConnectRoomListMarkdown: markdownCodeList(writableAfterConnectIDs),
+		DMsYAML:                              dmsYAML(network.Capabilities.DirectMessages),
+		Title:                                title,
 	}); err != nil {
 		return fmt.Sprintf("# Join %s Moltnet\n\nCould not render install guide: %v\n", title, err)
 	}
@@ -111,32 +126,64 @@ func renderInstallMarkdown(request *http.Request, policy *authn.Policy, network 
 }
 
 type installMarkdownData struct {
-	AuthMode              string
-	AuthModeShell         string
-	BaseURL               string
-	BaseURLShell          string
-	BearerAuth            bool
-	DirectMessages        string
-	DirectMessagesEnabled bool
-	NetworkID             string
-	NetworkIDShell        string
-	OpenAuth              bool
-	PrimaryRoomID         string
-	PrimaryRoomIDShell    string
-	RoomIDs               []string
-	RoomListMarkdown      string
-	RoomListShell         string
-	RoomsYAML             string
-	DMsYAML               string
-	Title                 string
+	AuthMode                             string
+	AuthModeShell                        string
+	BaseURL                              string
+	BaseURLShell                         string
+	BearerAuth                           bool
+	DirectMessages                       string
+	DirectMessagesEnabled                bool
+	NetworkID                            string
+	NetworkIDShell                       string
+	NodeAuthMode                         string
+	OpenAuth                             bool
+	PrimaryRoomID                        string
+	PrimaryRoomIDShell                   string
+	PrimaryWritableAfterConnectID        string
+	PrimaryWritableAfterConnectShell     string
+	ReadOnlyRoomListMarkdown             string
+	RegistrationOpen                     bool
+	RoomIDs                              []string
+	RoomListMarkdown                     string
+	RoomListShell                        string
+	RoomsYAML                            string
+	WritableAfterConnectRoomListMarkdown string
+	DMsYAML                              string
+	Title                                string
 }
 
 func roomIDsForInstall(rooms []protocol.Room) []string {
+	return roomIDsFromInfos(roomInfosForRequest(nil, authn.ModeNone, false, authn.AgentRegistrationDisabled, rooms))
+}
+
+func roomIDsFromInfos(rooms []roomAccessInfo) []string {
 	ids := make([]string, 0, len(rooms))
 	for _, room := range rooms {
 		id := strings.TrimSpace(room.ID)
 		if id != "" {
 			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func roomIDsWithConnectWrite(rooms []roomAccessInfo) []string {
+	ids := make([]string, 0, len(rooms))
+	for _, room := range rooms {
+		if room.CanWriteAfterConnect {
+			ids = append(ids, room.ID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func roomIDsWithoutNowOrConnectWrite(rooms []roomAccessInfo) []string {
+	ids := make([]string, 0, len(rooms))
+	for _, room := range rooms {
+		if !room.CanWriteNow && !room.CanWriteAfterConnect {
+			ids = append(ids, room.ID)
 		}
 	}
 	sort.Strings(ids)

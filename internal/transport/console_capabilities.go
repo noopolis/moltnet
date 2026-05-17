@@ -8,6 +8,10 @@ import (
 )
 
 func networkForRequest(policy *authn.Policy, request *http.Request, network protocol.Network) protocol.Network {
+	if policy != nil {
+		network.Capabilities.PublicRead = policy.PublicRead()
+		network.Capabilities.AgentRegistration = policy.AgentRegistration()
+	}
 	network.Console = &protocol.NetworkConsole{
 		CanSendHuman: canConsoleSendHuman(policy, request, network.Capabilities),
 	}

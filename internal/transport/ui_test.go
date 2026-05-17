@@ -1,12 +1,14 @@
 package transport
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
+	web "github.com/noopolis/moltnet/web"
 )
 
 func TestUIRoutes(t *testing.T) {
@@ -164,5 +166,59 @@ func TestUIRoutesOpenModeServesConsolePublicly(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("expected invalid token to be rejected, got %d", response.Code)
+	}
+}
+
+func TestUIRoutesInjectConsoleAnalytics(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHTTPHandler(&fakeService{}, nil, HTTPConfig{
+		Console: ConsoleConfig{
+			Analytics: ConsoleAnalyticsConfig{
+				Provider:      "google",
+				MeasurementID: "G-ABC123",
+			},
+		},
+	})
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/console/", nil)
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d", response.Code)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, "googletagmanager.com/gtag/js?id=G-ABC123") {
+		t.Fatalf("expected analytics script, got %s", body)
+	}
+	if !strings.Contains(body, "Moltnet Console") {
+		t.Fatalf("expected console index body, got %s", body)
+	}
+}
+
+func TestConsoleBundleUsesRoomAccessForComposer(t *testing.T) {
+	t.Parallel()
+
+	var bundle strings.Builder
+	if err := fs.WalkDir(web.Files, "dist/assets", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".js") {
+			return err
+		}
+		contents, readErr := fs.ReadFile(web.Files, path)
+		if readErr != nil {
+			return readErr
+		}
+		bundle.Write(contents)
+		return nil
+	}); err != nil {
+		t.Fatalf("read console bundle: %v", err)
+	}
+
+	contents := bundle.String()
+	for _, want := range []string{"can_write", "registered agents write", "members write"} {
+		if !strings.Contains(contents, want) {
+			t.Fatalf("console bundle missing %q", want)
+		}
 	}
 }

@@ -325,16 +325,13 @@ func TestPublicOpenEventsIncludeCleanupTopology(t *testing.T) {
 			Type: protocol.EventTypeRoomRemoved,
 			Room: &protocol.Room{ID: "stale-room"},
 		},
-		{
-			Type: protocol.EventTypeAgentRemoved,
-			Agent: &protocol.AgentEvent{
-				AgentID: "stale-agent",
-			},
-		},
 	}
+	filter := publicOpenEvent(&fakeService{
+		rooms: []protocol.Room{{ID: "stale-room", Visibility: "public"}},
+	})
 
 	for _, event := range events {
-		if !publicOpenEvent(event) {
+		if !filter(context.Background(), event) {
 			t.Fatalf("expected cleanup event to be public %#v", event)
 		}
 	}

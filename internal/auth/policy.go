@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -16,6 +15,12 @@ const (
 	ModeNone   = "none"
 	ModeBearer = "bearer"
 	ModeOpen   = "open"
+)
+
+const (
+	AgentRegistrationDisabled = "disabled"
+	AgentRegistrationToken    = "token"
+	AgentRegistrationOpen     = "open"
 )
 
 type Scope string
@@ -37,6 +42,8 @@ type TokenConfig struct {
 
 type Config struct {
 	Mode                string
+	PublicRead          bool
+	AgentRegistration   string
 	ListenAddr          string
 	AllowedOrigins      []string
 	TrustForwardedProto bool
@@ -45,6 +52,8 @@ type Config struct {
 
 type Policy struct {
 	mode                string
+	publicRead          bool
+	agentRegistration   string
 	allowedOrigins      map[string]struct{}
 	trustForwardedProto bool
 	tokens              []tokenRecord
@@ -73,6 +82,8 @@ func (e *Error) Error() string {
 
 type claimsContextKey struct{}
 type modeContextKey struct{}
+type publicReadContextKey struct{}
+type registrationContextKey struct{}
 
 func NewPolicy(config Config) (*Policy, error) {
 	mode := strings.TrimSpace(config.Mode)
@@ -86,8 +97,24 @@ func NewPolicy(config Config) (*Policy, error) {
 		return nil, fmt.Errorf("unsupported auth mode %q", mode)
 	}
 
+	agentRegistration := strings.TrimSpace(config.AgentRegistration)
+	if agentRegistration == "" {
+		agentRegistration = AgentRegistrationDisabled
+	}
+	if mode == ModeOpen {
+		config.PublicRead = true
+		agentRegistration = AgentRegistrationOpen
+	}
+	switch agentRegistration {
+	case AgentRegistrationDisabled, AgentRegistrationToken, AgentRegistrationOpen:
+	default:
+		return nil, fmt.Errorf("unsupported auth.agent_registration %q", agentRegistration)
+	}
+
 	policy := &Policy{
 		mode:                mode,
+		publicRead:          config.PublicRead,
+		agentRegistration:   agentRegistration,
 		allowedOrigins:      make(map[string]struct{}),
 		trustForwardedProto: config.TrustForwardedProto,
 		tokens:              make([]tokenRecord, 0, len(config.Tokens)),
@@ -152,6 +179,17 @@ func (p *Policy) Bearer() bool {
 
 func (p *Policy) Open() bool {
 	return p != nil && p.mode == ModeOpen
+}
+
+func (p *Policy) PublicRead() bool {
+	return p != nil && p.publicRead
+}
+
+func (p *Policy) AgentRegistration() string {
+	if p == nil || strings.TrimSpace(p.agentRegistration) == "" {
+		return AgentRegistrationDisabled
+	}
+	return p.agentRegistration
 }
 
 func (p *Policy) AuthenticateRequest(request *http.Request, scope Scope) (Claims, error) {
@@ -252,25 +290,14 @@ func (c Claims) AgentToken() bool {
 	return strings.HasPrefix(strings.TrimSpace(c.CredentialKey), "agent-token:")
 }
 
-func WithClaims(ctx context.Context, claims Claims) context.Context {
-	return context.WithValue(ctx, claimsContextKey{}, claims)
-}
-
-func ClaimsFromContext(ctx context.Context) (Claims, bool) {
-	claims, ok := ctx.Value(claimsContextKey{}).(Claims)
-	return claims, ok
-}
-
-func WithMode(ctx context.Context, mode string) context.Context {
-	return context.WithValue(ctx, modeContextKey{}, strings.TrimSpace(mode))
-}
-
-func ModeFromContext(ctx context.Context) string {
-	mode, ok := ctx.Value(modeContextKey{}).(string)
-	if !ok || strings.TrimSpace(mode) == "" {
-		return ModeNone
+func (c Claims) AgentIDs() []string {
+	agents := make([]string, 0, len(c.agents))
+	for agentID := range c.agents {
+		if strings.TrimSpace(agentID) != "" {
+			agents = append(agents, agentID)
+		}
 	}
-	return strings.TrimSpace(mode)
+	return agents
 }
 
 func StaticCredentialKey(tokenID string) string {

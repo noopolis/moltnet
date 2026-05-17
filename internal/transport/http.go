@@ -14,9 +14,12 @@ type Service interface {
 	Health(ctx context.Context) error
 	Network() protocol.Network
 	GetAgent(agentID string) (protocol.AgentSummary, error)
+	GetAgentContext(ctx context.Context, agentID string) (protocol.AgentSummary, error)
 	GetDirectConversation(dmID string) (protocol.DirectConversation, error)
 	GetRoom(roomID string) (protocol.Room, error)
+	GetRoomContext(ctx context.Context, roomID string) (protocol.Room, error)
 	GetThread(threadID string) (protocol.Thread, error)
+	GetThreadContext(ctx context.Context, threadID string) (protocol.Thread, error)
 	ListAgentsContext(ctx context.Context, page protocol.PageRequest) (protocol.AgentPage, error)
 	ListPairingsContext(ctx context.Context, page protocol.PageRequest) (protocol.PairingPage, error)
 	PairingNetwork(ctx context.Context, pairingID string) (protocol.Network, error)
@@ -44,9 +47,10 @@ type Service interface {
 	SubscribeFrom(ctx context.Context, lastEventID string) <-chan protocol.Event
 }
 
-func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
+func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig) http.Handler {
+	config := httpConfigFrom(configs)
 	mux := http.NewServeMux()
-	attachUIRoutes(mux, policy, service)
+	attachUIRoutes(mux, policy, service, config.Console)
 	attachDiscoveryRoutes(mux, policy, service)
 	sseLimiter := newStreamLimiter(defaultMaxSSESubscribers)
 	attachments := newAttachmentRegistry()
@@ -97,7 +101,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
 	}))
 
 	mux.HandleFunc("GET /v1/rooms/{roomID}", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
-		room, err := service.GetRoom(request.PathValue("roomID"))
+		room, err := service.GetRoomContext(request.Context(), request.PathValue("roomID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
 			return
@@ -120,7 +124,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
 	}))
 
 	mux.HandleFunc("GET /v1/agents/{agentID}", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
-		agent, err := service.GetAgent(request.PathValue("agentID"))
+		agent, err := service.GetAgentContext(request.Context(), request.PathValue("agentID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
 			return
@@ -279,7 +283,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy) http.Handler {
 	}))
 
 	mux.HandleFunc("GET /v1/threads/{threadID}", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
-		thread, err := service.GetThread(request.PathValue("threadID"))
+		thread, err := service.GetThreadContext(request.Context(), request.PathValue("threadID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
 			return

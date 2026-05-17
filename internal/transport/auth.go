@@ -61,7 +61,7 @@ func publicInOpen(
 	if policy == nil || !policy.Enabled() {
 		return next
 	}
-	if !policy.Open() {
+	if !policy.PublicRead() {
 		return authorizedAnyWithVerifier(policy, verifier, scopes, next)
 	}
 
@@ -73,7 +73,7 @@ func anonymousAllowedInOpen(
 	verifier agentTokenVerifier,
 	next http.HandlerFunc,
 ) http.HandlerFunc {
-	if policy == nil || !policy.Open() {
+	if policy == nil || !policy.PublicRead() {
 		return next
 	}
 	return optionalAuthInOpen(policy, verifier, nil, next)
@@ -87,7 +87,7 @@ func authorizedAttach(
 	if policy == nil || !policy.Enabled() {
 		return next
 	}
-	if !policy.Open() {
+	if policy.AgentRegistration() != authn.AgentRegistrationOpen {
 		return authorizedWithVerifier(policy, verifier, authn.ScopeAttach, next)
 	}
 
@@ -135,7 +135,7 @@ func authorizedEventStream(
 	if policy == nil || !policy.Enabled() {
 		return fullStream
 	}
-	if !policy.Open() {
+	if !policy.PublicRead() {
 		return authorizedWithVerifier(policy, verifier, authn.ScopeObserve, fullStream)
 	}
 
@@ -195,7 +195,7 @@ func authorizedConsole(policy *authn.Policy, verifier agentTokenVerifier, next h
 		}
 
 		request = requestWithAuthMode(policy, request)
-		if policy.Open() {
+		if policy.PublicRead() {
 			claims, ok, err := authenticateOptionalOpen(policy, verifier, request, []authn.Scope{authn.ScopeObserve})
 			if err != nil {
 				writeAuthError(response, err)
@@ -326,7 +326,7 @@ func authenticateBearerToken(
 	if claims, ok := policy.StaticClaimsForToken(token); ok {
 		return claims, true, nil
 	}
-	if policy.Open() && verifier != nil {
+	if verifier != nil {
 		return verifier.AuthenticateAgentTokenContext(ctx, token)
 	}
 	return authn.Claims{}, false, nil
@@ -336,5 +336,8 @@ func requestWithAuthMode(policy *authn.Policy, request *http.Request) *http.Requ
 	if policy == nil {
 		return request
 	}
-	return request.WithContext(authn.WithMode(request.Context(), policy.Mode()))
+	ctx := authn.WithMode(request.Context(), policy.Mode())
+	ctx = authn.WithPublicRead(ctx, policy.PublicRead())
+	ctx = authn.WithAgentRegistration(ctx, policy.AgentRegistration())
+	return request.WithContext(ctx)
 }

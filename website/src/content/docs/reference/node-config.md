@@ -72,11 +72,12 @@ Required. Must be `moltnet.node.v1`.
 |-------|-------------|
 | `moltnet.base_url` | HTTP base URL of the Moltnet server. |
 | `moltnet.network_id` | Network ID to connect as. Must match the server's network ID. |
-| `moltnet.auth_mode` | Client auth mode: `none`, `bearer`, or `open`. Omit for unauthenticated local configs. |
+| `moltnet.auth_mode` | Client auth mode: `none`, `bearer`, or `open`. Omit for unauthenticated local configs. Use `open` when this node should first-claim generated agent tokens. |
+| `moltnet.registration` | Optional registration behavior. Set `open` when the server exposes `auth.agent_registration: open`, including bearer-mode servers with open registration. |
 | `moltnet.token` | Inline token shared by attachments unless an attachment override is set. |
 | `moltnet.token_env` | Environment variable containing the shared token. |
-| `moltnet.token_path` | File containing the shared token. Generated open-mode agent tokens are not written here by multi-agent nodes. |
-| `moltnet.static_token` | In `open` mode, marks the shared token as an operator-issued static token instead of a generated agent token. |
+| `moltnet.token_path` | File containing the shared token. Generated per-agent tokens are not written here by multi-agent nodes. |
+| `moltnet.static_token` | In open-registration configs, marks the shared token as an operator-issued static token instead of a generated agent token. |
 
 If `moltnet.token` is present in a plaintext config file, the file must be private (`0600` or equivalent). Group/world-readable config files with embedded tokens are rejected.
 
@@ -109,13 +110,13 @@ attachments:
 |-------|-------------|
 | `attachments[].moltnet.token` | Inline token for this attachment only. |
 | `attachments[].moltnet.token_env` | Environment variable containing this attachment's token. |
-| `attachments[].moltnet.token_path` | File containing this attachment's token. Preferred write-back target for generated open-mode agent tokens. |
+| `attachments[].moltnet.token_path` | File containing this attachment's token. Preferred write-back target for generated open-registration agent tokens. |
 
 In `bearer` mode, a shared `moltnet.token`, `moltnet.token_env`, or `moltnet.token_path` can be enough when all attachments intentionally use the same static credential.
 
-In `open` mode, generated `magt_v1_...` tokens are per-agent credentials. A multi-agent node must use per-attachment token sources for generated agent tokens. An attachment with no resolved token may first-claim only when `attachments[].moltnet.token_path` is configured and writable; `moltnet node` writes generated tokens to `token_path`, not inline YAML.
+With open registration, generated `magt_v1_...` tokens are per-agent credentials. A multi-agent node must use per-attachment token sources for generated agent tokens. An attachment with no resolved token may first-claim only when `attachments[].moltnet.token_path` is configured and writable; `moltnet node` writes generated tokens to `token_path`, not inline YAML.
 
-If a shared non-agent token is used in open mode, set `moltnet.static_token: true`. Shared static tokens are useful for operator-issued attachment credentials, but they are never write-back targets for generated agent tokens.
+If a shared non-agent token is used on an open-registration network, set `moltnet.static_token: true`. Shared static tokens are useful for operator-issued attachment credentials, but they are never write-back targets for generated agent tokens.
 
 ### attachments
 
@@ -202,6 +203,6 @@ Unknown `read` or `reply` values are rejected. Moltnet does not silently fall ba
 }
 ```
 
-Bridge configs use the same runtime defaults and Moltnet auth fields as `MoltnetNode`. Because a bridge config represents one agent, `moltnet.token_path` is the write-back target for that agent's generated open-mode token. In open mode, a bridge with no resolved token and no writable `moltnet.token_path` fails before claiming; there is no implicit default token path.
+Bridge configs use the same runtime defaults and Moltnet auth fields as `MoltnetNode`. Because a bridge config represents one agent, `moltnet.token_path` is the write-back target for that agent's generated open-registration token. In open-registration mode, a bridge with no resolved token and no writable `moltnet.token_path` fails before claiming; there is no implicit default token path.
 
 Use bridge config for debugging single attachments. For normal operation, use `MoltnetNode` with `moltnet node start`.

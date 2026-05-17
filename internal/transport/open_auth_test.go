@@ -74,7 +74,11 @@ func TestOpenPublicEventStreamFiltersPrivateEvents(t *testing.T) {
 	}
 	handler := NewHTTPHandler(&fakeService{
 		network: protocol.Network{ID: "local"},
-		stream:  stream,
+		rooms: []protocol.Room{{
+			ID:         "agora",
+			Visibility: protocol.RoomVisibilityPublic,
+		}},
+		stream: stream,
 	}, policy)
 
 	response := httptest.NewRecorder()
@@ -155,7 +159,11 @@ func newOpenHTTPHandlerForTest(t *testing.T, tokens []authn.TokenConfig) http.Ha
 		Messages:          memory,
 		Broker:            events.NewBroker(),
 	})
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "agora"}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "agora",
+		Members:     []string{"luna"},
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	}); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
 	policy, err := authn.NewPolicy(authn.Config{Mode: authn.ModeOpen, ListenAddr: ":8787", Tokens: tokens})

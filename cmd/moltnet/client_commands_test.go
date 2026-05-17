@@ -3,97 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"net/http"
-	"net/http/httptest"
-
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/clientconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
-
-func TestRunConnectWritesConfigAndSkill(t *testing.T) {
-	workspace := t.TempDir()
-
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{
-			"connect",
-			"--workspace", workspace,
-			"--runtime", "openclaw",
-			"--base-url", "http://127.0.0.1:8787",
-			"--network-id", "local_lab",
-			"--member-id", "alpha",
-			"--agent-name", "Alpha",
-			"--rooms", "general,research",
-			"--enable-dms",
-		}, "test"); err != nil {
-			t.Fatalf("run() connect error = %v", err)
-		}
-	})
-
-	configPath := filepath.Join(workspace, ".moltnet", "config.json")
-	skillPath := filepath.Join(workspace, "skills", "moltnet", "SKILL.md")
-	assertFileExists(t, configPath)
-	assertFileExists(t, skillPath)
-
-	config, err := clientconfig.LoadFile(configPath)
-	if err != nil {
-		t.Fatalf("LoadFile() error = %v", err)
-	}
-	if len(config.Attachments) != 1 || config.Attachments[0].MemberID != "alpha" {
-		t.Fatalf("unexpected config %#v", config)
-	}
-	if !strings.Contains(output, "installed skill") || !strings.Contains(output, "wrote Moltnet client config") {
-		t.Fatalf("unexpected connect output %q", output)
-	}
-}
-
-func TestRunConnectInstallsCodexAndClaudeCodeSkills(t *testing.T) {
-	for _, test := range []struct {
-		runtime string
-		path    string
-	}{
-		{
-			runtime: "codex",
-			path:    filepath.Join(".agents", "skills", "moltnet", "SKILL.md"),
-		},
-		{
-			runtime: "claude-code",
-			path:    filepath.Join(".claude", "skills", "moltnet", "SKILL.md"),
-		},
-	} {
-		test := test
-		t.Run(test.runtime, func(t *testing.T) {
-			workspace := t.TempDir()
-
-			if err := run(context.Background(), []string{
-				"connect",
-				"--workspace", workspace,
-				"--runtime", test.runtime,
-				"--base-url", "http://127.0.0.1:8787",
-				"--network-id", "local_lab",
-				"--member-id", test.runtime + "_bot",
-				"--agent-name", test.runtime + " Bot",
-				"--rooms", "research",
-			}, "test"); err != nil {
-				t.Fatalf("run() connect error = %v", err)
-			}
-
-			assertFileExists(t, filepath.Join(workspace, test.path))
-			config, err := clientconfig.LoadFile(filepath.Join(workspace, ".moltnet", "config.json"))
-			if err != nil {
-				t.Fatalf("LoadFile() error = %v", err)
-			}
-			if config.Agent.Runtime != test.runtime || config.Attachments[0].Runtime != test.runtime {
-				t.Fatalf("unexpected runtime config %#v", config)
-			}
-		})
-	}
-}
 
 func TestRunRegisterAgentWritesIdentity(t *testing.T) {
 	workspace := t.TempDir()
@@ -264,6 +184,45 @@ func TestRunSendPostsRoomMessage(t *testing.T) {
 	}
 	if !strings.Contains(output, `"accepted": true`) {
 		t.Fatalf("unexpected send output %q", output)
+	}
+}
+
+func TestRunSendFailsLocallyForReadOnlyRoom(t *testing.T) {
+	workspace := t.TempDir()
+	canWrite := false
+	writeClientConfigFixture(t, workspace, clientconfig.Config{
+		Version: "moltnet.client.v1",
+		Attachments: []clientconfig.AttachmentConfig{
+			{
+				Auth:      clientconfig.AuthConfig{Mode: "none"},
+				BaseURL:   "http://127.0.0.1:8787",
+				MemberID:  "guest",
+				NetworkID: "public",
+				Rooms: []bridgeconfig.RoomBinding{
+					{
+						ID:          "episode-floor",
+						Visibility:  "public",
+						WritePolicy: "members",
+						CanWrite:    &canWrite,
+					},
+				},
+			},
+		},
+	})
+
+	cwd := mustGetwd(t)
+	defer func() { _ = os.Chdir(cwd) }()
+	if err := os.Chdir(workspace); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	err := run(context.Background(), []string{
+		"send",
+		"--target", "room:episode-floor",
+		"--text", "hello",
+	}, "test")
+	if err == nil || !strings.Contains(err.Error(), "read-only") {
+		t.Fatalf("expected read-only error, got %v", err)
 	}
 }
 

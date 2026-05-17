@@ -121,8 +121,10 @@ func TestAppHTTPOpenAuthRegistrationFlow(t *testing.T) {
 		NetworkID:   "noopolis",
 		NetworkName: "Noopolis",
 		Rooms: []RoomConfig{{
-			ID:      "agora",
-			Members: []string{"luna"},
+			ID:          "agora",
+			Members:     []string{"luna"},
+			Visibility:  protocol.RoomVisibilityPublic,
+			WritePolicy: protocol.RoomWritePolicyMembers,
 		}},
 		Version: "test",
 	})

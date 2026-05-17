@@ -15,11 +15,21 @@ func TestLoadFile(t *testing.T) {
   "attachments": [
     {
       "agent_name": "Alpha",
-      "auth": {"mode": "none"},
+      "auth": {"mode": "none", "registration": "disabled"},
       "base_url": "http://127.0.0.1:8787",
       "member_id": "alpha",
       "network_id": "local_lab",
-      "rooms": [{"id": "general", "read": "all", "reply": "manual"}]
+      "rooms": [
+        {
+          "id": "general",
+          "read": "all",
+          "reply": "manual",
+          "visibility": "public",
+          "write_policy": "members",
+          "can_write": false,
+          "access": {"can_read": true, "can_write": false, "reason": "public-read/member-write"}
+        }
+      ]
     }
   ]
 }`), 0o600); err != nil {
@@ -30,7 +40,15 @@ func TestLoadFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFile() error = %v", err)
 	}
-	if config.Attachments[0].MemberID != "alpha" {
+	room := config.Attachments[0].Rooms[0]
+	if config.Attachments[0].MemberID != "alpha" ||
+		config.Attachments[0].Auth.Registration != "disabled" ||
+		room.Visibility != "public" ||
+		room.WritePolicy != "members" ||
+		room.CanWrite == nil ||
+		*room.CanWrite ||
+		room.Access == nil ||
+		room.Access.CanWrite {
 		t.Fatalf("unexpected attachment %#v", config.Attachments[0])
 	}
 }

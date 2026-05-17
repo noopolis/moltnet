@@ -37,18 +37,10 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		return protocol.MessageAccepted{}, err
 	}
 
-	if request.Target.Kind == protocol.TargetKindRoom {
-		if _, ok, err := s.getRoom(ctx, request.Target.RoomID); err != nil {
+	from := protocol.NormalizeActor(s.networkID, request.From)
+	if request.Target.Kind == protocol.TargetKindRoom || request.Target.Kind == protocol.TargetKindThread {
+		if err := s.enforceTargetWritePolicy(ctx, request.Target, from); err != nil {
 			return protocol.MessageAccepted{}, err
-		} else if !ok {
-			return protocol.MessageAccepted{}, unknownRoomError(request.Target.RoomID)
-		}
-	}
-	if request.Target.Kind == protocol.TargetKindThread {
-		if _, ok, err := s.getRoom(ctx, request.Target.RoomID); err != nil {
-			return protocol.MessageAccepted{}, err
-		} else if !ok {
-			return protocol.MessageAccepted{}, unknownRoomError(request.Target.RoomID)
 		}
 	}
 
@@ -58,7 +50,6 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	}
 
 	now := time.Now().UTC()
-	from := protocol.NormalizeActor(s.networkID, request.From)
 	target := s.normalizeTarget(request.Target, from)
 	origin := s.normalizeOrigin(request.Origin, messageID)
 	message := protocol.Message{
@@ -201,7 +192,7 @@ func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Act
 		}
 		return nil
 	}
-	if mode == authn.ModeOpen && hasClaims && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite) {
+	if hasClaims && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite) {
 		return nil
 	}
 	if hasClaims && claims.AgentToken() {

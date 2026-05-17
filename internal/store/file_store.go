@@ -166,6 +166,29 @@ func (s *FileStore) UpdateRoomMembers(roomID string, add []string, remove []stri
 	return s.UpdateRoomMembersContext(context.Background(), roomID, add, remove)
 }
 
+func (s *FileStore) ReconcileRoom(room protocol.Room) (protocol.Room, error) {
+	return s.ReconcileRoomContext(context.Background(), room)
+}
+
+func (s *FileStore) ReconcileRoomContext(_ context.Context, room protocol.Room) (protocol.Room, error) {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+
+	working := memoryStoreFromSnapshot(s.snapshot())
+	reconciled, err := working.ReconcileRoomContext(context.Background(), room)
+	if err != nil {
+		return protocol.Room{}, err
+	}
+
+	next := snapshotFromMemoryStore(working)
+	if err := s.persistSnapshot(next); err != nil {
+		return protocol.Room{}, err
+	}
+
+	s.restore(next)
+	return reconciled, nil
+}
+
 func (s *FileStore) UpdateRoomMembersContext(
 	_ context.Context,
 	roomID string,

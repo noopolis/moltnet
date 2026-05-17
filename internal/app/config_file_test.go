@@ -138,6 +138,75 @@ func TestValidateAuthConfig(t *testing.T) {
 	}, nil); err == nil {
 		t.Fatal("expected unsupported auth scope error")
 	}
+	if err := validateAuth(rawAuthConfig{AgentRegistration: "wat"}, nil); err == nil {
+		t.Fatal("expected unsupported agent_registration error")
+	}
+}
+
+func TestValidateRoomPolicyConfig(t *testing.T) {
+	t.Parallel()
+
+	if err := validateRooms([]RoomConfig{{
+		ID:          "guestbook",
+		Visibility:  "public",
+		WritePolicy: "registered_agents",
+	}}); err != nil {
+		t.Fatalf("validateRooms() error = %v", err)
+	}
+	if err := validateRooms([]RoomConfig{{ID: "bad", Visibility: "hidden"}}); err == nil {
+		t.Fatal("expected invalid visibility error")
+	}
+	if err := validateRooms([]RoomConfig{{ID: "bad", WritePolicy: "public"}}); err == nil {
+		t.Fatal("expected invalid write_policy error")
+	}
+}
+
+func TestValidateConsoleConfig(t *testing.T) {
+	t.Parallel()
+
+	if err := validateConsole(rawConsoleConfig{}); err != nil {
+		t.Fatalf("validateConsole() default error = %v", err)
+	}
+	if err := validateConsole(rawConsoleConfig{
+		Analytics: rawConsoleAnalyticsConfig{Provider: "google", MeasurementID: "G-ABC123"},
+	}); err != nil {
+		t.Fatalf("validateConsole() google error = %v", err)
+	}
+	if err := validateConsole(rawConsoleConfig{
+		Analytics: rawConsoleAnalyticsConfig{Provider: "plausible", MeasurementID: "G-ABC123"},
+	}); err == nil {
+		t.Fatal("expected unsupported provider error")
+	}
+	if err := validateConsole(rawConsoleConfig{
+		Analytics: rawConsoleAnalyticsConfig{Provider: "google"},
+	}); err == nil {
+		t.Fatal("expected missing measurement id error")
+	}
+}
+
+func TestLoadFileConfigSupportsConsoleAnalytics(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "Moltnet")
+	writeConfigFile(t, path, `
+version: moltnet.v1
+network:
+  id: local
+server:
+  console:
+    analytics:
+      provider: google
+      measurement_id: G-ABC123
+`)
+
+	config, err := loadFileConfig(path)
+	if err != nil {
+		t.Fatalf("loadFileConfig() error = %v", err)
+	}
+	if config.Server.Console.Analytics.Provider != "google" ||
+		config.Server.Console.Analytics.MeasurementID != "G-ABC123" {
+		t.Fatalf("unexpected analytics config %#v", config.Server.Console.Analytics)
+	}
 }
 
 func TestLoadFileConfigSupportsTrustedForwardedProto(t *testing.T) {

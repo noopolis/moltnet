@@ -81,7 +81,7 @@ func handleAttachment(
 	})
 	if err != nil {
 		message := err.Error()
-		if policy != nil && policy.Open() {
+		if policy != nil && policy.AgentRegistration() == authn.AgentRegistrationOpen {
 			if _, ok := authn.ClaimsFromContext(request.Context()); !ok && strings.Contains(message, "already registered") {
 				message = fmt.Sprintf("agent %q requires its agent token", agent.ID)
 			}
@@ -137,7 +137,7 @@ func handleAttachment(
 	heartbeatTicker := time.NewTicker(attachmentHeartbeatInterval() / 2)
 	defer heartbeatTicker.Stop()
 
-	filter := attachmentEventFilter(policy, request.Context(), service.Network().ID, agent.ID)
+	filter := attachmentEventFilter(policy, request.Context(), service, service.Network().ID, agent.ID)
 	stream := service.SubscribeFrom(ctx, session.ResumeCursor())
 	for {
 		select {
@@ -173,7 +173,7 @@ func handleAttachment(
 				disconnectErr = writeAttachmentError(writer, "agent was removed from the network")
 				return
 			}
-			if filter != nil && !filter(event) {
+			if filter != nil && !filter(request.Context(), event) {
 				continue
 			}
 			session.NoteSent(event.ID)
@@ -265,77 +265,6 @@ func identifiedAgent(frame protocol.AttachmentFrame, networkID string) (protocol
 	}
 
 	return agent, nil
-}
-
-func attachmentEventFilter(
-	policy *authn.Policy,
-	ctx context.Context,
-	networkID string,
-	agentID string,
-) eventFilter {
-	if policy == nil || !policy.Open() {
-		return nil
-	}
-	if claims, ok := authn.ClaimsFromContext(ctx); ok &&
-		(claims.Allows(authn.ScopeObserve) || claims.Allows(authn.ScopeAdmin)) {
-		return nil
-	}
-
-	return func(event protocol.Event) bool {
-		return publicOpenEvent(event) || attachedAgentEvent(event, networkID, agentID)
-	}
-}
-
-func attachedAgentEvent(event protocol.Event, networkID string, agentID string) bool {
-	switch event.Type {
-	case protocol.EventTypeMessageCreated:
-		return event.Message != nil && attachedAgentMessage(event.Message, networkID, agentID)
-	case protocol.EventTypeDMCreated:
-		return event.DM != nil && participantsIncludeAttachedAgent(event.DM.ParticipantIDs, networkID, agentID)
-	default:
-		return false
-	}
-}
-
-func attachedAgentMessage(message *protocol.Message, networkID string, agentID string) bool {
-	if message.Target.Kind != protocol.TargetKindDM {
-		return false
-	}
-	if participantsIncludeAttachedAgent(message.Target.ParticipantIDs, networkID, agentID) {
-		return true
-	}
-	return false
-}
-
-func attachmentWakeEvent(event protocol.Event, networkID string, agent protocol.Actor) bool {
-	if event.Type != protocol.EventTypeMessageCreated || event.Message == nil {
-		return false
-	}
-	message := event.Message
-	if message.Target.Kind == protocol.TargetKindDM {
-		return participantsIncludeAttachedAgent(message.Target.ParticipantIDs, networkID, agent.ID)
-	}
-	for _, mention := range message.Mentions {
-		if protocol.ActorMatches(networkID, agent.ID, mention) || mention == agent.Name {
-			return true
-		}
-	}
-	return false
-}
-
-func attachmentRemovedEvent(event protocol.Event, networkID string, agentID string) bool {
-	return event.Type == protocol.EventTypeAgentRemoved &&
-		event.Agent != nil &&
-		protocol.ActorMatches(networkID, agentID, event.Agent.AgentID)
-}
-
-func participantsIncludeAttachedAgent(participants []string, networkID string, agentID string) bool {
-	for _, participantID := range participants {
-		if protocol.ActorMatches(networkID, agentID, participantID) {
-			return true
-		}
-	}
-	return false
 }
 
 func consumeAttachmentFrames(

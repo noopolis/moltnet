@@ -5,8 +5,8 @@ import (
 	"errors"
 	"slices"
 	"strings"
-	"time"
 
+	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -24,29 +24,9 @@ func (s *Service) CreateRoom(request protocol.CreateRoomRequest) (protocol.Room,
 }
 
 func (s *Service) CreateRoomContext(ctx context.Context, request protocol.CreateRoomRequest) (protocol.Room, error) {
-	id := strings.TrimSpace(request.ID)
-	roomRequest := protocol.CreateRoomRequest{
-		ID:      id,
-		Name:    strings.TrimSpace(request.Name),
-		Members: append([]string(nil), request.Members...),
-	}
-	if err := protocol.ValidateCreateRoomRequest(roomRequest); err != nil {
-		if id == "" {
-			return protocol.Room{}, invalidRoomIDError()
-		}
-		return protocol.Room{}, invalidRoomRequestReasonError(err.Error())
-	}
-
-	room := protocol.Room{
-		ID:        id,
-		NetworkID: s.networkID,
-		FQID:      protocol.RoomFQID(s.networkID, id),
-		Name:      strings.TrimSpace(request.Name),
-		Members:   protocol.SortedUniqueTrimmedStrings(request.Members),
-		CreatedAt: time.Now().UTC(),
-	}
-	if room.Name == "" {
-		room.Name = room.ID
+	room, err := roomFromCreateRequest(s.networkID, request)
+	if err != nil {
+		return protocol.Room{}, err
 	}
 
 	if err := s.createRoom(ctx, room); err != nil {
@@ -79,10 +59,12 @@ func (s *Service) ListRoomMessagesContext(
 	roomID string,
 	page protocol.PageRequest,
 ) (protocol.MessagePage, error) {
-	if _, ok, err := s.getRoom(ctx, roomID); err != nil {
+	if room, ok, err := s.getRoom(ctx, roomID); err != nil {
 		return protocol.MessagePage{}, err
 	} else if !ok {
 		return protocol.MessagePage{}, unknownRoomError(roomID)
+	} else if _, readable := s.readableRoom(ctx, room); !readable {
+		return protocol.MessagePage{}, readForbiddenError(roomID)
 	}
 
 	return s.listRoomMessages(ctx, roomID, page)
@@ -93,10 +75,12 @@ func (s *Service) ListThreads(roomID string) (protocol.ThreadPage, error) {
 }
 
 func (s *Service) ListThreadsContext(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.ThreadPage, error) {
-	if _, ok, err := s.getRoom(ctx, roomID); err != nil {
+	if room, ok, err := s.getRoom(ctx, roomID); err != nil {
 		return protocol.ThreadPage{}, err
 	} else if !ok {
 		return protocol.ThreadPage{}, unknownRoomError(roomID)
+	} else if _, readable := s.readableRoom(ctx, room); !readable {
+		return protocol.ThreadPage{}, readForbiddenError(roomID)
 	}
 
 	threads, err := s.listThreads(ctx, roomID)
@@ -138,10 +122,19 @@ func (s *Service) ListThreadMessagesContext(
 	threadID string,
 	page protocol.PageRequest,
 ) (protocol.MessagePage, error) {
-	if _, ok, err := s.getThread(ctx, threadID); err != nil {
+	thread, ok, err := s.getThread(ctx, threadID)
+	if err != nil {
+		return protocol.MessagePage{}, err
+	}
+	if !ok {
+		return protocol.MessagePage{}, unknownThreadError(threadID)
+	}
+	if room, ok, err := s.getRoom(ctx, thread.RoomID); err != nil {
 		return protocol.MessagePage{}, err
 	} else if !ok {
-		return protocol.MessagePage{}, unknownThreadError(threadID)
+		return protocol.MessagePage{}, unknownRoomError(thread.RoomID)
+	} else if _, readable := s.readableRoom(ctx, room); !readable {
+		return protocol.MessagePage{}, readForbiddenError(thread.RoomID)
 	}
 
 	return s.listThreadMessages(ctx, threadID, page)
@@ -273,6 +266,13 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 	if err != nil {
 		return protocol.AgentPage{}, err
 	}
+	readableRooms := make([]protocol.Room, 0, len(rooms))
+	for _, room := range rooms {
+		if readable, ok := s.readableRoom(ctx, room); ok {
+			readableRooms = append(readableRooms, readable)
+		}
+	}
+	rooms = readableRooms
 	agentsByID := agentSummariesByID(rooms, s.networkID)
 	if s.agentRegistry != nil {
 		registered, err := s.agentRegistry.ListRegisteredAgentsContext(ctx)
@@ -283,6 +283,9 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 			summary, ok := agentsByID[registration.AgentID]
 			if !ok {
 				value := registeredAgentSummary(registration, rooms)
+				if len(value.Rooms) == 0 && !s.canReadPrivateRoster(ctx) {
+					continue
+				}
 				agentsByID[registration.AgentID] = &value
 				continue
 			}
@@ -304,6 +307,14 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 	})
 
 	return paginateAgents(agents, page)
+}
+
+func (s *Service) canReadPrivateRoster(ctx context.Context) bool {
+	if authn.ModeFromContext(ctx) == authn.ModeNone && !authn.PublicReadFromContext(ctx) {
+		return true
+	}
+	claims, ok := authn.ClaimsFromContext(ctx)
+	return ok && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin, authn.ScopePair})
 }
 
 func agentSummariesByID(rooms []protocol.Room, networkID string) map[string]*protocol.AgentSummary {

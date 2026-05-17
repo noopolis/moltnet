@@ -49,6 +49,10 @@ network:
   name: Local Lab
 server:
   listen_addr: 127.0.0.1:8787
+  console:
+    analytics:
+      provider: google
+      measurement_id: G-FILE123
   human_ingress: false
   debug_events: true
   direct_messages: false
@@ -56,6 +60,8 @@ server:
     - http://localhost:8787
 auth:
   mode: bearer
+  public_read: true
+  agent_registration: token
   tokens:
     - id: operator
       value: secret
@@ -68,6 +74,8 @@ storage:
 rooms:
   - id: research
     name: Research
+    visibility: public
+    write_policy: members
     members:
       - orchestrator
       - researcher
@@ -99,17 +107,53 @@ pairings:
 	if !config.DisableDirectMessages {
 		t.Fatalf("expected direct messages disabled, got %#v", config)
 	}
+	if config.Console.Analytics.Provider != "google" || config.Console.Analytics.MeasurementID != "G-FILE123" {
+		t.Fatalf("unexpected console analytics %#v", config.Console.Analytics)
+	}
 	if config.NetworkID != "local_lab" || config.NetworkName != "Local Lab" {
 		t.Fatalf("unexpected network %#v", config)
 	}
 	if len(config.Rooms) != 1 || config.Rooms[0].ID != "research" {
 		t.Fatalf("unexpected rooms %#v", config.Rooms)
 	}
+	if config.Rooms[0].Visibility != "public" || config.Rooms[0].WritePolicy != "members" {
+		t.Fatalf("unexpected room policy %#v", config.Rooms[0])
+	}
 	if len(config.Pairings) != 1 || config.Pairings[0].ID != "pair_1" {
 		t.Fatalf("unexpected pairings %#v", config.Pairings)
 	}
 	if config.Auth.Mode != authn.ModeBearer || len(config.Auth.Tokens) != 1 || len(config.Auth.AllowedOrigins) != 1 {
 		t.Fatalf("unexpected auth %#v", config.Auth)
+	}
+	if !config.Auth.PublicRead || config.Auth.AgentRegistration != authn.AgentRegistrationToken {
+		t.Fatalf("unexpected auth policy %#v", config.Auth)
+	}
+}
+
+func TestLoadConfigOpenExpandsPublicReadAndRegistration(t *testing.T) {
+	directory := t.TempDir()
+	restore := chdirForTest(t, directory)
+	defer restore()
+
+	writeConfigFile(t, filepath.Join(directory, defaultConfigFile), `
+version: moltnet.v1
+auth:
+  mode: open
+rooms:
+  - id: agora
+`)
+
+	config, err := LoadConfig("1.2.3")
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if config.Auth.Mode != authn.ModeOpen ||
+		!config.Auth.PublicRead ||
+		config.Auth.AgentRegistration != authn.AgentRegistrationOpen {
+		t.Fatalf("unexpected open auth expansion %#v", config.Auth)
+	}
+	if config.Rooms[0].WritePolicy != "" {
+		t.Fatalf("open mode must not grant implicit room write policy, got %#v", config.Rooms[0])
 	}
 }
 
@@ -136,6 +180,8 @@ server:
 	t.Setenv("MOLTNET_ALLOW_HUMAN_INGRESS", "false")
 	t.Setenv("MOLTNET_DEBUG_EVENTS", "true")
 	t.Setenv("MOLTNET_ALLOW_DIRECT_MESSAGES", "false")
+	t.Setenv("MOLTNET_CONSOLE_ANALYTICS_PROVIDER", "google")
+	t.Setenv("MOLTNET_CONSOLE_ANALYTICS_MEASUREMENT_ID", "G-ENV123")
 
 	config, err := LoadConfig("1.2.3")
 	if err != nil {
@@ -153,6 +199,9 @@ server:
 	}
 	if !config.DisableDirectMessages {
 		t.Fatalf("expected direct messages env override, got %#v", config)
+	}
+	if config.Console.Analytics.Provider != "google" || config.Console.Analytics.MeasurementID != "G-ENV123" {
+		t.Fatalf("unexpected console analytics env override %#v", config.Console.Analytics)
 	}
 }
 

@@ -13,6 +13,7 @@ type ContextRoomStore interface {
 	ListRoomsContext(ctx context.Context) ([]protocol.Room, error)
 	RemoveAgentContext(ctx context.Context, agentID string) error
 	RemoveRoomContext(ctx context.Context, roomID string) error
+	ReconcileRoomContext(ctx context.Context, room protocol.Room) (protocol.Room, error)
 	UpdateRoomMembersContext(ctx context.Context, roomID string, add []string, remove []string) (protocol.Room, error)
 }
 

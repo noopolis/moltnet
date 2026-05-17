@@ -17,6 +17,7 @@ type RoomStore interface {
 	ListRooms() ([]protocol.Room, error)
 	RemoveAgent(agentID string) error
 	RemoveRoom(roomID string) error
+	ReconcileRoom(room protocol.Room) (protocol.Room, error)
 	UpdateRoomMembers(roomID string, add []string, remove []string) (protocol.Room, error)
 }
 
@@ -254,6 +255,26 @@ func (s *MemoryStore) GetRegisteredAgentByCredentialKeyContext(
 
 func (s *MemoryStore) UpdateRoomMembers(roomID string, add []string, remove []string) (protocol.Room, error) {
 	return s.UpdateRoomMembersContext(context.Background(), roomID, add, remove)
+}
+
+func (s *MemoryStore) ReconcileRoom(room protocol.Room) (protocol.Room, error) {
+	return s.ReconcileRoomContext(context.Background(), room)
+}
+
+func (s *MemoryStore) ReconcileRoomContext(_ context.Context, room protocol.Room) (protocol.Room, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing, ok := s.rooms[room.ID]
+	if !ok {
+		return protocol.Room{}, fmt.Errorf("%w: %q", ErrRoomNotFound, room.ID)
+	}
+	existing.Name = room.Name
+	existing.Members = protocol.SortedUniqueTrimmedStrings(room.Members)
+	existing.Visibility = protocol.NormalizeRoomVisibility(room.Visibility)
+	existing.WritePolicy = protocol.NormalizeRoomWritePolicy(room.WritePolicy)
+	s.rooms[room.ID] = existing
+	return existing, nil
 }
 
 func (s *MemoryStore) UpdateRoomMembersContext(
