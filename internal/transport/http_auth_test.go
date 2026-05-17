@@ -103,7 +103,13 @@ func TestHTTPHandlerAuthScopes(t *testing.T) {
 		t.Fatalf("NewPolicy() error = %v", err)
 	}
 
-	handler := NewHTTPHandler(&fakeService{network: protocol.Network{ID: "local", Name: "Local"}}, policy)
+	handler := NewHTTPHandler(&fakeService{
+		network: protocol.Network{ID: "local", Name: "Local"},
+		agents:  []protocol.AgentSummary{{ID: "writer", NetworkID: "local"}},
+		dms:     []protocol.DirectConversation{{ID: "dm-1"}},
+		rooms:   []protocol.Room{{ID: "research", Name: "Research"}},
+		threads: []protocol.Thread{{ID: "thread-1", RoomID: "research"}},
+	}, policy)
 
 	request := httptest.NewRequest(http.MethodGet, "/v1/network", nil)
 	response := httptest.NewRecorder()
@@ -118,6 +124,34 @@ func TestHTTPHandlerAuthScopes(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected observe token to read network, got %d", response.Code)
+	}
+
+	for _, path := range []string{
+		"/v1/network",
+		"/v1/rooms",
+		"/v1/rooms/research",
+		"/v1/agents",
+		"/v1/agents/writer",
+		"/v1/pairings",
+		"/v1/pairings/pair-1/network",
+		"/v1/pairings/pair-1/rooms",
+		"/v1/pairings/pair-1/agents",
+		"/v1/rooms/research/messages",
+		"/v1/rooms/research/threads",
+		"/v1/threads/thread-1",
+		"/v1/threads/thread-1/messages",
+		"/v1/dms",
+		"/v1/dms/dm-1",
+		"/v1/dms/dm-1/messages",
+		"/v1/artifacts",
+	} {
+		request = httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer admin-secret")
+		response = httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("expected admin token to read %s, got %d body=%s", path, response.Code, response.Body.String())
+		}
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/v1/network", nil)
@@ -252,7 +286,10 @@ func TestConsoleAccessTokenSetsCookie(t *testing.T) {
 	policy, err := authn.NewPolicy(authn.Config{
 		Mode:       authn.ModeBearer,
 		ListenAddr: ":8787",
-		Tokens:     []authn.TokenConfig{{ID: "observer", Value: "observe-secret", Scopes: []authn.Scope{authn.ScopeObserve}}},
+		Tokens: []authn.TokenConfig{
+			{ID: "observer", Value: "observe-secret", Scopes: []authn.Scope{authn.ScopeObserve}},
+			{ID: "admin", Value: "admin-secret", Scopes: []authn.Scope{authn.ScopeAdmin}},
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewPolicy() error = %v", err)
@@ -281,7 +318,10 @@ func TestConsoleRequiresObserveScopeWhenAuthEnabled(t *testing.T) {
 	policy, err := authn.NewPolicy(authn.Config{
 		Mode:       authn.ModeBearer,
 		ListenAddr: ":8787",
-		Tokens:     []authn.TokenConfig{{ID: "observer", Value: "observe-secret", Scopes: []authn.Scope{authn.ScopeObserve}}},
+		Tokens: []authn.TokenConfig{
+			{ID: "observer", Value: "observe-secret", Scopes: []authn.Scope{authn.ScopeObserve}},
+			{ID: "admin", Value: "admin-secret", Scopes: []authn.Scope{authn.ScopeAdmin}},
+		},
 	})
 	if err != nil {
 		t.Fatalf("NewPolicy() error = %v", err)
@@ -302,5 +342,13 @@ func TestConsoleRequiresObserveScopeWhenAuthEnabled(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected authorized console asset request, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/console/", nil)
+	request.Header.Set("Authorization", "Bearer admin-secret")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected admin console request, got %d", response.Code)
 	}
 }

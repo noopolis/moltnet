@@ -136,13 +136,13 @@ func authorizedEventStream(
 		return fullStream
 	}
 	if !policy.PublicRead() {
-		return authorizedWithVerifier(policy, verifier, authn.ScopeObserve, fullStream)
+		return authorizedAnyWithVerifier(policy, verifier, []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}, fullStream)
 	}
 
 	publicStream := handlePublicOpenEventStream(service, limiter)
 	return func(response http.ResponseWriter, request *http.Request) {
 		request = requestWithAuthMode(policy, request)
-		claims, ok, err := authenticateOptionalOpen(policy, verifier, request, []authn.Scope{authn.ScopeObserve})
+		claims, ok, err := authenticateOptionalOpen(policy, verifier, request, []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin})
 		if err != nil {
 			writeAuthError(response, err)
 			return
@@ -196,7 +196,7 @@ func authorizedConsole(policy *authn.Policy, verifier agentTokenVerifier, next h
 
 		request = requestWithAuthMode(policy, request)
 		if policy.PublicRead() {
-			claims, ok, err := authenticateOptionalOpen(policy, verifier, request, []authn.Scope{authn.ScopeObserve})
+			claims, ok, err := authenticateOptionalOpen(policy, verifier, request, readScopes)
 			if err != nil {
 				writeAuthError(response, err)
 				return
@@ -208,7 +208,7 @@ func authorizedConsole(policy *authn.Policy, verifier agentTokenVerifier, next h
 			return
 		}
 
-		claims, err := policy.AuthenticateRequest(request, authn.ScopeObserve)
+		claims, err := authenticateAny(policy, request, readScopes)
 		if err != nil {
 			var authErr *authn.Error
 			if errors.As(err, &authErr) {

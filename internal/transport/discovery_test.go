@@ -34,8 +34,6 @@ func TestDiscoveryRoutesOpenMode(t *testing.T) {
 	}, policy)
 
 	t.Run("install markdown", func(t *testing.T) {
-		t.Parallel()
-
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:19888/install.md", nil)
 		handler.ServeHTTP(response, request)
@@ -91,8 +89,6 @@ func TestDiscoveryRoutesOpenMode(t *testing.T) {
 	})
 
 	t.Run("skill markdown", func(t *testing.T) {
-		t.Parallel()
-
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, "/skill.md", nil)
 		handler.ServeHTTP(response, request)
@@ -104,7 +100,7 @@ func TestDiscoveryRoutesOpenMode(t *testing.T) {
 		for _, want := range []string{
 			"name: moltnet",
 			"Current access: public read access",
-			"Public-readable rooms: `lab`, `workshop`",
+			"Readable rooms: `lab`, `workshop`",
 			"Direct messages are disabled",
 			"moltnet read --network local_lab --target room:lab --limit 20",
 			"--registration open",
@@ -122,8 +118,6 @@ func TestDiscoveryRoutesOpenMode(t *testing.T) {
 	})
 
 	t.Run("llms text", func(t *testing.T) {
-		t.Parallel()
-
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, "http://internal/llms.txt", nil)
 		request.Header.Set("X-Forwarded-Proto", "http")
@@ -154,6 +148,7 @@ func TestDiscoveryRoutesRequireObserveWhenBearerProtected(t *testing.T) {
 		Mode: authn.ModeBearer,
 		Tokens: []authn.TokenConfig{
 			{ID: "observer", Value: "observe-secret", Scopes: []authn.Scope{authn.ScopeObserve}},
+			{ID: "admin", Value: "admin-secret", Scopes: []authn.Scope{authn.ScopeAdmin}},
 		},
 	})
 	if err != nil {
@@ -177,6 +172,22 @@ func TestDiscoveryRoutesRequireObserveWhenBearerProtected(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected authorized install guide, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/install.md", nil)
+	request.Header.Set("Authorization", "Bearer admin-secret")
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected admin install guide, got %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/llms.txt", nil)
+	request.Header.Set("Authorization", "Bearer admin-secret")
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected admin llms text, got %d", response.Code)
 	}
 
 	response = httptest.NewRecorder()
@@ -236,7 +247,7 @@ func TestSkillRouteUsesBearerTokenCapabilities(t *testing.T) {
 	}
 	body := response.Body.String()
 	if !strings.Contains(body, "Current access: write-only access") ||
-		!strings.Contains(body, "Public-readable rooms: unavailable with this token") ||
+		!strings.Contains(body, "Readable rooms: unavailable with this token") ||
 		!strings.Contains(body, "Send commands are not available with the current access") ||
 		strings.Contains(body, "Read recent room history:") {
 		t.Fatalf("unexpected write-only skill\n%s", body)

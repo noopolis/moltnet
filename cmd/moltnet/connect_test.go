@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/noopolis/moltnet/pkg/clientconfig"
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 func TestRunConnectWritesConfigAndSkill(t *testing.T) {
@@ -148,5 +150,56 @@ func TestRunConnectFetchesGeneratedSkillWithToken(t *testing.T) {
 	}
 	if !strings.Contains(string(skillBytes), "Token scoped generated skill.") {
 		t.Fatalf("expected generated skill, got %s", skillBytes)
+	}
+}
+
+func TestRunConnectRegistrationOpenStoresGeneratedTokenAsOpenAuth(t *testing.T) {
+	workspace := t.TempDir()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/skill.md":
+			response.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+			fmt.Fprintln(response, "---")
+			fmt.Fprintln(response, "name: moltnet")
+			fmt.Fprintln(response, `description: "generated test skill"`)
+			fmt.Fprintln(response, "---")
+			fmt.Fprintln(response, "Generated test skill.")
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/agents/register":
+			_ = json.NewEncoder(response).Encode(protocol.AgentRegistration{
+				NetworkID:   "public",
+				AgentID:     "guest-agent",
+				ActorUID:    "actor_public_1",
+				ActorURI:    protocol.AgentFQID("public", "guest-agent"),
+				DisplayName: "Guest Agent",
+				AgentToken:  "magt_v1_generated",
+			})
+		default:
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	if err := run(context.Background(), []string{
+		"connect",
+		"--workspace", workspace,
+		"--runtime", "codex",
+		"--base-url", server.URL,
+		"--network-id", "public",
+		"--member-id", "guest-agent",
+		"--agent-name", "Guest Agent",
+		"--rooms", "guestbook",
+		"--auth-mode", "none",
+		"--registration", "open",
+	}, "test"); err != nil {
+		t.Fatalf("run() connect error = %v", err)
+	}
+
+	config, err := clientconfig.LoadFile(filepath.Join(workspace, ".moltnet", "config.json"))
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	auth := config.Attachments[0].Auth
+	if auth.Mode != "open" || auth.Registration != "open" || auth.Token != "magt_v1_generated" {
+		t.Fatalf("generated registration token was not stored as open auth: %#v", auth)
 	}
 }

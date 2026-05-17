@@ -47,6 +47,12 @@ type Service interface {
 	SubscribeFrom(ctx context.Context, lastEventID string) <-chan protocol.Event
 }
 
+var (
+	readScopes     = []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}
+	roomListScopes = []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin, authn.ScopePair}
+	networkScopes  = []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin, authn.ScopePair, authn.ScopeAttach}
+)
+
 func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig) http.Handler {
 	config := httpConfigFrom(configs)
 	mux := http.NewServeMux()
@@ -82,11 +88,11 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		})
 	}))
 
-	mux.HandleFunc("GET /v1/network", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve, authn.ScopePair, authn.ScopeAttach}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/network", publicInOpen(policy, service, networkScopes, func(response http.ResponseWriter, request *http.Request) {
 		writeJSON(response, http.StatusOK, networkForRequest(policy, request, service.Network()))
 	}))
 
-	mux.HandleFunc("GET /v1/rooms", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve, authn.ScopePair}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/rooms", publicInOpen(policy, service, roomListScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -100,7 +106,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, page)
 	}))
 
-	mux.HandleFunc("GET /v1/rooms/{roomID}", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/rooms/{roomID}", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		room, err := service.GetRoomContext(request.Context(), request.PathValue("roomID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
@@ -109,7 +115,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, room)
 	}))
 
-	mux.HandleFunc("GET /v1/agents", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve, authn.ScopePair}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/agents", publicInOpen(policy, service, roomListScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -123,7 +129,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, page)
 	}))
 
-	mux.HandleFunc("GET /v1/agents/{agentID}", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/agents/{agentID}", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		agent, err := service.GetAgentContext(request.Context(), request.PathValue("agentID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
@@ -144,7 +150,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, result)
 	}))
 
-	mux.HandleFunc("GET /v1/pairings", authorizedWithVerifier(policy, service, authn.ScopeObserve, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/pairings", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -158,7 +164,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, page)
 	}))
 
-	mux.HandleFunc("GET /v1/pairings/{pairingID}/network", authorizedWithVerifier(policy, service, authn.ScopeObserve, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/pairings/{pairingID}/network", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		network, err := service.PairingNetwork(request.Context(), request.PathValue("pairingID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
@@ -167,7 +173,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, network)
 	}))
 
-	mux.HandleFunc("GET /v1/pairings/{pairingID}/rooms", authorizedWithVerifier(policy, service, authn.ScopeObserve, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/pairings/{pairingID}/rooms", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -181,7 +187,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, rooms)
 	}))
 
-	mux.HandleFunc("GET /v1/pairings/{pairingID}/agents", authorizedWithVerifier(policy, service, authn.ScopeObserve, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/pairings/{pairingID}/agents", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -237,7 +243,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, room)
 	}))
 
-	mux.HandleFunc("GET /v1/rooms/{roomID}/messages", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/rooms/{roomID}/messages", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -252,7 +258,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, messages)
 	}))
 
-	mux.HandleFunc("GET /v1/rooms/{roomID}/threads", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/rooms/{roomID}/threads", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -267,7 +273,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, threads)
 	}))
 
-	mux.HandleFunc("GET /v1/threads/{threadID}/messages", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/threads/{threadID}/messages", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -282,7 +288,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, messages)
 	}))
 
-	mux.HandleFunc("GET /v1/threads/{threadID}", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/threads/{threadID}", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		thread, err := service.GetThreadContext(request.Context(), request.PathValue("threadID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
@@ -291,7 +297,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, thread)
 	}))
 
-	mux.HandleFunc("GET /v1/dms", authorizedWithVerifier(policy, service, authn.ScopeObserve, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/dms", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -305,7 +311,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, dms)
 	}))
 
-	mux.HandleFunc("GET /v1/dms/{dmID}", authorizedWithVerifier(policy, service, authn.ScopeObserve, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/dms/{dmID}", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		dm, err := service.GetDirectConversation(request.PathValue("dmID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
@@ -314,7 +320,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, dm)
 	}))
 
-	mux.HandleFunc("GET /v1/dms/{dmID}/messages", authorizedWithVerifier(policy, service, authn.ScopeObserve, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/dms/{dmID}/messages", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -329,7 +335,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, messages)
 	}))
 
-	mux.HandleFunc("GET /v1/artifacts", authorizedWithVerifier(policy, service, authn.ScopeObserve, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/artifacts", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)

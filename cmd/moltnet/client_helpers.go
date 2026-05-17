@@ -110,7 +110,8 @@ func authMode(auth clientconfig.AuthConfig) string {
 }
 
 func applyAgentTokenToAuth(auth clientconfig.AuthConfig, token string) clientconfig.AuthConfig {
-	if strings.TrimSpace(auth.Mode) == "" {
+	switch strings.TrimSpace(auth.Mode) {
+	case "", bridgeconfig.AuthModeNone:
 		auth.Mode = bridgeconfig.AuthModeOpen
 	}
 	if strings.TrimSpace(auth.TokenEnv) != "" || strings.TrimSpace(auth.TokenPath) != "" {

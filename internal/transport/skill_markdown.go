@@ -53,7 +53,7 @@ func visibleSkillRooms(
 	}
 
 	claims, ok := authn.ClaimsFromContext(request.Context())
-	if !ok || !claims.Allows(authn.ScopeObserve) {
+	if !ok || !claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}) {
 		return nil, false, nil
 	}
 	page, err := service.ListRoomsContext(request.Context(), protocol.PageRequest{Limit: 100})
@@ -91,15 +91,17 @@ func buildSkillMarkdownData(
 	}
 	registrationOpen := registration == authn.AgentRegistrationOpen
 	claims, hasClaims := authn.ClaimsFromContext(request.Context())
+	canReadProtected := authMode == authn.ModeNone ||
+		(hasClaims && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}))
 	canRead := authMode == authn.ModeNone || publicRead ||
-		(hasClaims && claims.Allows(authn.ScopeObserve))
+		canReadProtected
 	canSend := authMode == authn.ModeNone || (hasClaims && claims.Allows(authn.ScopeWrite))
 	canAdmin := authMode == authn.ModeNone || (hasClaims && claims.Allows(authn.ScopeAdmin))
 	baseURL := requestBaseURL(request)
 	networkID := strings.TrimSpace(network.ID)
 	roomInfos := roomInfosForRequest(request, authMode, publicRead, registration, rooms)
-	roomIDs := roomIDsFromInfos(roomInfos)
 	readRoomIDs := roomIDsReadable(roomInfos)
+	roomIDs := readRoomIDs
 	writeNowRoomIDs := roomIDsWritableNow(roomInfos)
 	writeAfterConnectRoomIDs := roomIDsWithConnectWrite(roomInfos)
 	canSendAfterConnect := registrationOpen && !canSend && len(writeAfterConnectRoomIDs) > 0
@@ -131,8 +133,10 @@ func buildSkillMarkdownData(
 		CanRead:                              canRead,
 		CanSendAfterConnect:                  canSendAfterConnect,
 		CanSendNow:                           len(writeNowRoomIDs) > 0,
+		CanReadDirectMessages:                network.Capabilities.DirectMessages && canReadProtected,
+		CanSendDirectMessages:                network.Capabilities.DirectMessages && canSend,
 		DirectMessages:                       enabledDisabled(network.Capabilities.DirectMessages),
-		DirectMessagesEnabled:                network.Capabilities.DirectMessages && canSend,
+		DirectMessagesEnabled:                network.Capabilities.DirectMessages,
 		HasReadRoomTarget:                    len(readRoomIDs) > 0 || !roomsVisible,
 		HasRooms:                             len(roomIDs) > 0,
 		HasWriteRoomTarget:                   len(writeNowRoomIDs) > 0 || len(writeAfterConnectRoomIDs) > 0 || !roomsVisible,
@@ -160,6 +164,8 @@ type skillMarkdownData struct {
 	BaseURLShell                         string
 	BearerAuth                           bool
 	CanAdmin                             bool
+	CanReadDirectMessages                bool
+	CanSendDirectMessages                bool
 	CanRead                              bool
 	CanSendAfterConnect                  bool
 	CanSendNow                           bool
@@ -257,7 +263,8 @@ func roomInfosForRequest(
 	canAdminWrite := hasClaims && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite)
 	canStaticWrite := hasClaims && claims.StaticToken() && claims.Allows(authn.ScopeWrite)
 	canAnonymousRead := authMode == authn.ModeNone || publicRead
-	canObserve := authMode == authn.ModeNone || (hasClaims && claims.Allows(authn.ScopeObserve))
+	canObserve := authMode == authn.ModeNone ||
+		(hasClaims && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}))
 
 	infos := make([]roomAccessInfo, 0, len(rooms))
 	for _, room := range rooms {
@@ -347,7 +354,7 @@ func roomIDsReadable(rooms []roomAccessInfo) []string {
 func roomIDsWritableNow(rooms []roomAccessInfo) []string {
 	ids := make([]string, 0, len(rooms))
 	for _, room := range rooms {
-		if room.CanWriteNow {
+		if room.CanRead && room.CanWriteNow {
 			ids = append(ids, room.ID)
 		}
 	}

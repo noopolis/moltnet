@@ -314,7 +314,7 @@ func (s *Service) canReadPrivateRoster(ctx context.Context) bool {
 		return true
 	}
 	claims, ok := authn.ClaimsFromContext(ctx)
-	return ok && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin, authn.ScopePair})
+	return ok && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin})
 }
 
 func agentSummariesByID(rooms []protocol.Room, networkID string) map[string]*protocol.AgentSummary {

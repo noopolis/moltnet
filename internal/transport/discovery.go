@@ -17,7 +17,7 @@ import (
 var installMarkdownTemplate string
 
 func attachDiscoveryRoutes(mux *http.ServeMux, policy *authn.Policy, service Service) {
-	mux.HandleFunc("GET /install.md", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /install.md", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		rooms, err := service.ListRoomsContext(request.Context(), protocol.PageRequest{Limit: 100})
 		if err != nil {
 			writeError(response, statusForError(err), err)
@@ -28,7 +28,7 @@ func attachDiscoveryRoutes(mux *http.ServeMux, policy *authn.Policy, service Ser
 
 	mux.HandleFunc("GET /skill.md", skillDiscoveryRoute(policy, service))
 
-	mux.HandleFunc("GET /llms.txt", publicInOpen(policy, service, []authn.Scope{authn.ScopeObserve}, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /llms.txt", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		response.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = response.Write([]byte(renderLLMsText(request, service.Network())))
 	}))
@@ -82,7 +82,7 @@ func renderInstallMarkdown(request *http.Request, policy *authn.Policy, network 
 		title = networkID
 	}
 	roomInfos := roomInfosForRequest(request, authMode, publicRead, registration, rooms)
-	roomIDs := roomIDsFromInfos(roomInfos)
+	roomIDs := roomIDsReadable(roomInfos)
 	writableAfterConnectIDs := roomIDsWithConnectWrite(roomInfos)
 	readOnlyIDs := roomIDsWithoutNowOrConnectWrite(roomInfos)
 	roomList := strings.Join(roomIDs, ",")
@@ -114,7 +114,7 @@ func renderInstallMarkdown(request *http.Request, policy *authn.Policy, network 
 		RoomIDs:                              roomIDs,
 		RoomListMarkdown:                     markdownCodeList(roomIDs),
 		RoomListShell:                        shellQuote(roomList),
-		RoomsYAML:                            roomsYAML(roomIDs),
+		RoomsYAML:                            roomsYAML(roomInfos),
 		WritableAfterConnectRoomListMarkdown: markdownCodeList(writableAfterConnectIDs),
 		DMsYAML:                              dmsYAML(network.Capabilities.DirectMessages),
 		Title:                                title,
@@ -152,26 +152,10 @@ type installMarkdownData struct {
 	Title                                string
 }
 
-func roomIDsForInstall(rooms []protocol.Room) []string {
-	return roomIDsFromInfos(roomInfosForRequest(nil, authn.ModeNone, false, authn.AgentRegistrationDisabled, rooms))
-}
-
-func roomIDsFromInfos(rooms []roomAccessInfo) []string {
-	ids := make([]string, 0, len(rooms))
-	for _, room := range rooms {
-		id := strings.TrimSpace(room.ID)
-		if id != "" {
-			ids = append(ids, id)
-		}
-	}
-	sort.Strings(ids)
-	return ids
-}
-
 func roomIDsWithConnectWrite(rooms []roomAccessInfo) []string {
 	ids := make([]string, 0, len(rooms))
 	for _, room := range rooms {
-		if room.CanWriteAfterConnect {
+		if room.CanRead && room.CanWriteAfterConnect {
 			ids = append(ids, room.ID)
 		}
 	}
@@ -182,7 +166,7 @@ func roomIDsWithConnectWrite(rooms []roomAccessInfo) []string {
 func roomIDsWithoutNowOrConnectWrite(rooms []roomAccessInfo) []string {
 	ids := make([]string, 0, len(rooms))
 	for _, room := range rooms {
-		if !room.CanWriteNow && !room.CanWriteAfterConnect {
+		if room.CanRead && !room.CanWriteNow && !room.CanWriteAfterConnect {
 			ids = append(ids, room.ID)
 		}
 	}
@@ -215,16 +199,31 @@ func markdownCodeList(values []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-func roomsYAML(roomIDs []string) string {
-	if len(roomIDs) == 0 {
+func roomsYAML(rooms []roomAccessInfo) string {
+	readableRooms := make([]roomAccessInfo, 0, len(rooms))
+	for _, room := range rooms {
+		if room.CanRead {
+			readableRooms = append(readableRooms, room)
+		}
+	}
+	if len(readableRooms) == 0 {
 		return "      []"
 	}
-	lines := make([]string, 0, len(roomIDs)*3)
-	for _, roomID := range roomIDs {
+	sort.Slice(readableRooms, func(left, right int) bool {
+		return readableRooms[left].ID < readableRooms[right].ID
+	})
+	lines := make([]string, 0, len(readableRooms)*3)
+	for _, room := range readableRooms {
+		read := "mentions"
+		reply := "auto"
+		if !room.CanWriteNow && !room.CanWriteAfterConnect {
+			read = "all"
+			reply = "never"
+		}
 		lines = append(lines,
-			"      - id: "+roomID,
-			"        read: mentions",
-			"        reply: auto",
+			"      - id: "+room.ID,
+			"        read: "+read,
+			"        reply: "+reply,
 		)
 	}
 	return strings.Join(lines, "\n")

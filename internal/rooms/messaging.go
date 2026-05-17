@@ -230,13 +230,15 @@ func (s *Service) remoteOriginRequiresPairCheck(
 }
 
 func (s *Service) validateHumanSender(ctx context.Context, origin protocol.MessageOrigin) error {
+	remoteOrigin := false
 	if originNetworkID := strings.TrimSpace(origin.NetworkID); originNetworkID != "" && originNetworkID != s.networkID {
+		remoteOrigin = true
 		claims, ok := authn.ClaimsFromContext(ctx)
 		if !ok || !claims.Allows(authn.ScopePair) {
 			return agentForbiddenError("remote-origin human sender requires pair scope")
 		}
 	}
-	if authn.ModeFromContext(ctx) != authn.ModeOpen {
+	if authn.ModeFromContext(ctx) == authn.ModeNone {
 		return nil
 	}
 	claims, ok := authn.ClaimsFromContext(ctx)
@@ -247,7 +249,10 @@ func (s *Service) validateHumanSender(ctx context.Context, origin protocol.Messa
 			cause:  ErrAgentUnauthorized,
 		}
 	}
-	if claims.AgentToken() || !claims.Allows(authn.ScopeWrite) {
+	if remoteOrigin && claims.Allows(authn.ScopePair) {
+		return nil
+	}
+	if claims.AgentToken() || !claims.StaticToken() || !claims.Allows(authn.ScopeWrite) {
 		return agentForbiddenError("human ingress requires a static write token")
 	}
 	return nil

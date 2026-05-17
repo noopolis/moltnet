@@ -122,15 +122,8 @@ func (s *Service) canReadRoom(ctx context.Context, room protocol.Room) bool {
 	if mode == authn.ModeNone && !authn.PublicReadFromContext(ctx) {
 		return true
 	}
-	if hasClaims && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin, authn.ScopePair}) {
+	if hasClaims && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}) {
 		return true
-	}
-	if hasClaims && claims.AgentToken() {
-		for _, agentID := range claims.AgentIDs() {
-			if actorIsRoomMember(room, protocol.Actor{ID: agentID, NetworkID: s.networkID}) {
-				return true
-			}
-		}
 	}
 	return authn.PublicReadFromContext(ctx) &&
 		protocol.NormalizeRoomVisibility(room.Visibility) == protocol.RoomVisibilityPublic

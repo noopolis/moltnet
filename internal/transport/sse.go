@@ -194,7 +194,8 @@ func publicOpenEvent(service Service) eventFilter {
 		case protocol.EventTypeThreadCreated:
 			return event.Thread != nil && publicOpenRoom(ctx, service, event.Thread.RoomID)
 		case protocol.EventTypeRoomRemoved:
-			return event.Room != nil && publicOpenRoom(ctx, service, event.Room.ID)
+			return event.Room != nil &&
+				protocol.NormalizeRoomVisibility(event.Room.Visibility) == protocol.RoomVisibilityPublic
 		case protocol.EventTypeReplayGap:
 			return true
 		default:
