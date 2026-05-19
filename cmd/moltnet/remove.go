@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/noopolis/moltnet/internal/app"
 	moltnetclient "github.com/noopolis/moltnet/internal/client"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/clientconfig"
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 type adminClientOptions struct {
@@ -21,8 +23,125 @@ type adminClientOptions struct {
 	tokenPath  string
 }
 
-func runRemoveAgent(args []string) error {
-	flags := flag.NewFlagSet("moltnet remove-agent", flag.ContinueOnError)
+type repeatedStringFlag []string
+
+func (f *repeatedStringFlag) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *repeatedStringFlag) Set(value string) error {
+	for _, item := range strings.Split(value, ",") {
+		trimmed := strings.TrimSpace(item)
+		if trimmed != "" {
+			*f = append(*f, trimmed)
+		}
+	}
+	return nil
+}
+
+func runApply(args []string) error {
+	flags := flag.NewFlagSet("moltnet apply", flag.ContinueOnError)
+	flags.SetOutput(stdout)
+
+	options := bindAdminOnlyFlags(flags)
+	flagArgs, path, err := splitApplyArgs(args)
+	if err != nil {
+		return err
+	}
+	if err := flags.Parse(flagArgs); err != nil {
+		return err
+	}
+	request, _, err := app.LoadApplyFile(path)
+	if err != nil {
+		return err
+	}
+	client, err := resolveAdminClient(flags, options)
+	if err != nil {
+		return err
+	}
+	result, err := client.ApplyConfig(commandContext(), request)
+	if err != nil {
+		return err
+	}
+	return printJSON(result)
+}
+
+func splitApplyArgs(args []string) ([]string, string, error) {
+	flagArgs := make([]string, 0, len(args))
+	var path string
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		if arg == "--auth-mode" ||
+			arg == "--base-url" ||
+			arg == "--config" ||
+			arg == "--member" ||
+			arg == "--network" ||
+			arg == "--token" ||
+			arg == "--token-env" ||
+			arg == "--token-path" {
+			if index+1 >= len(args) {
+				return nil, "", fmt.Errorf("flag %s requires a value", arg)
+			}
+			flagArgs = append(flagArgs, arg, args[index+1])
+			index++
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			flagArgs = append(flagArgs, arg)
+			continue
+		}
+		if path != "" {
+			return nil, "", fmt.Errorf("apply accepts at most one config path")
+		}
+		path = arg
+	}
+	return flagArgs, path, nil
+}
+
+func runAdminCommand(args []string) error {
+	if len(args) == 0 || args[0] == "help" {
+		fmt.Fprint(stdout, buildAdminUsage())
+		return nil
+	}
+
+	switch args[0] {
+	case "agent":
+		return runAdminAgentCommand(args[1:])
+	case "room":
+		return runAdminRoomCommand(args[1:])
+	default:
+		return fmt.Errorf("unknown admin command %q\n\n%s", args[0], buildAdminUsage())
+	}
+}
+
+func runAdminAgentCommand(args []string) error {
+	if len(args) == 0 || args[0] == "help" {
+		fmt.Fprint(stdout, buildAdminUsage())
+		return nil
+	}
+	if args[0] != "remove" {
+		return fmt.Errorf("unknown admin agent command %q\n\n%s", args[0], buildAdminUsage())
+	}
+	return runAdminRemoveAgent(args[1:])
+}
+
+func runAdminRoomCommand(args []string) error {
+	if len(args) == 0 || args[0] == "help" {
+		fmt.Fprint(stdout, buildAdminUsage())
+		return nil
+	}
+	switch args[0] {
+	case "remove":
+		return runAdminRemoveRoom(args[1:])
+	case "members":
+		return runAdminRoomMembers(args[1:])
+	default:
+		return fmt.Errorf("unknown admin room command %q\n\n%s", args[0], buildAdminUsage())
+	}
+}
+
+func runAdminRemoveAgent(args []string) error {
+	flags := flag.NewFlagSet("moltnet admin agent remove", flag.ContinueOnError)
 	flags.SetOutput(stdout)
 
 	options, agentID := bindAdminClientFlags(flags, "agent", "agent id to remove")
@@ -30,10 +149,10 @@ func runRemoveAgent(args []string) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return fmt.Errorf("remove-agent does not accept positional arguments")
+		return fmt.Errorf("admin agent remove does not accept positional arguments")
 	}
 	if strings.TrimSpace(*agentID) == "" {
-		return fmt.Errorf("remove-agent requires --agent")
+		return fmt.Errorf("admin agent remove requires --agent")
 	}
 
 	client, err := resolveAdminClient(flags, options)
@@ -47,8 +166,8 @@ func runRemoveAgent(args []string) error {
 	return printJSON(result)
 }
 
-func runRemoveRoom(args []string) error {
-	flags := flag.NewFlagSet("moltnet remove-room", flag.ContinueOnError)
+func runAdminRemoveRoom(args []string) error {
+	flags := flag.NewFlagSet("moltnet admin room remove", flag.ContinueOnError)
 	flags.SetOutput(stdout)
 
 	options, roomID := bindAdminClientFlags(flags, "room", "room id to remove")
@@ -56,10 +175,10 @@ func runRemoveRoom(args []string) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return fmt.Errorf("remove-room does not accept positional arguments")
+		return fmt.Errorf("admin room remove does not accept positional arguments")
 	}
 	if strings.TrimSpace(*roomID) == "" {
-		return fmt.Errorf("remove-room requires --room")
+		return fmt.Errorf("admin room remove requires --room")
 	}
 
 	client, err := resolveAdminClient(flags, options)
@@ -73,17 +192,75 @@ func runRemoveRoom(args []string) error {
 	return printJSON(result)
 }
 
-func bindAdminClientFlags(flags *flag.FlagSet, targetName string, targetUsage string) (*adminClientOptions, *string) {
+func runAdminRoomMembers(args []string) error {
+	if len(args) == 0 || args[0] == "help" {
+		fmt.Fprint(stdout, buildAdminUsage())
+		return nil
+	}
+	action := args[0]
+	if action != "add" && action != "remove" {
+		return fmt.Errorf("unknown admin room members command %q\n\n%s", action, buildAdminUsage())
+	}
+
+	flags := flag.NewFlagSet("moltnet admin room members "+action, flag.ContinueOnError)
+	flags.SetOutput(stdout)
+	options := bindAdminClientResolverFlags(flags, false)
+	roomID := flags.String("room", "", "room id to update")
+	var members repeatedStringFlag
+	flags.Var(&members, "member", "member id to add or remove; may be repeated or comma-separated")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("admin room members %s does not accept positional arguments", action)
+	}
+	if strings.TrimSpace(*roomID) == "" {
+		return fmt.Errorf("admin room members %s requires --room", action)
+	}
+	if len(members) == 0 {
+		return fmt.Errorf("admin room members %s requires --member", action)
+	}
+
+	request := protocol.UpdateRoomMembersRequest{}
+	switch action {
+	case "add":
+		request.Add = []string(members)
+	case "remove":
+		request.Remove = []string(members)
+	}
+	client, err := resolveAdminClient(flags, options)
+	if err != nil {
+		return err
+	}
+	room, err := client.UpdateRoomMembers(commandContext(), strings.TrimSpace(*roomID), request)
+	if err != nil {
+		return err
+	}
+	return printJSON(room)
+}
+
+func bindAdminOnlyFlags(flags *flag.FlagSet) *adminClientOptions {
+	return bindAdminClientResolverFlags(flags, true)
+}
+
+func bindAdminClientResolverFlags(flags *flag.FlagSet, includeMemberFlag bool) *adminClientOptions {
 	options := &adminClientOptions{}
-	target := flags.String(targetName, "", targetUsage)
 	flags.StringVar(&options.authMode, "auth-mode", "none", "client auth mode: none, bearer, or open")
 	flags.StringVar(&options.baseURL, "base-url", "", "Moltnet base URL")
 	flags.StringVar(&options.configPath, "config", "", "existing Moltnet client config path")
-	flags.StringVar(&options.memberID, "member", "", "Moltnet member id when reading an existing config")
+	if includeMemberFlag {
+		flags.StringVar(&options.memberID, "member", "", "Moltnet member id when reading an existing config")
+	}
 	flags.StringVar(&options.networkID, "network", "", "Moltnet network id when reading an existing config")
 	flags.StringVar(&options.token, "token", "", "plain bearer token")
 	flags.StringVar(&options.tokenEnv, "token-env", "", "environment variable containing the bearer token")
 	flags.StringVar(&options.tokenPath, "token-path", "", "file containing the bearer token")
+	return options
+}
+
+func bindAdminClientFlags(flags *flag.FlagSet, targetName string, targetUsage string) (*adminClientOptions, *string) {
+	options := bindAdminOnlyFlags(flags)
+	target := flags.String(targetName, "", targetUsage)
 	return options, target
 }
 

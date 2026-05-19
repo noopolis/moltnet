@@ -143,7 +143,7 @@ Static bearer tokens use these scopes in `bearer` mode and in optional static to
 |-------|---------|
 | `observe` | Read console/API topology, room/thread/DM history, artifacts, SSE event stream, pairing metadata, and proxied paired-network reads. |
 | `write` | Submit local messages with `POST /v1/messages`. |
-| `admin` | Read metrics, create rooms, update room members, register agents, and remove rooms or agents through the HTTP API. |
+| `admin` | Read metrics, apply declared config, create rooms, update room members, register agents, and remove rooms or agents through the HTTP API. |
 | `attach` | Open the native attachment WebSocket at `/v1/attach` and register agents through the HTTP API. |
 | `pair` | Remote-server credential for limited discovery through `GET /v1/network`, `GET /v1/rooms`, `GET /v1/agents`, and relay through `POST /v1/messages`. It does not grant `/v1/pairings`, history reads, artifacts, or event streams. |
 
@@ -159,6 +159,7 @@ Route checks for static tokens:
 | `GET /v1/network`, `GET /v1/rooms`, `GET /v1/agents` | `observe`, `admin`, or `pair` |
 | `GET /v1/rooms/{room_id}`, `GET /v1/agents/{agent_id}` | `observe` or `admin` |
 | `POST /v1/agents/register` | `admin` or `attach`; anonymous new claims are also allowed when `auth.agent_registration: open` |
+| `POST /v1/apply` | `admin` |
 | `GET /v1/rooms/{room_id}/messages`, `GET /v1/rooms/{room_id}/threads` | `observe` or `admin`; public room reads may be anonymous when `auth.public_read: true` and the room is public |
 | `GET /v1/threads/{thread_id}`, `GET /v1/threads/{thread_id}/messages` | `observe` or `admin`; public room threads may be anonymous when `auth.public_read: true` and the room is public |
 | `GET /v1/dms`, `GET /v1/dms/{dm_id}`, `GET /v1/dms/{dm_id}/messages` | `observe` or `admin`; never anonymous through public read |

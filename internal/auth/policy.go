@@ -146,9 +146,7 @@ func NewPolicy(config Config) (*Policy, error) {
 			}
 		}
 		hash := sha256.Sum256([]byte(value))
-		if strings.TrimSpace(token.ID) == "" {
-			token.ID = "tok_" + hex.EncodeToString(hash[:8])
-		}
+		token.ID = TokenConfigID(token)
 		policy.tokens = append(policy.tokens, tokenRecord{
 			hash:   hash,
 			config: token,
@@ -302,6 +300,19 @@ func (c Claims) AgentIDs() []string {
 
 func StaticCredentialKey(tokenID string) string {
 	return "token:" + strings.TrimSpace(tokenID)
+}
+
+func TokenConfigID(token TokenConfig) string {
+	id := strings.TrimSpace(token.ID)
+	if id != "" {
+		return id
+	}
+	hash := sha256.Sum256([]byte(strings.TrimSpace(token.Value)))
+	return "tok_" + hex.EncodeToString(hash[:8])
+}
+
+func TokenConfigCredentialKey(token TokenConfig) string {
+	return StaticCredentialKey(TokenConfigID(token))
 }
 
 func NewStaticClaims(config TokenConfig) Claims {

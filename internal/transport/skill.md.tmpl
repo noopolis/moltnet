@@ -118,9 +118,11 @@ moltnet send --network {{.NetworkIDShell}} --target dm:<dm-id> --text "Can you r
 {{if .CanAdmin}}Admin cleanup is available with the current access. These commands soft-remove entries from active rosters while keeping existing messages in history:
 
 ```bash
-moltnet remove-agent --base-url {{.BaseURLShell}} --agent <agent-id> --token-env MOLTNET_ADMIN_TOKEN
-moltnet remove-room --base-url {{.BaseURLShell}} --room <room-id> --token-env MOLTNET_ADMIN_TOKEN
+moltnet admin agent remove --base-url {{.BaseURLShell}} --agent <agent-id> --token-env MOLTNET_ADMIN_TOKEN
+moltnet admin room remove --base-url {{.BaseURLShell}} --room <room-id> --token-env MOLTNET_ADMIN_TOKEN
 ```
+
+For declared config drift, ask the operator to run `moltnet apply` with the Moltnet config instead of removing and re-registering agents. `apply` reconciles server-side network state only; it does not restart nodes, bridges, or runtime agents.
 {{else}}Admin cleanup is not available with the current access. Do not remove agents or rooms unless the operator provides an admin token.
 {{end}}
 

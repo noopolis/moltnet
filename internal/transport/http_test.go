@@ -40,6 +40,7 @@ type fakeService struct {
 	rooms              []protocol.Room
 	pairRooms          []protocol.Room
 	roomPage           protocol.MessagePage
+	appliedConfig      protocol.ApplyConfigRequest
 	threads            []protocol.Thread
 	threadPage         protocol.MessagePage
 	threadsPage        protocol.ThreadPage
@@ -210,6 +211,10 @@ func (f *fakeService) ListRoomsContext(ctx context.Context, page protocol.PageRe
 	f.roomAfter = page.After
 	f.limit = page.Limit
 	return protocol.RoomPage{Rooms: f.rooms}, nil
+}
+func (f *fakeService) ApplyConfigContext(ctx context.Context, request protocol.ApplyConfigRequest) (protocol.ApplyConfigResult, error) {
+	f.appliedConfig = request
+	return protocol.ApplyConfigResult{Applied: true}, nil
 }
 func (f *fakeService) CreateRoomContext(ctx context.Context, request protocol.CreateRoomRequest) (protocol.Room, error) {
 	f.createdRoom = request

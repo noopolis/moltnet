@@ -365,10 +365,7 @@ func TestRelayRetriesTransientRelayFailureAfterCooldown(t *testing.T) {
 	service.relayMessage(roomRelayMessage())
 	waitForRelayCalls(t, client, 1)
 	waitForRelayDone(t, client)
-	pairings, err := service.ListPairings()
-	if err != nil {
-		t.Fatalf("ListPairings() error = %v", err)
-	}
+	pairings := waitForPairingStatus(t, service, "pair_b", protocol.PairingStatusError)
 	if pairings[0].Status != protocol.PairingStatusError {
 		t.Fatalf("expected transient relay failure to mark pairing error, got %#v", pairings[0])
 	}
@@ -384,10 +381,7 @@ func TestRelayRetriesTransientRelayFailureAfterCooldown(t *testing.T) {
 	service.relayMessage(roomRelayMessage())
 	waitForRelayCalls(t, client, 1)
 	waitForRelayDone(t, client)
-	pairings, err = service.ListPairings()
-	if err != nil {
-		t.Fatalf("ListPairings() error = %v", err)
-	}
+	pairings = waitForPairingStatus(t, service, "pair_b", protocol.PairingStatusConnected)
 	if pairings[0].Status != protocol.PairingStatusConnected {
 		t.Fatalf("expected retry to restore pairing, got %#v", pairings[0])
 	}
@@ -443,6 +437,31 @@ func newRelayCompatibilityService(client *recordingPairingClient) *Service {
 		Broker:        events.NewBroker(),
 		PairingClient: client,
 	})
+}
+
+func waitForPairingStatus(t *testing.T, service *Service, pairingID string, want string) []protocol.Pairing {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		pairings, err := service.ListPairings()
+		if err != nil {
+			t.Fatalf("ListPairings() error = %v", err)
+		}
+		for _, pairing := range pairings {
+			if pairing.ID == pairingID && pairing.Status == want {
+				return pairings
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	pairings, err := service.ListPairings()
+	if err != nil {
+		t.Fatalf("ListPairings() error = %v", err)
+	}
+	t.Fatalf("timed out waiting for pairing %q status %q, got %#v", pairingID, want, pairings)
+	return nil
 }
 
 func roomRelayMessage() protocol.Message {

@@ -137,6 +137,46 @@ func TestAgentRegistryDoesNotStorePlaintextAgentToken(t *testing.T) {
 	}
 }
 
+func TestAgentRegistryReconcileRebindsCredential(t *testing.T) {
+	t.Parallel()
+
+	registry := NewMemoryStore()
+	now := time.Now().UTC()
+	first := protocol.AgentRegistration{
+		NetworkID:     "local",
+		AgentID:       "director",
+		ActorUID:      "actor_1",
+		ActorURI:      protocol.AgentFQID("local", "director"),
+		DisplayName:   "Director",
+		CredentialKey: "agent-token:old",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if _, err := registry.RegisterAgentContext(context.Background(), first); err != nil {
+		t.Fatalf("RegisterAgentContext() error = %v", err)
+	}
+
+	reconciled, err := registry.ReconcileRegisteredAgentContext(context.Background(), protocol.AgentRegistration{
+		NetworkID:     "local",
+		AgentID:       "director",
+		ActorUID:      "actor_2",
+		ActorURI:      protocol.AgentFQID("local", "director"),
+		DisplayName:   "Director Prime",
+		CredentialKey: "token:new",
+		CreatedAt:     now.Add(time.Hour),
+		UpdatedAt:     now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ReconcileRegisteredAgentContext() error = %v", err)
+	}
+	if reconciled.ActorUID != "actor_1" ||
+		reconciled.CredentialKey != "token:new" ||
+		reconciled.DisplayName != "Director Prime" ||
+		!reconciled.CreatedAt.Equal(now) {
+		t.Fatalf("unexpected reconciled registration %#v", reconciled)
+	}
+}
+
 func TestRemoveRegisteredAgentAndMemberships(t *testing.T) {
 	t.Parallel()
 

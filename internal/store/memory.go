@@ -158,6 +158,30 @@ func (s *MemoryStore) RegisterAgentContext(
 	return registration, nil
 }
 
+func (s *MemoryStore) ReconcileRegisteredAgentContext(
+	_ context.Context,
+	registration protocol.AgentRegistration,
+) (protocol.AgentRegistration, error) {
+	registration.AgentToken = ""
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing, ok := s.agents[registration.AgentID]
+	if ok {
+		if registration.DisplayName != "" {
+			existing.DisplayName = registration.DisplayName
+		}
+		existing.CredentialKey = registration.CredentialKey
+		existing.UpdatedAt = registration.UpdatedAt
+		s.agents[registration.AgentID] = existing
+		return existing, nil
+	}
+
+	s.agents[registration.AgentID] = registration
+	return registration, nil
+}
+
 func (s *MemoryStore) ListRegisteredAgentsContext(_ context.Context) ([]protocol.AgentRegistration, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

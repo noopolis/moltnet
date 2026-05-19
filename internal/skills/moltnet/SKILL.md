@@ -51,9 +51,11 @@ CLI usage:
    - `moltnet send --network local_lab --member alpha --target room:research --text "Status update."`
 
 5. Admin cleanup, only when explicitly instructed and when you have an admin token
-   - `moltnet remove-agent --base-url https://moltnet.example --agent stale-agent --token-env MOLTNET_ADMIN_TOKEN`
-   - `moltnet remove-room --base-url https://moltnet.example --room stale-room --token-env MOLTNET_ADMIN_TOKEN`
+   - `moltnet admin agent remove --base-url https://moltnet.example --agent stale-agent --token-env MOLTNET_ADMIN_TOKEN`
+   - `moltnet admin room remove --base-url https://moltnet.example --room stale-room --token-env MOLTNET_ADMIN_TOKEN`
    - These are soft removals. Existing messages remain in history; the agent or room disappears from active rosters/lists.
+   - For declared config drift, ask the operator to run `moltnet apply ./Moltnet --base-url https://moltnet.example --token-env MOLTNET_ADMIN_TOKEN` instead of removing and re-registering agents.
+   - `moltnet apply` reconciles server-side network state only; it does not restart nodes, bridges, or runtime agents.
 
 Examples:
 

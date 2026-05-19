@@ -15,7 +15,6 @@ import (
 	"github.com/noopolis/moltnet/internal/rooms"
 	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/internal/transport"
-	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 const (
@@ -90,7 +89,11 @@ func New(config Config) (*App, error) {
 		instance.closers = append(instance.closers, closer)
 	}
 
-	if err := seedRooms(service, config.Rooms); err != nil {
+	applyRequest, err := applyRequestFromConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := service.ApplyConfigContext(context.Background(), applyRequest); err != nil {
 		return nil, err
 	}
 
@@ -164,27 +167,4 @@ func (a *App) close() {
 				Warn("close moltnet resources")
 		}
 	}
-}
-
-func seedRooms(service *rooms.Service, roomConfigs []RoomConfig) error {
-	for _, roomConfig := range roomConfigs {
-		request := protocol.CreateRoomRequest{
-			ID:          roomConfig.ID,
-			Name:        roomConfig.Name,
-			Members:     append([]string(nil), roomConfig.Members...),
-			Visibility:  roomConfig.Visibility,
-			WritePolicy: roomConfig.WritePolicy,
-		}
-		if _, err := service.CreateRoom(request); err != nil {
-			if errors.Is(err, rooms.ErrRoomExists) {
-				if _, reconcileErr := service.ReconcileRoomContext(context.Background(), request); reconcileErr != nil {
-					return fmt.Errorf("reconcile room %q: %w", roomConfig.ID, reconcileErr)
-				}
-				continue
-			}
-			return fmt.Errorf("seed room %q: %w", roomConfig.ID, err)
-		}
-	}
-
-	return nil
 }
