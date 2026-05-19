@@ -112,7 +112,7 @@ func TestDiscoveryRoutesOpenMode(t *testing.T) {
 		if strings.Contains(body, "moltnet send --network local_lab --target room:lab") {
 			t.Fatalf("open public skill should not expose send for member-default rooms\n%s", body)
 		}
-		if strings.Contains(body, "moltnet remove-agent --base-url") {
+		if strings.Contains(body, "moltnet admin agent remove --base-url") {
 			t.Fatalf("open public skill should not expose admin command\n%s", body)
 		}
 	})
@@ -208,7 +208,7 @@ func TestDiscoveryRoutesRequireObserveWhenBearerProtected(t *testing.T) {
 	if !strings.Contains(body, "Current access: read-only access") ||
 		!strings.Contains(body, "Read recent room history:") ||
 		strings.Contains(body, "Send to a room:") ||
-		strings.Contains(body, "moltnet remove-agent --base-url") {
+		strings.Contains(body, "moltnet admin agent remove --base-url") {
 		t.Fatalf("unexpected observe-only skill\n%s", body)
 	}
 }
@@ -264,7 +264,7 @@ func TestSkillRouteUsesBearerTokenCapabilities(t *testing.T) {
 		t.Fatalf("expected admin skill, got %d", response.Code)
 	}
 	if body := response.Body.String(); !strings.Contains(body, "Current access: admin access") ||
-		!strings.Contains(body, "moltnet remove-agent --base-url") {
+		!strings.Contains(body, "moltnet admin agent remove --base-url") {
 		t.Fatalf("unexpected admin skill\n%s", body)
 	}
 }

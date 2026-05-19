@@ -81,22 +81,15 @@ type rawPostgresStorage struct {
 }
 
 func loadFileConfig(path string) (rawConfigFile, error) {
-	contents, err := os.ReadFile(path)
+	contents, err := readConfigFile(path)
 	if err != nil {
-		return rawConfigFile{}, fmt.Errorf("read Moltnet config %q: %w", path, err)
+		return rawConfigFile{}, err
 	}
 
 	var config rawConfigFile
-	switch configFormat(path) {
-	case "json":
-		err = decodeJSONConfig(contents, &config)
-	default:
-		err = decodeYAMLConfig(contents, &config)
+	if err := decodeConfigBytes(path, contents, &config); err != nil {
+		return rawConfigFile{}, err
 	}
-	if err != nil {
-		return rawConfigFile{}, fmt.Errorf("decode Moltnet config %q: %w", path, err)
-	}
-
 	if err := validateConfigFile(config); err != nil {
 		return rawConfigFile{}, fmt.Errorf("validate Moltnet config %q: %w", path, err)
 	}
@@ -107,6 +100,28 @@ func loadFileConfig(path string) (rawConfigFile, error) {
 	}
 
 	return config, nil
+}
+
+func readConfigFile(path string) ([]byte, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read Moltnet config %q: %w", path, err)
+	}
+	return contents, nil
+}
+
+func decodeConfigBytes(path string, contents []byte, config *rawConfigFile) error {
+	var err error
+	switch configFormat(path) {
+	case "json":
+		err = decodeJSONConfig(contents, config)
+	default:
+		err = decodeYAMLConfig(contents, config)
+	}
+	if err != nil {
+		return fmt.Errorf("decode Moltnet config %q: %w", path, err)
+	}
+	return nil
 }
 
 func decodeJSONConfig(contents []byte, target *rawConfigFile) error {

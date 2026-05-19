@@ -13,6 +13,21 @@ func (s *SQLStore) RegisterAgentContext(
 	ctx context.Context,
 	registration protocol.AgentRegistration,
 ) (protocol.AgentRegistration, error) {
+	return s.upsertRegisteredAgentContext(ctx, registration, false)
+}
+
+func (s *SQLStore) ReconcileRegisteredAgentContext(
+	ctx context.Context,
+	registration protocol.AgentRegistration,
+) (protocol.AgentRegistration, error) {
+	return s.upsertRegisteredAgentContext(ctx, registration, true)
+}
+
+func (s *SQLStore) upsertRegisteredAgentContext(
+	ctx context.Context,
+	registration protocol.AgentRegistration,
+	rebindCredential bool,
+) (protocol.AgentRegistration, error) {
 	registration.AgentToken = ""
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -26,16 +41,24 @@ func (s *SQLStore) RegisterAgentContext(
 		return protocol.AgentRegistration{}, err
 	}
 	if ok {
-		if existing.CredentialKey != registration.CredentialKey {
+		if existing.CredentialKey != registration.CredentialKey && !rebindCredential {
 			return protocol.AgentRegistration{}, ErrAgentCredential
 		}
 		if registration.DisplayName != "" {
 			existing.DisplayName = registration.DisplayName
 		}
+		existing.CredentialKey = registration.CredentialKey
 		existing.UpdatedAt = registration.UpdatedAt
 
-		query := bindQuery(s.dialect, `UPDATE agents SET display_name = ?, updated_at = ? WHERE agent_id = ?`)
-		if _, err := tx.ExecContext(ctx, query, existing.DisplayName, formatTime(existing.UpdatedAt), existing.AgentID); err != nil {
+		query := bindQuery(s.dialect, `UPDATE agents SET display_name = ?, credential_key = ?, updated_at = ? WHERE agent_id = ?`)
+		if _, err := tx.ExecContext(
+			ctx,
+			query,
+			existing.DisplayName,
+			existing.CredentialKey,
+			formatTime(existing.UpdatedAt),
+			existing.AgentID,
+		); err != nil {
 			return protocol.AgentRegistration{}, fmt.Errorf("update agent %q: %w", existing.AgentID, err)
 		}
 		if err := tx.Commit(); err != nil {
@@ -62,7 +85,7 @@ func (s *SQLStore) RegisterAgentContext(
 	); err != nil {
 		if isUniqueConstraintError(err) {
 			_ = tx.Rollback()
-			return s.RegisterAgentContext(ctx, registration)
+			return s.upsertRegisteredAgentContext(ctx, registration, rebindCredential)
 		}
 		return protocol.AgentRegistration{}, fmt.Errorf("insert agent %q: %w", registration.AgentID, err)
 	}

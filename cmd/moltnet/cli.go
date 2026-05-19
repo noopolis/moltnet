@@ -20,8 +20,15 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 	case "--version":
 		fmt.Fprintln(stdout, buildVersion)
 		return nil
+	case "--help", "-h":
+		fmt.Fprint(stdout, buildUsage())
+		return nil
 	case "", "start", "server":
 		return runServer(ctx, buildVersion)
+	case "admin":
+		return runAdminCommand(rest)
+	case "apply":
+		return runApply(rest)
 	case "bridge":
 		return runBridgeCommand(ctx, rest)
 	case "connect":
@@ -36,10 +43,6 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runRead(rest)
 	case "register-agent":
 		return runRegisterAgent(rest)
-	case "remove-agent":
-		return runRemoveAgent(rest)
-	case "remove-room":
-		return runRemoveRoom(rest)
 	case "send":
 		return runSend(rest)
 	case "skill":

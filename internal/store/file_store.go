@@ -279,6 +279,28 @@ func (s *FileStore) RegisterAgentContext(
 	return registered, nil
 }
 
+func (s *FileStore) ReconcileRegisteredAgentContext(
+	_ context.Context,
+	registration protocol.AgentRegistration,
+) (protocol.AgentRegistration, error) {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+
+	working := memoryStoreFromSnapshot(s.snapshot())
+	registered, err := working.ReconcileRegisteredAgentContext(context.Background(), registration)
+	if err != nil {
+		return protocol.AgentRegistration{}, err
+	}
+
+	next := snapshotFromMemoryStore(working)
+	if err := s.persistSnapshot(next); err != nil {
+		return protocol.AgentRegistration{}, err
+	}
+
+	s.restore(next)
+	return registered, nil
+}
+
 func (s *FileStore) RemoveRegisteredAgentContext(_ context.Context, agentID string) error {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()

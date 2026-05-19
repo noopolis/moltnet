@@ -235,6 +235,18 @@ func TestRunHelpCommand(t *testing.T) {
 	}
 }
 
+func TestRunHelpFlag(t *testing.T) {
+	output := captureStdout(t, func() {
+		if err := run(context.Background(), []string{"--help"}, "test"); err != nil {
+			t.Fatalf("run() --help error = %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "moltnet apply") {
+		t.Fatalf("expected help output, got %q", output)
+	}
+}
+
 func TestRunUnknownCommand(t *testing.T) {
 	err := run(context.Background(), []string{"wat"}, "test")
 	if err == nil {

@@ -60,6 +60,30 @@ func (c *Client) RemoveRoom(ctx context.Context, roomID string) (protocol.Remove
 	return result, nil
 }
 
+func (c *Client) ApplyConfig(
+	ctx context.Context,
+	request protocol.ApplyConfigRequest,
+) (protocol.ApplyConfigResult, error) {
+	var result protocol.ApplyConfigResult
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/apply", request, &result); err != nil {
+		return protocol.ApplyConfigResult{}, err
+	}
+	return result, nil
+}
+
+func (c *Client) UpdateRoomMembers(
+	ctx context.Context,
+	roomID string,
+	request protocol.UpdateRoomMembersRequest,
+) (protocol.Room, error) {
+	var room protocol.Room
+	path := "/v1/rooms/" + url.PathEscape(roomID) + "/members"
+	if err := c.doJSON(ctx, http.MethodPatch, path, request, &room); err != nil {
+		return protocol.Room{}, err
+	}
+	return room, nil
+}
+
 func (c *Client) ListRoomMessages(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.MessagePage, error) {
 	var messages protocol.MessagePage
 	path := "/v1/rooms/" + url.PathEscape(roomID) + "/messages" + encodePage(page)

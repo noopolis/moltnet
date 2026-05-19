@@ -26,6 +26,7 @@ type Service interface {
 	PairingRoomsContext(ctx context.Context, pairingID string, page protocol.PageRequest) (protocol.RoomPage, error)
 	PairingAgentsContext(ctx context.Context, pairingID string, page protocol.PageRequest) (protocol.AgentPage, error)
 	ListRoomsContext(ctx context.Context, page protocol.PageRequest) (protocol.RoomPage, error)
+	ApplyConfigContext(ctx context.Context, request protocol.ApplyConfigRequest) (protocol.ApplyConfigResult, error)
 	CreateRoomContext(ctx context.Context, request protocol.CreateRoomRequest) (protocol.Room, error)
 	RemoveRoomContext(ctx context.Context, roomID string) (protocol.RemoveResult, error)
 	UpdateRoomMembers(ctx context.Context, roomID string, request protocol.UpdateRoomMembersRequest) (protocol.Room, error)
@@ -139,6 +140,22 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 	}))
 
 	mux.HandleFunc("POST /v1/agents/register", handleRegisterAgent(service, policy))
+
+	mux.HandleFunc("POST /v1/apply", authorizedWithVerifier(policy, service, authn.ScopeAdmin, func(response http.ResponseWriter, request *http.Request) {
+		var payload protocol.ApplyConfigRequest
+		if err := decodeJSON(response, request, &payload); err != nil {
+			writeError(response, http.StatusBadRequest, err)
+			return
+		}
+
+		result, err := service.ApplyConfigContext(request.Context(), payload)
+		if err != nil {
+			writeError(response, statusForError(err), err)
+			return
+		}
+
+		writeJSON(response, http.StatusOK, result)
+	}))
 
 	mux.HandleFunc("DELETE /v1/agents/{agentID}", authorizedWithVerifier(policy, service, authn.ScopeAdmin, func(response http.ResponseWriter, request *http.Request) {
 		result, err := service.RemoveAgentContext(request.Context(), request.PathValue("agentID"))
