@@ -143,7 +143,7 @@ func bootstrapTargets(config bridgeconfig.Config) []bootstrapTarget {
 	targets := make([]bootstrapTarget, 0, len(config.Rooms))
 
 	for _, binding := range config.Rooms {
-		if !bridgeutil.ShouldReply(binding.Reply) {
+		if !bridgeutil.ShouldBootstrap(binding.Wake) {
 			continue
 		}
 

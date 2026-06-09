@@ -2,30 +2,24 @@ package bridgeconfig
 
 import "testing"
 
-func TestValidateReadReplyConfigHelpers(t *testing.T) {
+func TestValidateWakeConfigHelpers(t *testing.T) {
 	t.Parallel()
 
 	valid := Config{
-		Read:  ReadAll,
-		Reply: ReplyAuto,
 		Rooms: []RoomBinding{
-			{ID: "research", Read: ReadMentions, Reply: ReplyManual},
+			{ID: "research", Wake: WakeMentions},
 		},
 		DMs: &DMConfig{
 			Enabled: true,
-			Read:    ReadMentions,
-			Reply:   ReplyNever,
+			Wake:    WakeNever,
 		},
 	}
-	if err := validateReadReplyConfig(valid); err != nil {
-		t.Fatalf("validateReadReplyConfig() error = %v", err)
+	if err := validateWakeConfig(valid); err != nil {
+		t.Fatalf("validateWakeConfig() error = %v", err)
 	}
 
-	if err := validateReadReplyConfig(Config{Read: ReadConfig("weird")}); err == nil {
-		t.Fatal("expected invalid top-level read config error")
-	}
-	if err := validateReadReplyConfig(Config{Reply: ReplyConfig("weird")}); err == nil {
-		t.Fatal("expected invalid top-level reply config error")
+	if err := validateWakeConfig(Config{Rooms: []RoomBinding{{ID: "research", Wake: WakeConfig("weird")}}}); err == nil {
+		t.Fatal("expected invalid room wake config error")
 	}
 }
 

@@ -373,12 +373,12 @@ func TestAttachmentHeartbeatHelpers(t *testing.T) {
 		t.Fatalf("unexpected scaled read timeout %v", got)
 	}
 	if !attachmentSupportsThreads(bridgeconfig.Config{
-		Rooms: []bridgeconfig.RoomBinding{{ID: "research", Reply: bridgeconfig.ReplyAuto}},
+		Rooms: []bridgeconfig.RoomBinding{{ID: "research", Wake: bridgeconfig.WakeAll}},
 	}) {
 		t.Fatal("expected auto-reply room binding to advertise thread support")
 	}
 	if attachmentSupportsThreads(bridgeconfig.Config{
-		Rooms: []bridgeconfig.RoomBinding{{ID: "research", Reply: bridgeconfig.ReplyManual}},
+		Rooms: []bridgeconfig.RoomBinding{{ID: "research", Wake: bridgeconfig.WakeNever}},
 	}) {
 		t.Fatal("expected manual-only room binding to suppress thread support")
 	}

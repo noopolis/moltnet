@@ -16,14 +16,14 @@ func newTestBridge() *bridge {
 			Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
 			DMs: &bridgeconfig.DMConfig{
 				Enabled: true,
-				Read:    bridgeconfig.ReadAll,
+				Wake:    bridgeconfig.WakeAll,
 			},
 		},
 		channel:   "moltnet",
 		agentName: "Researcher",
 		roomBindings: map[string]bridgeconfig.RoomBinding{
-			"research": {ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto},
-			"ops":      {ID: "ops", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyAuto},
+			"research": {ID: "research", Wake: bridgeconfig.WakeMentions},
+			"ops":      {ID: "ops", Wake: bridgeconfig.WakeAll},
 		},
 	}
 }
@@ -224,20 +224,20 @@ func TestHelpers(t *testing.T) {
 
 	bridge := newTestBridge()
 
-	if !bridgeutil.ShouldRead(bridgeconfig.ReadMentions, protocol.Target{Kind: protocol.TargetKindRoom}, []string{"Researcher"}, bridge.config.Agent) {
-		t.Fatal("expected mention read")
+	if !bridgeutil.ShouldWake(bridgeconfig.WakeMentions, protocol.Target{Kind: protocol.TargetKindRoom}, []string{"Researcher"}, bridge.config.Agent) {
+		t.Fatal("expected mention wake")
 	}
-	if bridgeutil.ShouldRead(bridgeconfig.ReadThreadOnly, protocol.Target{Kind: protocol.TargetKindRoom}, nil, bridge.config.Agent) {
-		t.Fatal("did not expect thread_only read")
+	if bridgeutil.ShouldWake(bridgeconfig.WakeThreadOnly, protocol.Target{Kind: protocol.TargetKindRoom}, nil, bridge.config.Agent) {
+		t.Fatal("did not expect thread_only wake")
 	}
-	if !bridgeutil.ShouldRead(bridgeconfig.ReadThreadOnly, protocol.Target{Kind: protocol.TargetKindThread}, nil, bridge.config.Agent) {
-		t.Fatal("expected thread_only to read threads")
+	if !bridgeutil.ShouldWake(bridgeconfig.WakeThreadOnly, protocol.Target{Kind: protocol.TargetKindThread}, nil, bridge.config.Agent) {
+		t.Fatal("expected thread_only to wake on threads")
 	}
-	if !bridgeutil.ShouldReadDirect(bridgeconfig.ReadMentions) {
-		t.Fatal("expected direct mentions read")
+	if !bridgeutil.ShouldWakeDirect(bridgeconfig.WakeMentions) {
+		t.Fatal("expected direct mentions wake")
 	}
-	if bridgeutil.ShouldReadDirect(bridgeconfig.ReadThreadOnly) {
-		t.Fatal("did not expect direct thread_only read")
+	if bridgeutil.ShouldWakeDirect(bridgeconfig.WakeThreadOnly) {
+		t.Fatal("did not expect direct thread_only wake")
 	}
 
 	if actor := bridgeutil.SenderName(protocol.Actor{ID: "writer", Name: "Writer"}); actor != "Writer" {

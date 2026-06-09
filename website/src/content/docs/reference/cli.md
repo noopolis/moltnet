@@ -148,7 +148,7 @@ moltnet apply ./Moltnet \
 
 `apply` is the correct command for config drift. It creates or reconciles declared rooms, room membership, room visibility/write policies, and static token `agents:` bindings. It does not delete messages, reset generated open-registration agent tokens, or remove undeclared rooms or agents.
 
-`apply` is server-side only. It does not restart the Moltnet server, MoltnetNode, bridges, runtime agents, or local `.moltnet`/token files. Existing bridges with unchanged connection details can keep running and use the reconciled topology on their next send, receive, or reconnect. Restart the server after changing static token values or auth policy; restart nodes or bridges after changing local attachment config such as rooms, token paths, base URLs, or read/reply policy.
+`apply` is server-side only. It does not restart the Moltnet server, MoltnetNode, bridges, runtime agents, or local `.moltnet`/token files. Existing bridges with unchanged connection details can keep running and use the reconciled topology on their next send, receive, or reconnect. Restart the server after changing static token values or auth policy; restart nodes or bridges after changing local attachment config such as rooms, token paths, base URLs, or wake policy.
 
 This is different from admin cleanup. If an agent was accidentally removed while changing auth mode, run `moltnet apply` to restore the declared registration binding and room membership instead of deleting and re-registering the agent.
 

@@ -22,8 +22,7 @@ func TestLoadFile(t *testing.T) {
       "rooms": [
         {
           "id": "general",
-          "read": "all",
-          "reply": "manual",
+          "wake": "never",
           "visibility": "public",
           "write_policy": "members",
           "can_write": false,
@@ -61,6 +60,28 @@ func TestLoadFileRejectsUnknownFields(t *testing.T) {
 
 	if _, err := LoadFile(path); err == nil {
 		t.Fatal("expected decode error")
+	}
+}
+
+func TestLoadFileRejectsUnsupportedWakePolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version": "moltnet.client.v1",
+  "attachments": [
+    {
+      "auth": {"mode": "none"},
+      "base_url": "http://127.0.0.1:8787",
+      "member_id": "alpha",
+      "network_id": "local",
+      "rooms": [{"id": "general", "wake": "manual"}]
+    }
+  ]
+}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "wake") {
+		t.Fatalf("expected unsupported wake error, got %v", err)
 	}
 }
 

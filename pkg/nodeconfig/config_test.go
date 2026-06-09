@@ -23,12 +23,10 @@ attachments:
       kind: openclaw
     rooms:
       - id: research
-        read: all
-        reply: auto
+        wake: all
     dms:
       enabled: true
-      read: all
-      reply: auto
+      wake: all
 `)
 
 	config, err := LoadFile(path)
@@ -65,8 +63,7 @@ attachments:
       session_store_path: ./codex-workspace/.moltnet/sessions.json
     rooms:
       - id: research
-        read: mentions
-        reply: auto
+        wake: mentions
   - agent:
       id: claude_bot
       name: Claude Bot
@@ -76,8 +73,7 @@ attachments:
       workspace_path: ./claude-workspace
     rooms:
       - id: research
-        read: mentions
-        reply: auto
+        wake: mentions
 `)
 
 	config, err := LoadFile(path)

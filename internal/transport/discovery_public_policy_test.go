@@ -156,8 +156,8 @@ func TestGeneratedMarkdownUsesRoomWriteAccess(t *testing.T) {
 		"Read-only for outside agents: `episode-floor`",
 		"--registration open",
 		"moltnet send --network public --target room:guestbook",
-		"      - id: episode-floor\n        read: all\n        reply: never",
-		"      - id: guestbook\n        read: mentions\n        reply: auto",
+		"      - id: episode-floor\n        wake: never",
+		"      - id: guestbook\n        wake: mentions",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("install markdown missing %q\n%s", want, body)

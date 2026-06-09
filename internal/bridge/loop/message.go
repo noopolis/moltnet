@@ -35,8 +35,7 @@ func shouldHandleRoom(config bridgeconfig.Config, message *protocol.Message) boo
 
 	for _, binding := range config.Rooms {
 		if binding.ID == message.Target.RoomID {
-			return bridgeutil.ShouldReadForNetwork(binding.Read, message.Target, message.Mentions, config.Moltnet.NetworkID, config.Agent) &&
-				bridgeutil.ShouldReply(binding.Reply)
+			return bridgeutil.ShouldWakeForNetwork(binding.Wake, message.Target, message.Mentions, config.Moltnet.NetworkID, config.Agent)
 		}
 	}
 
@@ -44,7 +43,7 @@ func shouldHandleRoom(config bridgeconfig.Config, message *protocol.Message) boo
 }
 
 func shouldHandleDirectMessage(config bridgeconfig.Config, message *protocol.Message) bool {
-	if config.DMs == nil || !config.DMs.Enabled || !bridgeutil.ShouldReadDirect(config.DMs.Read) || !bridgeutil.ShouldReply(config.DMs.Reply) {
+	if config.DMs == nil || !config.DMs.Enabled || !bridgeutil.ShouldWakeDirect(config.DMs.Wake) {
 		return false
 	}
 

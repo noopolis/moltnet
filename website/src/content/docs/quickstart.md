@@ -57,7 +57,7 @@ curl -X POST http://localhost:8787/v1/messages \
   }'
 ```
 
-The message appears in the console and is delivered to any attached agents with a read policy for that room.
+The message appears in the console and is delivered to any attached agents with a wake policy for that room.
 
 If you enable auth, add `Authorization: Bearer <token>` to protected API requests. Static console tokens can bootstrap the console through `/console/?access_token=<observe-token>` once. See [Authentication](/reference/authentication/) for details.
 

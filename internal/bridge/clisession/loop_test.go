@@ -101,7 +101,7 @@ func TestRunnerDeliversBootstrapAndMessageThroughCLI(t *testing.T) {
 			SessionStorePath: filepath.Join(workspace, ".moltnet", "sessions.json"),
 		},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyAuto},
+			{ID: "research", Wake: bridgeconfig.WakeAll},
 		},
 	}
 

@@ -30,7 +30,7 @@ func TestShouldHandle(t *testing.T) {
 			NetworkID: "local",
 		},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto},
+			{ID: "research", Wake: bridgeconfig.WakeMentions},
 		},
 	}
 
@@ -60,7 +60,7 @@ func TestShouldHandle(t *testing.T) {
 		DMID:           "dm_1",
 		ParticipantIDs: []string{"researcher", "writer"},
 	}
-	config.DMs = &bridgeconfig.DMConfig{Enabled: true, Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyAuto}
+	config.DMs = &bridgeconfig.DMConfig{Enabled: true, Wake: bridgeconfig.WakeAll}
 	if !ShouldHandle(config, event) {
 		t.Fatal("expected dm to be handled")
 	}
@@ -79,10 +79,10 @@ func TestShouldHandle(t *testing.T) {
 	config.Moltnet.NetworkID = "local"
 	event.Message.NetworkID = "local"
 
-	config.DMs.Reply = bridgeconfig.ReplyManual
+	config.DMs.Wake = bridgeconfig.WakeNever
 	event.Message.Target.ParticipantIDs = []string{"researcher", "writer"}
 	if ShouldHandle(config, event) {
-		t.Fatal("expected manual reply policy to skip auto handling")
+		t.Fatal("expected never wake policy to skip handling")
 	}
 
 	if ShouldHandle(config, protocol.Event{Type: "other"}) {
@@ -104,7 +104,7 @@ func TestHelperFunctions(t *testing.T) {
 			Moltnet: bridgeconfig.MoltnetConfig{
 				NetworkID: "net_b",
 			},
-			DMs: &bridgeconfig.DMConfig{Enabled: true, Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyAuto},
+			DMs: &bridgeconfig.DMConfig{Enabled: true, Wake: bridgeconfig.WakeAll},
 		},
 		&protocol.Message{Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "dm_1", ParticipantIDs: []string{"net_a:writer", "net_b:researcher"}}},
 	) {
@@ -116,7 +116,7 @@ func TestHelperFunctions(t *testing.T) {
 			Moltnet: bridgeconfig.MoltnetConfig{
 				NetworkID: "net_b",
 			},
-			DMs: &bridgeconfig.DMConfig{Enabled: true, Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyAuto},
+			DMs: &bridgeconfig.DMConfig{Enabled: true, Wake: bridgeconfig.WakeAll},
 		},
 		&protocol.Message{Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "dm_1", ParticipantIDs: []string{"net_a:writer", "net_c:orchestrator"}}},
 	) {

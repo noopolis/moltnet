@@ -69,7 +69,7 @@ func TestNodeRunsCodexAndClaudeCodeAttachmentsAgainstMoltnet(t *testing.T) {
 					WorkspacePath:    codexWorkspace,
 					SessionStorePath: filepath.Join(codexWorkspace, ".moltnet", "sessions.json"),
 				},
-				Rooms: []bridgeconfig.RoomBinding{{ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto}},
+				Rooms: []bridgeconfig.RoomBinding{{ID: "research", Wake: bridgeconfig.WakeMentions}},
 			},
 			{
 				Agent: bridgeconfig.AgentConfig{ID: "claude_bot", Name: "Claude Bot"},
@@ -79,7 +79,7 @@ func TestNodeRunsCodexAndClaudeCodeAttachmentsAgainstMoltnet(t *testing.T) {
 					WorkspacePath:    claudeWorkspace,
 					SessionStorePath: filepath.Join(claudeWorkspace, ".moltnet", "sessions.json"),
 				},
-				Rooms: []bridgeconfig.RoomBinding{{ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto}},
+				Rooms: []bridgeconfig.RoomBinding{{ID: "research", Wake: bridgeconfig.WakeMentions}},
 			},
 		},
 	})

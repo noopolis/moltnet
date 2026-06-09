@@ -26,7 +26,7 @@ func TestEnsureWorkspaceClientConfigWritesOpenToken(t *testing.T) {
 			TokenPath: tokenPath,
 		},
 		Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeCodex, WorkspacePath: workspace},
-		Rooms:   []bridgeconfig.RoomBinding{{ID: "agora", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyAuto}},
+		Rooms:   []bridgeconfig.RoomBinding{{ID: "agora", Wake: bridgeconfig.WakeAll}},
 	}
 
 	if err := EnsureWorkspaceClientConfig(config); err != nil {

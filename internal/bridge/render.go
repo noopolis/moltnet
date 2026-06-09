@@ -121,21 +121,21 @@ func RenderCompactInboundMessage(
 	return strings.Join(lines, "\n")
 }
 
-func ShouldRead(mode bridgeconfig.ReadConfig, target protocol.Target, mentions []string, agent bridgeconfig.AgentConfig) bool {
-	return ShouldReadForNetwork(mode, target, mentions, "", agent)
+func ShouldWake(mode bridgeconfig.WakeConfig, target protocol.Target, mentions []string, agent bridgeconfig.AgentConfig) bool {
+	return ShouldWakeForNetwork(mode, target, mentions, "", agent)
 }
 
-func ShouldReadForNetwork(
-	mode bridgeconfig.ReadConfig,
+func ShouldWakeForNetwork(
+	mode bridgeconfig.WakeConfig,
 	target protocol.Target,
 	mentions []string,
 	networkID string,
 	agent bridgeconfig.AgentConfig,
 ) bool {
 	switch mode {
-	case "", bridgeconfig.ReadAll:
+	case "", bridgeconfig.WakeAll:
 		return true
-	case bridgeconfig.ReadMentions:
+	case bridgeconfig.WakeMentions:
 		for _, mention := range mentions {
 			if mention == agent.ID || mention == agent.Name ||
 				(strings.TrimSpace(networkID) != "" && protocol.ActorMatches(networkID, agent.ID, mention)) {
@@ -143,29 +143,26 @@ func ShouldReadForNetwork(
 			}
 		}
 		return false
-	case bridgeconfig.ReadThreadOnly:
+	case bridgeconfig.WakeThreadOnly:
 		return target.Kind == protocol.TargetKindThread
+	case bridgeconfig.WakeNever:
+		return false
 	default:
 		return false
 	}
 }
 
-func ShouldReadDirect(mode bridgeconfig.ReadConfig) bool {
+func ShouldWakeDirect(mode bridgeconfig.WakeConfig) bool {
 	switch mode {
-	case "", bridgeconfig.ReadAll, bridgeconfig.ReadMentions:
+	case "", bridgeconfig.WakeAll, bridgeconfig.WakeMentions:
 		return true
 	default:
 		return false
 	}
 }
 
-func ShouldReply(mode bridgeconfig.ReplyConfig) bool {
-	switch mode {
-	case "", bridgeconfig.ReplyAuto:
-		return true
-	default:
-		return false
-	}
+func ShouldBootstrap(mode bridgeconfig.WakeConfig) bool {
+	return mode == "" || mode == bridgeconfig.WakeAll
 }
 
 func SenderName(actor protocol.Actor) string {

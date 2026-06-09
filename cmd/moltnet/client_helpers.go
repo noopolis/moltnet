@@ -221,7 +221,7 @@ func parseRooms(value string) []bridgeconfig.RoomBinding {
 		if roomID == "" {
 			continue
 		}
-		rooms = append(rooms, bridgeconfig.RoomBinding{ID: roomID, Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyManual})
+		rooms = append(rooms, bridgeconfig.RoomBinding{ID: roomID, Wake: bridgeconfig.WakeNever})
 	}
 
 	return rooms

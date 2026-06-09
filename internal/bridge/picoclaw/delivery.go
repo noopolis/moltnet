@@ -107,9 +107,7 @@ func bootstrapTargets(config bridgeconfig.Config) []protocol.Target {
 
 	for _, binding := range config.Rooms {
 		if strings.TrimSpace(binding.ID) == "" ||
-			!bridgeutil.ShouldReply(binding.Reply) ||
-			binding.Read == bridgeconfig.ReadThreadOnly ||
-			binding.Read == bridgeconfig.ReadMentions {
+			!bridgeutil.ShouldBootstrap(binding.Wake) {
 			continue
 		}
 

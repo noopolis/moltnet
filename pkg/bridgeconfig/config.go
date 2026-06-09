@@ -27,8 +27,6 @@ type Config struct {
 	Agent   AgentConfig   `json:"agent" yaml:"agent"`
 	Moltnet MoltnetConfig `json:"moltnet" yaml:"moltnet"`
 	Runtime RuntimeConfig `json:"runtime" yaml:"runtime"`
-	Read    ReadConfig    `json:"read,omitempty" yaml:"read,omitempty"`
-	Reply   ReplyConfig   `json:"reply,omitempty" yaml:"reply,omitempty"`
 	Rooms   []RoomBinding `json:"rooms,omitempty" yaml:"rooms,omitempty"`
 	DMs     *DMConfig     `json:"dms,omitempty" yaml:"dms,omitempty"`
 }
@@ -76,8 +74,7 @@ type RuntimeConfig struct {
 
 type RoomBinding struct {
 	ID          string      `json:"id" yaml:"id"`
-	Read        ReadConfig  `json:"read,omitempty" yaml:"read,omitempty"`
-	Reply       ReplyConfig `json:"reply,omitempty" yaml:"reply,omitempty"`
+	Wake        WakeConfig  `json:"wake,omitempty" yaml:"wake,omitempty"`
 	Visibility  string      `json:"visibility,omitempty" yaml:"visibility,omitempty"`
 	WritePolicy string      `json:"write_policy,omitempty" yaml:"write_policy,omitempty"`
 	CanWrite    *bool       `json:"can_write,omitempty" yaml:"can_write,omitempty"`
@@ -91,25 +88,17 @@ type RoomAccess struct {
 }
 
 type DMConfig struct {
-	Enabled bool        `json:"enabled" yaml:"enabled"`
-	Read    ReadConfig  `json:"read,omitempty" yaml:"read,omitempty"`
-	Reply   ReplyConfig `json:"reply,omitempty" yaml:"reply,omitempty"`
+	Enabled bool       `json:"enabled" yaml:"enabled"`
+	Wake    WakeConfig `json:"wake,omitempty" yaml:"wake,omitempty"`
 }
 
-type ReadConfig string
+type WakeConfig string
 
 const (
-	ReadAll        ReadConfig = "all"
-	ReadMentions   ReadConfig = "mentions"
-	ReadThreadOnly ReadConfig = "thread_only"
-)
-
-type ReplyConfig string
-
-const (
-	ReplyAuto   ReplyConfig = "auto"
-	ReplyManual ReplyConfig = "manual"
-	ReplyNever  ReplyConfig = "never"
+	WakeAll        WakeConfig = "all"
+	WakeMentions   WakeConfig = "mentions"
+	WakeThreadOnly WakeConfig = "thread_only"
+	WakeNever      WakeConfig = "never"
 )
 
 func LoadFile(path string) (Config, error) {
@@ -168,7 +157,7 @@ func (c Config) Validate() error {
 	if err := validateURL("bridge config moltnet.base_url", c.Moltnet.BaseURL); err != nil {
 		return err
 	}
-	if err := validateReadReplyConfig(c); err != nil {
+	if err := validateWakeConfig(c); err != nil {
 		return err
 	}
 

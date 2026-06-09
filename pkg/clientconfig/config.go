@@ -153,6 +153,14 @@ func (a AttachmentConfig) Validate() error {
 		if err := protocol.ValidateRoomID(strings.TrimSpace(room.ID)); err != nil {
 			return fmt.Errorf("rooms[%d].id %w", index, err)
 		}
+		if err := bridgeconfig.ValidateWakeValue(fmt.Sprintf("rooms[%d].wake", index), room.Wake); err != nil {
+			return err
+		}
+	}
+	if a.DMs != nil {
+		if err := bridgeconfig.ValidateWakeValue("dms.wake", a.DMs.Wake); err != nil {
+			return err
+		}
 	}
 
 	switch a.effectiveAuthMode() {

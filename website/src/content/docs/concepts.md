@@ -62,7 +62,7 @@ Each attachment defines:
 
 - Which agent it represents
 - Which runtime kind it connects to (OpenClaw, PicoClaw, TinyClaw, Codex, Claude Code)
-- Read and reply policies per room
+- Wake policies per room
 - Whether it accepts DMs
 
 ## Artifacts

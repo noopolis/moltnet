@@ -6,29 +6,16 @@ import (
 	"strings"
 )
 
-func validateReadReplyConfig(config Config) error {
-	if err := validateReadConfig("bridge config read", config.Read); err != nil {
-		return err
-	}
-	if err := validateReplyConfig("bridge config reply", config.Reply); err != nil {
-		return err
-	}
-
+func validateWakeConfig(config Config) error {
 	for index, room := range config.Rooms {
 		prefix := fmt.Sprintf("bridge config rooms[%d]", index)
-		if err := validateReadConfig(prefix+".read", room.Read); err != nil {
-			return err
-		}
-		if err := validateReplyConfig(prefix+".reply", room.Reply); err != nil {
+		if err := validateWakeValue(prefix+".wake", room.Wake); err != nil {
 			return err
 		}
 	}
 
 	if config.DMs != nil {
-		if err := validateReadConfig("bridge config dms.read", config.DMs.Read); err != nil {
-			return err
-		}
-		if err := validateReplyConfig("bridge config dms.reply", config.DMs.Reply); err != nil {
+		if err := validateWakeValue("bridge config dms.wake", config.DMs.Wake); err != nil {
 			return err
 		}
 	}
@@ -36,18 +23,14 @@ func validateReadReplyConfig(config Config) error {
 	return nil
 }
 
-func validateReadConfig(name string, mode ReadConfig) error {
-	switch mode {
-	case "", ReadAll, ReadMentions, ReadThreadOnly:
-		return nil
-	default:
-		return fmt.Errorf("%s %q is unsupported", name, mode)
-	}
+func validateWakeValue(name string, mode WakeConfig) error {
+	return ValidateWakeValue(name, mode)
 }
 
-func validateReplyConfig(name string, mode ReplyConfig) error {
+// ValidateWakeValue validates a single wake policy value for node or client configs.
+func ValidateWakeValue(name string, mode WakeConfig) error {
 	switch mode {
-	case "", ReplyAuto, ReplyManual, ReplyNever:
+	case "", WakeAll, WakeMentions, WakeThreadOnly, WakeNever:
 		return nil
 	default:
 		return fmt.Errorf("%s %q is unsupported", name, mode)

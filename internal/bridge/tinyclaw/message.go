@@ -30,21 +30,18 @@ func (b *bridge) shouldHandle(event protocol.Event) bool {
 			return false
 		}
 
-		return bridgeutil.ShouldReadForNetwork(binding.Read, message.Target, message.Mentions, b.config.Moltnet.NetworkID, b.config.Agent) &&
-			bridgeutil.ShouldReply(binding.Reply)
+		return bridgeutil.ShouldWakeForNetwork(binding.Wake, message.Target, message.Mentions, b.config.Moltnet.NetworkID, b.config.Agent)
 	case protocol.TargetKindThread:
 		binding, ok := b.roomBindings[message.Target.RoomID]
 		if !ok {
 			return false
 		}
 
-		return bridgeutil.ShouldReadForNetwork(binding.Read, message.Target, message.Mentions, b.config.Moltnet.NetworkID, b.config.Agent) &&
-			bridgeutil.ShouldReply(binding.Reply)
+		return bridgeutil.ShouldWakeForNetwork(binding.Wake, message.Target, message.Mentions, b.config.Moltnet.NetworkID, b.config.Agent)
 	case protocol.TargetKindDM:
 		return b.config.DMs != nil &&
 			b.config.DMs.Enabled &&
-			bridgeutil.ShouldReadDirect(b.config.DMs.Read) &&
-			bridgeutil.ShouldReply(b.config.DMs.Reply)
+			bridgeutil.ShouldWakeDirect(b.config.DMs.Wake)
 	default:
 		return false
 	}

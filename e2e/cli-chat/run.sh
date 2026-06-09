@@ -258,8 +258,7 @@ attachments:
       session_store_path: /work/codex/.moltnet/sessions.json
     rooms:
       - id: $room_id
-        read: mentions
-        reply: auto
+        wake: mentions
 
   - agent:
       id: $claude_id
@@ -272,8 +271,7 @@ attachments:
       session_store_path: /work/claude/.moltnet/sessions.json
     rooms:
       - id: $room_id
-        read: mentions
-        reply: auto
+        wake: mentions
 EOF
 }
 

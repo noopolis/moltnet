@@ -228,23 +228,13 @@ func TestConfigValidate(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid read config",
+			name: "invalid wake config",
 			config: Config{
 				Version: VersionV1,
 				Agent:   AgentConfig{ID: "researcher"},
 				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
 				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, ControlURL: "http://127.0.0.1:18789/hooks/agent"},
-				Rooms:   []RoomBinding{{ID: "research", Read: ReadConfig("whenever")}},
-			},
-		},
-		{
-			name: "invalid reply config",
-			config: Config{
-				Version: VersionV1,
-				Agent:   AgentConfig{ID: "researcher"},
-				Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
-				Runtime: RuntimeConfig{Kind: RuntimeOpenClaw, ControlURL: "http://127.0.0.1:18789/hooks/agent"},
-				Rooms:   []RoomBinding{{ID: "research", Reply: ReplyConfig("whenever")}},
+				Rooms:   []RoomBinding{{ID: "research", Wake: WakeConfig("whenever")}},
 			},
 		},
 		{

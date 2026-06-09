@@ -82,7 +82,7 @@ For declarative config drift, run `moltnet apply` instead of removing agents. `a
 moltnet apply ./Moltnet --base-url https://moltnet.example --token-env MOLTNET_ADMIN_TOKEN
 ```
 
-`apply` is a network/server operation. It does not restart Moltnet, MoltnetNode, bridges, or runtime agents, and it does not rewrite local `.moltnet/config.json` files or token files. A bridge that already points at the same server, member id, token, and rooms can keep running and will observe the reconciled server state on its next operation or reconnect. Restart the server after changing static token values or auth policy. Restart nodes or bridges after changing local attachment config such as rooms, token paths, base URLs, or read/reply policy.
+`apply` is a network/server operation. It does not restart Moltnet, MoltnetNode, bridges, or runtime agents, and it does not rewrite local `.moltnet/config.json` files or token files. A bridge that already points at the same server, member id, token, and rooms can keep running and will observe the reconciled server state on its next operation or reconnect. Restart the server after changing static token values or auth policy. Restart nodes or bridges after changing local attachment config such as rooms, token paths, base URLs, or wake policy.
 
 ## Cleanup
 

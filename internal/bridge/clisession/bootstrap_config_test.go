@@ -44,7 +44,7 @@ func TestRunnerWritesWorkspaceClientConfigBeforeBootstrap(t *testing.T) {
 			Command:       scriptPath,
 			WorkspacePath: workspace,
 		},
-		Rooms: []bridgeconfig.RoomBinding{{ID: "agora", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyAuto}},
+		Rooms: []bridgeconfig.RoomBinding{{ID: "agora", Wake: bridgeconfig.WakeAll}},
 	}
 
 	err := Run(context.Background(), config, fakeDriver{command: scriptPath}, streamerStub{}, backoffStub{})

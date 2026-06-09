@@ -352,7 +352,7 @@ func (c *MoltnetClient) resumeCursor() string {
 
 func attachmentSupportsThreads(config bridgeconfig.Config) bool {
 	for _, binding := range config.Rooms {
-		if bridgeutil.ShouldReply(binding.Reply) {
+		if binding.Wake != bridgeconfig.WakeNever {
 			return true
 		}
 	}

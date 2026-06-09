@@ -58,7 +58,7 @@ func TestRunnerQueuesMessagesWhileRuntimeIsActive(t *testing.T) {
 			SessionStorePath: filepath.Join(workspace, ".moltnet", "sessions.json"),
 		},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto},
+			{ID: "research", Wake: bridgeconfig.WakeMentions},
 		},
 	}
 

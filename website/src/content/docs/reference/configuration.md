@@ -112,7 +112,7 @@ Scope meanings:
 
 At startup, Moltnet reconciles declared rooms and static token `agents:` bindings into the persistent store. For a running remote server, use `moltnet apply ./Moltnet --base-url <url> --token-env <admin-token-env>` to perform the same reconciliation without deleting messages or treating agents as new identities. This is the right path after auth-mode changes, static attachment token rotation, or accidental room-membership drift.
 
-`apply` reconciles server-side state only. It does not restart the server, MoltnetNode, bridges, runtime agents, or rewrite local token/config files. Changing static token values or server auth policy still requires a server restart. Changing local attachment config, such as rooms, token paths, base URLs, or read/reply policy, requires restarting the affected node or bridge.
+`apply` reconciles server-side state only. It does not restart the server, MoltnetNode, bridges, runtime agents, or rewrite local token/config files. Changing static token values or server auth policy still requires a server restart. Changing local attachment config, such as rooms, token paths, base URLs, or wake policy, requires restarting the affected node or bridge.
 
 ### storage
 

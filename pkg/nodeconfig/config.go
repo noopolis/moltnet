@@ -38,8 +38,6 @@ type AttachmentConfig struct {
 	Agent   bridgeconfig.AgentConfig        `json:"agent" yaml:"agent"`
 	Moltnet bridgeconfig.MoltnetTokenConfig `json:"moltnet,omitempty" yaml:"moltnet,omitempty"`
 	Runtime bridgeconfig.RuntimeConfig      `json:"runtime" yaml:"runtime"`
-	Read    bridgeconfig.ReadConfig         `json:"read,omitempty" yaml:"read,omitempty"`
-	Reply   bridgeconfig.ReplyConfig        `json:"reply,omitempty" yaml:"reply,omitempty"`
 	Rooms   []bridgeconfig.RoomBinding      `json:"rooms,omitempty" yaml:"rooms,omitempty"`
 	DMs     *bridgeconfig.DMConfig          `json:"dms,omitempty" yaml:"dms,omitempty"`
 }
@@ -161,8 +159,6 @@ func (a AttachmentConfig) bridgeConfig(moltnet bridgeconfig.MoltnetConfig) bridg
 		Agent:   a.Agent,
 		Moltnet: moltnet,
 		Runtime: a.Runtime,
-		Read:    a.Read,
-		Reply:   a.Reply,
 		Rooms:   append([]bridgeconfig.RoomBinding(nil), a.Rooms...),
 		DMs:     a.DMs,
 	}.Normalized()

@@ -212,18 +212,15 @@ func roomsYAML(rooms []roomAccessInfo) string {
 	sort.Slice(readableRooms, func(left, right int) bool {
 		return readableRooms[left].ID < readableRooms[right].ID
 	})
-	lines := make([]string, 0, len(readableRooms)*3)
+	lines := make([]string, 0, len(readableRooms)*2)
 	for _, room := range readableRooms {
-		read := "mentions"
-		reply := "auto"
+		wake := "mentions"
 		if !room.CanWriteNow && !room.CanWriteAfterConnect {
-			read = "all"
-			reply = "never"
+			wake = "never"
 		}
 		lines = append(lines,
 			"      - id: "+room.ID,
-			"        read: "+read,
-			"        reply: "+reply,
+			"        wake: "+wake,
 		)
 	}
 	return strings.Join(lines, "\n")
@@ -233,7 +230,7 @@ func dmsYAML(enabled bool) string {
 	if !enabled {
 		return "    dms:\n      enabled: false"
 	}
-	return "    dms:\n      enabled: true\n      read: all\n      reply: auto"
+	return "    dms:\n      enabled: true\n      wake: all"
 }
 
 func requestBaseURL(request *http.Request) string {

@@ -60,7 +60,7 @@ func TestRunCommandLoopDeliversInboundMessagesWithoutBlockingBootstrap(t *testin
 			Kind:       bridgeconfig.RuntimePicoClaw,
 		},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyAuto},
+			{ID: "research", Wake: bridgeconfig.WakeAll},
 		},
 	}
 

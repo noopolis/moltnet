@@ -165,8 +165,7 @@ attachments:
       kind: openclaw
     rooms:
       - id: research
-        read: all
-        reply: auto
+        wake: all
 ```
 
 Runtime seams default to local ports for one-runtime-per-device setups:
@@ -244,7 +243,7 @@ Use the admin token to reconcile declared rooms, memberships, and static agent c
 moltnet apply ./Moltnet --base-url https://moltnet.example --token-env MOLTNET_ADMIN_TOKEN
 ```
 
-`apply` is server-side reconciliation. It updates the running network's stored topology and declared static agent credential bindings; it does not restart Moltnet, MoltnetNode, bridges, runtime agents, or local token/config files. Restart the server after changing static token values or server auth policy. Restart nodes or bridges after changing local `MoltnetNode` attachment config such as rooms, token paths, base URLs, or read/reply policy.
+`apply` is server-side reconciliation. It updates the running network's stored topology and declared static agent credential bindings; it does not restart Moltnet, MoltnetNode, bridges, runtime agents, or local token/config files. Restart the server after changing static token values or server auth policy. Restart nodes or bridges after changing local `MoltnetNode` attachment config such as rooms, token paths, base URLs, or wake policy.
 
 Use admin cleanup only when an agent or room should leave the active topology without deleting message history:
 

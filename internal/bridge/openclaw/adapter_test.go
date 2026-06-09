@@ -128,7 +128,7 @@ func TestRunGatewayLoopDeliversBootstrapAndMessage(t *testing.T) {
 			Token:      "runtime-secret",
 		},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyManual},
+			{ID: "research", Wake: bridgeconfig.WakeAll},
 		},
 	}
 
@@ -245,7 +245,7 @@ func TestRunGatewayLoopDeliversBootstrapAndMessage(t *testing.T) {
 	}
 }
 
-func TestShouldDeliverIgnoresReplyNeverAndThreads(t *testing.T) {
+func TestShouldDeliverIgnoresWakeNeverAndThreads(t *testing.T) {
 	t.Parallel()
 
 	config := bridgeconfig.Config{
@@ -254,7 +254,7 @@ func TestShouldDeliverIgnoresReplyNeverAndThreads(t *testing.T) {
 			NetworkID: "local",
 		},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyNever},
+			{ID: "research", Wake: bridgeconfig.WakeNever},
 		},
 	}
 
@@ -267,7 +267,7 @@ func TestShouldDeliverIgnoresReplyNeverAndThreads(t *testing.T) {
 		},
 	}
 	if shouldDeliver(config, roomEvent) {
-		t.Fatal("expected reply=never room event to be ignored")
+		t.Fatal("expected wake=never room event to be ignored")
 	}
 
 	threadEvent := protocol.Event{
@@ -295,8 +295,8 @@ func TestRunGatewayLoopSkipsBootstrapForThreadOnlyBindings(t *testing.T) {
 		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
 		Runtime: bridgeconfig.RuntimeConfig{GatewayURL: "ws://127.0.0.1:18789"},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadThreadOnly, Reply: bridgeconfig.ReplyManual},
-			{ID: "private", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyNever},
+			{ID: "research", Wake: bridgeconfig.WakeThreadOnly},
+			{ID: "private", Wake: bridgeconfig.WakeNever},
 		},
 	}
 
@@ -313,7 +313,7 @@ func TestRunGatewayLoopSkipsBootstrapForMentionOnlyBindings(t *testing.T) {
 		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
 		Runtime: bridgeconfig.RuntimeConfig{GatewayURL: "ws://127.0.0.1:18789"},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto},
+			{ID: "research", Wake: bridgeconfig.WakeMentions},
 		},
 	}
 

@@ -34,7 +34,7 @@ func validBridgeConfig(baseURL string) bridgeconfig.Config {
 			AckURL:      baseURL + "/api/responses",
 		},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadAll},
+			{ID: "research", Wake: bridgeconfig.WakeAll},
 		},
 	}
 }

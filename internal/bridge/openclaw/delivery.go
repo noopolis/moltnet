@@ -107,8 +107,7 @@ func shouldDeliverRoom(config bridgeconfig.Config, message *protocol.Message) bo
 			continue
 		}
 
-		return bridgeutil.ShouldReadForNetwork(binding.Read, message.Target, message.Mentions, config.Moltnet.NetworkID, config.Agent) &&
-			binding.Reply != bridgeconfig.ReplyNever
+		return bridgeutil.ShouldWakeForNetwork(binding.Wake, message.Target, message.Mentions, config.Moltnet.NetworkID, config.Agent)
 	}
 
 	return false
@@ -118,7 +117,7 @@ func shouldDeliverDirectMessage(config bridgeconfig.Config, message *protocol.Me
 	if message == nil || config.DMs == nil || !config.DMs.Enabled {
 		return false
 	}
-	if !bridgeutil.ShouldReadDirect(config.DMs.Read) || config.DMs.Reply == bridgeconfig.ReplyNever {
+	if !bridgeutil.ShouldWakeDirect(config.DMs.Wake) {
 		return false
 	}
 
@@ -152,9 +151,7 @@ func bootstrapTargets(config bridgeconfig.Config) []protocol.Target {
 	targets := make([]protocol.Target, 0, len(config.Rooms))
 	for _, binding := range config.Rooms {
 		if strings.TrimSpace(binding.ID) == "" ||
-			binding.Reply == bridgeconfig.ReplyNever ||
-			binding.Read == bridgeconfig.ReadThreadOnly ||
-			binding.Read == bridgeconfig.ReadMentions {
+			!bridgeutil.ShouldBootstrap(binding.Wake) {
 			continue
 		}
 		targets = append(targets, protocol.Target{

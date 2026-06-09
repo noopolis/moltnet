@@ -143,7 +143,7 @@ func TestRunControlLoopStartsStreamBeforeBootstrap(t *testing.T) {
 		Agent:   bridgeconfig.AgentConfig{ID: "researcher"},
 		Moltnet: bridgeconfig.MoltnetConfig{BaseURL: moltnetServer.URL, NetworkID: "local"},
 		Runtime: bridgeconfig.RuntimeConfig{ControlURL: controlServer.URL},
-		Rooms:   []bridgeconfig.RoomBinding{{ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto}},
+		Rooms:   []bridgeconfig.RoomBinding{{ID: "research", Wake: bridgeconfig.WakeAll}},
 	}
 
 	if err := RunControlLoop(context.Background(), config); err != nil {

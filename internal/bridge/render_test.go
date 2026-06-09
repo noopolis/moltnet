@@ -90,23 +90,23 @@ func TestBridgeHelpers(t *testing.T) {
 	t.Parallel()
 
 	agent := bridgeconfig.AgentConfig{ID: "researcher", Name: "Researcher"}
-	if !ShouldRead("", protocol.Target{Kind: protocol.TargetKindRoom}, nil, agent) {
-		t.Fatal("expected default read mode to read")
+	if !ShouldWake("", protocol.Target{Kind: protocol.TargetKindRoom}, nil, agent) {
+		t.Fatal("expected default wake mode to wake")
 	}
-	if !ShouldRead(bridgeconfig.ReadMentions, protocol.Target{Kind: protocol.TargetKindRoom}, []string{"Researcher"}, agent) {
-		t.Fatal("expected mention read")
+	if !ShouldWake(bridgeconfig.WakeMentions, protocol.Target{Kind: protocol.TargetKindRoom}, []string{"Researcher"}, agent) {
+		t.Fatal("expected mention wake")
 	}
-	if !ShouldReadForNetwork(
-		bridgeconfig.ReadMentions,
+	if !ShouldWakeForNetwork(
+		bridgeconfig.WakeMentions,
 		protocol.Target{Kind: protocol.TargetKindRoom},
 		[]string{protocol.AgentFQID("local", "researcher")},
 		"local",
 		agent,
 	) {
-		t.Fatal("expected canonical mention read")
+		t.Fatal("expected canonical mention wake")
 	}
-	if ShouldReadForNetwork(
-		bridgeconfig.ReadMentions,
+	if ShouldWakeForNetwork(
+		bridgeconfig.WakeMentions,
 		protocol.Target{Kind: protocol.TargetKindRoom},
 		[]string{protocol.AgentFQID("remote", "researcher")},
 		"local",
@@ -114,29 +114,32 @@ func TestBridgeHelpers(t *testing.T) {
 	) {
 		t.Fatal("expected remote canonical mention to be ignored")
 	}
-	if ShouldRead(bridgeconfig.ReadMentions, protocol.Target{Kind: protocol.TargetKindRoom}, nil, agent) {
+	if ShouldWake(bridgeconfig.WakeMentions, protocol.Target{Kind: protocol.TargetKindRoom}, nil, agent) {
 		t.Fatal("expected missing mention to be ignored")
 	}
-	if ShouldRead(bridgeconfig.ReadThreadOnly, protocol.Target{Kind: protocol.TargetKindRoom}, nil, agent) {
+	if ShouldWake(bridgeconfig.WakeThreadOnly, protocol.Target{Kind: protocol.TargetKindRoom}, nil, agent) {
 		t.Fatal("expected thread-only mode to ignore room messages")
 	}
-	if !ShouldRead(bridgeconfig.ReadThreadOnly, protocol.Target{Kind: protocol.TargetKindThread}, nil, agent) {
-		t.Fatal("expected thread-only mode to read thread targets")
+	if !ShouldWake(bridgeconfig.WakeThreadOnly, protocol.Target{Kind: protocol.TargetKindThread}, nil, agent) {
+		t.Fatal("expected thread-only mode to wake on thread targets")
 	}
-	if ShouldRead(bridgeconfig.ReadConfig("invalid"), protocol.Target{Kind: protocol.TargetKindRoom}, nil, agent) {
-		t.Fatal("expected invalid read mode to be ignored")
+	if ShouldWake(bridgeconfig.WakeNever, protocol.Target{Kind: protocol.TargetKindRoom}, nil, agent) {
+		t.Fatal("expected never mode to be ignored")
 	}
-	if !ShouldReadDirect(bridgeconfig.ReadMentions) {
-		t.Fatal("expected direct mentions mode to be readable")
+	if ShouldWake(bridgeconfig.WakeConfig("invalid"), protocol.Target{Kind: protocol.TargetKindRoom}, nil, agent) {
+		t.Fatal("expected invalid wake mode to be ignored")
 	}
-	if ShouldReadDirect(bridgeconfig.ReadThreadOnly) {
+	if !ShouldWakeDirect(bridgeconfig.WakeMentions) {
+		t.Fatal("expected direct mentions mode to wake")
+	}
+	if ShouldWakeDirect(bridgeconfig.WakeThreadOnly) {
 		t.Fatal("expected thread-only direct mode to be ignored")
 	}
-	if !ShouldReply(bridgeconfig.ReplyAuto) {
-		t.Fatal("expected auto reply mode")
+	if !ShouldBootstrap(bridgeconfig.WakeAll) {
+		t.Fatal("expected all wake mode to bootstrap")
 	}
-	if ShouldReply(bridgeconfig.ReplyNever) {
-		t.Fatal("expected never reply mode to disable auto replies")
+	if ShouldBootstrap(bridgeconfig.WakeMentions) || ShouldBootstrap(bridgeconfig.WakeNever) {
+		t.Fatal("expected mention and never wake modes to skip bootstrap")
 	}
 	if SenderName(protocol.Actor{ID: "writer", Name: "Writer"}) != "Writer" {
 		t.Fatal("expected sender name to prefer actor name")

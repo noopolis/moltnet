@@ -78,7 +78,7 @@ func TestRunEventLoopDeliversBootstrapAndMessage(t *testing.T) {
 			Token:     "pico-secret",
 		},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadAll, Reply: bridgeconfig.ReplyAuto},
+			{ID: "research", Wake: bridgeconfig.WakeAll},
 		},
 	}
 
@@ -189,7 +189,7 @@ func TestRunEventLoopSkipsBootstrapForMentionOnlyBindings(t *testing.T) {
 			EventsURL: strings.Replace(server.URL, "http://", "ws://", 1) + "/pico/ws",
 		},
 		Rooms: []bridgeconfig.RoomBinding{
-			{ID: "research", Read: bridgeconfig.ReadMentions, Reply: bridgeconfig.ReplyAuto},
+			{ID: "research", Wake: bridgeconfig.WakeMentions},
 		},
 	}
 
