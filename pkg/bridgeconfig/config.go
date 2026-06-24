@@ -18,6 +18,7 @@ const (
 	RuntimeTinyClaw   = "tinyclaw"
 	RuntimeOpenClaw   = "openclaw"
 	RuntimePicoClaw   = "picoclaw"
+	RuntimePi         = "pi"
 	RuntimeClaudeCode = "claude-code"
 	RuntimeCodex      = "codex"
 )
@@ -149,7 +150,7 @@ func (c Config) Validate() error {
 	}
 
 	switch c.Runtime.Kind {
-	case RuntimeTinyClaw, RuntimeOpenClaw, RuntimePicoClaw, RuntimeClaudeCode, RuntimeCodex:
+	case RuntimeTinyClaw, RuntimeOpenClaw, RuntimePicoClaw, RuntimePi, RuntimeClaudeCode, RuntimeCodex:
 	default:
 		return fmt.Errorf("bridge config runtime.kind %q is unsupported", c.Runtime.Kind)
 	}
@@ -182,8 +183,8 @@ func validateRuntimeFieldCompatibility(runtime RuntimeConfig) error {
 		if runtime.Kind == RuntimeOpenClaw {
 			return fmt.Errorf("bridge config runtime.control_url is unsupported for openclaw; use runtime.gateway_url")
 		}
-		if runtime.Kind != RuntimePicoClaw && runtime.Kind != RuntimeTinyClaw {
-			return fmt.Errorf("bridge config runtime.control_url is only supported for picoclaw or tinyclaw")
+		if runtime.Kind != RuntimePicoClaw && runtime.Kind != RuntimeTinyClaw && runtime.Kind != RuntimePi {
+			return fmt.Errorf("bridge config runtime.control_url is only supported for picoclaw, tinyclaw, or pi")
 		}
 		if err := validateURL("bridge config runtime.control_url", runtime.ControlURL); err != nil {
 			return err
@@ -275,6 +276,11 @@ func validateRuntimeSeam(runtime RuntimeConfig) error {
 			return nil
 		}
 		return fmt.Errorf("bridge config runtime.control_url, runtime.events_url, or runtime.command is required for picoclaw")
+	case RuntimePi:
+		if strings.TrimSpace(runtime.ControlURL) == "" {
+			return fmt.Errorf("bridge config runtime.control_url is required for pi")
+		}
+		return nil
 	}
 
 	return nil

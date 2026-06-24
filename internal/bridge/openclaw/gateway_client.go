@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	gatewayProtocolVersion = 3
+	gatewayProtocolVersion = 4
 	gatewayRequestTimeout  = 15 * time.Second
+	gatewayFinalTimeout    = 5 * time.Minute
 )
 
 type gatewayRequestFrame struct {
@@ -37,6 +38,37 @@ type gatewayEventFrame struct {
 	Type    string          `json:"type"`
 	Event   string          `json:"event"`
 	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+type gatewayChatSendResult struct {
+	RunID     string
+	FinalText string
+}
+
+type gatewayChatSendOptions struct {
+	AwaitFinal bool
+}
+
+type gatewayChatSendAckPayload struct {
+	RunID  string `json:"runId"`
+	Status string `json:"status"`
+}
+
+type gatewayChatEventPayload struct {
+	RunID        string              `json:"runId"`
+	State        string              `json:"state"`
+	Message      *gatewayChatMessage `json:"message,omitempty"`
+	ErrorMessage string              `json:"errorMessage,omitempty"`
+}
+
+type gatewayChatMessage struct {
+	Text    string                    `json:"text,omitempty"`
+	Content []gatewayChatContentBlock `json:"content,omitempty"`
+}
+
+type gatewayChatContentBlock struct {
+	Type string `json:"type,omitempty"`
+	Text string `json:"text,omitempty"`
 }
 
 type gatewayError struct {
@@ -84,28 +116,125 @@ func sendGatewayChat(
 	sessionKey string,
 	message string,
 	idempotencyKey string,
-) error {
+	options gatewayChatSendOptions,
+) (gatewayChatSendResult, error) {
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, config.Runtime.GatewayURL, nil)
 	if err != nil {
-		return fmt.Errorf("connect openclaw gateway %s: %w", config.Runtime.GatewayURL, err)
+		return gatewayChatSendResult{}, fmt.Errorf("connect openclaw gateway %s: %w", config.Runtime.GatewayURL, err)
 	}
 	defer conn.Close()
 
 	if err := connectGateway(ctx, conn, config); err != nil {
-		return err
+		return gatewayChatSendResult{}, err
 	}
 
-	_, err = requestGateway(ctx, conn, "chat.send", map[string]any{
+	payload, err := requestGateway(ctx, conn, "chat.send", map[string]any{
 		"deliver":        false,
 		"idempotencyKey": idempotencyKey,
 		"message":        message,
 		"sessionKey":     sessionKey,
 	})
 	if err != nil {
-		return err
+		return gatewayChatSendResult{}, err
 	}
 
-	return nil
+	var ack gatewayChatSendAckPayload
+	if len(payload) > 0 {
+		if err := json.Unmarshal(payload, &ack); err != nil {
+			return gatewayChatSendResult{}, fmt.Errorf("decode openclaw chat.send ack: %w", err)
+		}
+	}
+	result := gatewayChatSendResult{RunID: strings.TrimSpace(ack.RunID)}
+	if result.RunID == "" {
+		result.RunID = idempotencyKey
+	}
+	if !options.AwaitFinal {
+		return result, nil
+	}
+
+	finalText, err := waitForGatewayChatFinal(ctx, conn, result.RunID)
+	if err != nil {
+		return gatewayChatSendResult{}, err
+	}
+	result.FinalText = finalText
+
+	return result, nil
+}
+
+func waitForGatewayChatFinal(ctx context.Context, conn *websocket.Conn, runID string) (string, error) {
+	waitCtx, cancel := context.WithTimeout(ctx, gatewayFinalTimeout)
+	defer cancel()
+
+	for {
+		frameType, raw, err := readGatewayFrame(waitCtx, conn)
+		if err != nil {
+			return "", err
+		}
+		if frameType != "event" {
+			continue
+		}
+
+		var event gatewayEventFrame
+		if err := json.Unmarshal(raw, &event); err != nil {
+			return "", fmt.Errorf("decode openclaw gateway event: %w", err)
+		}
+		if event.Event != "chat" {
+			continue
+		}
+
+		payload, err := decodeGatewayChatEvent(event.Payload)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(payload.RunID) != runID {
+			continue
+		}
+
+		switch payload.State {
+		case "final":
+			return extractGatewayChatText(payload.Message), nil
+		case "error":
+			if strings.TrimSpace(payload.ErrorMessage) != "" {
+				return "", fmt.Errorf("openclaw chat.send failed: %s", strings.TrimSpace(payload.ErrorMessage))
+			}
+			return "", fmt.Errorf("openclaw chat.send failed")
+		}
+	}
+}
+
+func decodeGatewayChatEvent(raw json.RawMessage) (gatewayChatEventPayload, error) {
+	var payload gatewayChatEventPayload
+	if len(raw) == 0 {
+		return payload, fmt.Errorf("openclaw chat event missing payload")
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return payload, fmt.Errorf("decode openclaw chat event payload: %w", err)
+	}
+	return payload, nil
+}
+
+func extractGatewayChatText(message *gatewayChatMessage) string {
+	if message == nil {
+		return ""
+	}
+	if text := strings.TrimSpace(message.Text); text != "" {
+		return text
+	}
+
+	var builder strings.Builder
+	for _, block := range message.Content {
+		if block.Type != "" && block.Type != "text" {
+			continue
+		}
+		if text := strings.TrimSpace(block.Text); text != "" {
+			if builder.Len() > 0 {
+				builder.WriteString("\n\n")
+			}
+			builder.WriteString(text)
+		}
+	}
+
+	return builder.String()
 }
 
 func connectGateway(

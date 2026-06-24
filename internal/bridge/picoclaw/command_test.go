@@ -15,7 +15,9 @@ func TestRunCommandLoopDeliversInboundMessagesWithoutBlockingBootstrap(t *testin
 	t.Parallel()
 
 	tempDir := t.TempDir()
+	homePath := filepath.Join(tempDir, "picoclaw")
 	logPath := filepath.Join(tempDir, "picoclaw-command.log")
+	sessionPath := filepath.Join(homePath, "workspace", "sessions", "agent_reviewer_local_room_research.jsonl")
 	scriptPath := filepath.Join(tempDir, "picoclaw-agent")
 	script := "#!/bin/sh\n" +
 		"session=''\n" +
@@ -42,7 +44,11 @@ func TestRunCommandLoopDeliversInboundMessagesWithoutBlockingBootstrap(t *testin
 		"CODEX_HOME=${CODEX_HOME}\n" +
 		"MESSAGE=${message}\n" +
 		"---\n" +
-		"EOF\n"
+		"EOF\n" +
+		"mkdir -p " + shellEscapeForTest(filepath.Dir(sessionPath)) + "\n" +
+		"cat >>" + shellEscapeForTest(sessionPath) + " <<'JSON'\n" +
+		"{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"message\",\"arguments\":\"{\\\"channel\\\":\\\"moltnet\\\",\\\"chat_id\\\":\\\"local:room:research\\\",\\\"content\\\":\\\"@writer pico reviewed\\\"}\"}}]}\n" +
+		"JSON\n"
 	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
@@ -56,7 +62,7 @@ func TestRunCommandLoopDeliversInboundMessagesWithoutBlockingBootstrap(t *testin
 		Runtime: bridgeconfig.RuntimeConfig{
 			Command:    scriptPath,
 			ConfigPath: "/tmp/picoclaw/config.json",
-			HomePath:   "/tmp/picoclaw",
+			HomePath:   homePath,
 			Kind:       bridgeconfig.RuntimePicoClaw,
 		},
 		Rooms: []bridgeconfig.RoomBinding{
@@ -81,11 +87,12 @@ func TestRunCommandLoopDeliversInboundMessagesWithoutBlockingBootstrap(t *testin
 			},
 		},
 	}
+	sent := make(chan protocol.SendMessageRequest, 1)
 
 	if err := runCommandLoop(
 		context.Background(),
 		config,
-		streamerStub{events: []protocol.Event{event}},
+		streamerStub{events: []protocol.Event{event}, sent: sent},
 		backoffStub{},
 	); err != nil {
 		t.Fatalf("runCommandLoop() error = %v", err)
@@ -106,10 +113,10 @@ func TestRunCommandLoopDeliversInboundMessagesWithoutBlockingBootstrap(t *testin
 	if !strings.Contains(logText, "CONFIG=/tmp/picoclaw/config.json") {
 		t.Fatalf("expected config path env, got log:\n%s", logText)
 	}
-	if !strings.Contains(logText, "HOME=/tmp/picoclaw") {
+	if !strings.Contains(logText, "HOME="+homePath) {
 		t.Fatalf("expected home path env, got log:\n%s", logText)
 	}
-	if !strings.Contains(logText, "CODEX_HOME=/tmp/picoclaw/.codex") {
+	if !strings.Contains(logText, "CODEX_HOME="+filepath.Join(homePath, ".codex")) {
 		t.Fatalf("expected codex home env, got log:\n%s", logText)
 	}
 	if !strings.Contains(logText, "Channel: moltnet") {
@@ -126,6 +133,21 @@ func TestRunCommandLoopDeliversInboundMessagesWithoutBlockingBootstrap(t *testin
 	}
 	if !strings.Contains(logText, "Message:\nReview this patch") {
 		t.Fatalf("expected compact message body in log:\n%s", logText)
+	}
+
+	select {
+	case published := <-sent:
+		if published.Target.Kind != protocol.TargetKindRoom || published.Target.RoomID != "research" {
+			t.Fatalf("unexpected published target %#v", published.Target)
+		}
+		if published.From.ID != "reviewer" || published.From.Name != "Reviewer" {
+			t.Fatalf("unexpected published actor %#v", published.From)
+		}
+		if len(published.Parts) != 1 || published.Parts[0].Text != "@writer pico reviewed" {
+			t.Fatalf("unexpected published parts %#v", published.Parts)
+		}
+	default:
+		t.Fatal("expected PicoClaw moltnet message tool call to be published")
 	}
 }
 

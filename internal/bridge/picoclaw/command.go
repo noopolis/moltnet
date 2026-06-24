@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	bridgeutil "github.com/noopolis/moltnet/internal/bridge"
 	"github.com/noopolis/moltnet/internal/bridge/loop"
 	"github.com/noopolis/moltnet/internal/observability"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
@@ -20,7 +21,7 @@ const picoCommandTimeout = 2 * time.Minute
 func runCommandLoop(
 	ctx context.Context,
 	config bridgeconfig.Config,
-	streamer eventStreamer,
+	streamer moltnetClient,
 	backoff backoffPolicy,
 ) error {
 	attempt := 0
@@ -35,7 +36,7 @@ func runCommandLoop(
 				return nil
 			}
 
-			return sendEventCommand(ctx, config, event)
+			return sendEventCommand(ctx, config, streamer, event)
 		})
 		if err == nil || ctx.Err() != nil {
 			return err
@@ -53,18 +54,39 @@ func runCommandLoop(
 	}
 }
 
-func sendEventCommand(ctx context.Context, config bridgeconfig.Config, event protocol.Event) error {
+func sendEventCommand(ctx context.Context, config bridgeconfig.Config, client moltnetClient, event protocol.Event) error {
 	if event.Message == nil {
 		return fmt.Errorf("event has no message")
 	}
 
 	prompt := buildInboundMessage(config, event, true)
-	return runPicoCommand(
+	toolMessages, err := runPicoCommand(
 		ctx,
 		config,
 		picoSessionKey(config, event.Message),
 		prompt,
+		event.Message.Target,
 	)
+	if err != nil {
+		return err
+	}
+
+	for _, message := range toolMessages {
+		_, err := client.SendMessage(ctx, protocol.SendMessageRequest{
+			Target: message.Target,
+			From: protocol.Actor{
+				Type: "agent",
+				ID:   config.Agent.ID,
+				Name: bridgeutil.DisplayName(config.Agent),
+			},
+			Parts: []protocol.Part{{Kind: protocol.PartKindText, Text: message.Content}},
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func runPicoCommand(
@@ -72,18 +94,22 @@ func runPicoCommand(
 	config bridgeconfig.Config,
 	sessionID string,
 	prompt string,
-) error {
+	fallbackTarget protocol.Target,
+) ([]picoMoltnetToolMessage, error) {
 	commandPath := strings.TrimSpace(config.Runtime.Command)
 	if commandPath == "" {
-		return fmt.Errorf("picoclaw bridge requires runtime.command")
+		return nil, fmt.Errorf("picoclaw bridge requires runtime.command")
 	}
 	configPath := strings.TrimSpace(config.Runtime.ConfigPath)
 	if configPath == "" {
-		return fmt.Errorf("picoclaw bridge requires runtime.config_path")
+		return nil, fmt.Errorf("picoclaw bridge requires runtime.config_path")
 	}
 
 	commandCtx, cancel := context.WithTimeout(ctx, picoCommandTimeout)
 	defer cancel()
+
+	sessionPath := picoSessionJSONLPath(config, sessionID)
+	sessionOffset := picoSessionOffset(sessionPath)
 
 	cmd := exec.CommandContext(
 		commandCtx,
@@ -115,9 +141,9 @@ func runPicoCommand(
 			stderrText = strings.TrimSpace(stdout.String())
 		}
 		if stderrText != "" {
-			return fmt.Errorf("run picoclaw command: %w: %s", err, stderrText)
+			return nil, fmt.Errorf("run picoclaw command: %w: %s", err, stderrText)
 		}
-		return fmt.Errorf("run picoclaw command: %w", err)
+		return nil, fmt.Errorf("run picoclaw command: %w", err)
 	}
 
 	if stdoutText := strings.TrimSpace(stdout.String()); stdoutText != "" {
@@ -125,5 +151,5 @@ func runPicoCommand(
 			Debug("picoclaw command completed")
 	}
 
-	return nil
+	return readPicoMoltnetToolMessages(sessionPath, sessionOffset, config.Moltnet.NetworkID, fallbackTarget)
 }

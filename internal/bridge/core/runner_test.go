@@ -36,6 +36,7 @@ func TestSelectAdapter(t *testing.T) {
 		bridgeconfig.RuntimeTinyClaw,
 		bridgeconfig.RuntimeOpenClaw,
 		bridgeconfig.RuntimePicoClaw,
+		bridgeconfig.RuntimePi,
 		bridgeconfig.RuntimeClaudeCode,
 		bridgeconfig.RuntimeCodex,
 	} {

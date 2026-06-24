@@ -20,12 +20,13 @@ import (
 const picoWriteGracePeriod = 1 * time.Second
 const defaultPicoToken = "spawnfile-internal-pico"
 
-type eventStreamer interface {
+type moltnetClient interface {
 	StreamEvents(
 		ctx context.Context,
 		config bridgeconfig.Config,
 		handle func(event protocol.Event) error,
 	) error
+	SendMessage(ctx context.Context, request protocol.SendMessageRequest) (protocol.MessageAccepted, error)
 }
 
 type backoffPolicy interface {
@@ -41,7 +42,7 @@ type picoEnvelope struct {
 func runEventLoop(
 	ctx context.Context,
 	config bridgeconfig.Config,
-	streamer eventStreamer,
+	streamer moltnetClient,
 	backoff backoffPolicy,
 ) error {
 	attempt := 0

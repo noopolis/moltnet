@@ -15,8 +15,10 @@ import (
 )
 
 type streamerStub struct {
-	events []protocol.Event
-	err    error
+	events  []protocol.Event
+	err     error
+	sent    chan protocol.SendMessageRequest
+	sendErr error
 }
 
 func (s streamerStub) StreamEvents(
@@ -30,6 +32,23 @@ func (s streamerStub) StreamEvents(
 		}
 	}
 	return s.err
+}
+
+func (s streamerStub) SendMessage(
+	_ context.Context,
+	request protocol.SendMessageRequest,
+) (protocol.MessageAccepted, error) {
+	if s.sent != nil {
+		s.sent <- request
+	}
+	if s.sendErr != nil {
+		return protocol.MessageAccepted{}, s.sendErr
+	}
+	return protocol.MessageAccepted{
+		MessageID: "msg_bridge_reply",
+		EventID:   "evt_bridge_reply",
+		Accepted:  true,
+	}, nil
 }
 
 type backoffStub struct{}

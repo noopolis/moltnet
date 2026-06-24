@@ -16,8 +16,10 @@ import (
 )
 
 type streamerStub struct {
-	events []protocol.Event
-	err    error
+	events  []protocol.Event
+	err     error
+	sent    chan protocol.SendMessageRequest
+	sendErr error
 }
 
 func (s streamerStub) StreamEvents(
@@ -31,6 +33,23 @@ func (s streamerStub) StreamEvents(
 		}
 	}
 	return s.err
+}
+
+func (s streamerStub) SendMessage(
+	_ context.Context,
+	request protocol.SendMessageRequest,
+) (protocol.MessageAccepted, error) {
+	if s.sent != nil {
+		s.sent <- request
+	}
+	if s.sendErr != nil {
+		return protocol.MessageAccepted{}, s.sendErr
+	}
+	return protocol.MessageAccepted{
+		MessageID: "msg_bridge_reply",
+		EventID:   "evt_bridge_reply",
+		Accepted:  true,
+	}, nil
 }
 
 type backoffStub struct{}
@@ -72,6 +91,7 @@ func TestRunGatewayLoopDeliversBootstrapAndMessage(t *testing.T) {
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	received := make(chan gatewayRequestRecord, 4)
+	sent := make(chan protocol.SendMessageRequest, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		conn, err := upgrader.Upgrade(writer, request, nil)
@@ -108,10 +128,33 @@ func TestRunGatewayLoopDeliversBootstrapAndMessage(t *testing.T) {
 				"id":   requestFrame["id"],
 				"ok":   true,
 				"payload": map[string]any{
-					"type": "hello-ok",
+					"runId":  params["idempotencyKey"],
+					"status": "started",
 				},
 			}); err != nil {
 				t.Fatalf("write gateway response: %v", err)
+			}
+			if method == "chat.send" {
+				message, _ := params["message"].(string)
+				if strings.Contains(message, "Review this patch") {
+					if err := conn.WriteJSON(map[string]any{
+						"type":  "event",
+						"event": "chat",
+						"payload": map[string]any{
+							"runId": params["idempotencyKey"],
+							"state": "final",
+							"message": map[string]any{
+								"role": "assistant",
+								"content": []map[string]any{{
+									"type": "text",
+									"text": "@writer reviewed",
+								}},
+							},
+						},
+					}); err != nil {
+						t.Fatalf("write gateway chat final: %v", err)
+					}
+				}
 			}
 		}
 	}))
@@ -151,7 +194,10 @@ func TestRunGatewayLoopDeliversBootstrapAndMessage(t *testing.T) {
 		},
 	}
 
-	if err := runGatewayLoop(context.Background(), config, streamerStub{events: []protocol.Event{event}}, backoffStub{}); err != nil {
+	if err := runGatewayLoop(context.Background(), config, streamerStub{
+		events: []protocol.Event{event},
+		sent:   sent,
+	}, backoffStub{}); err != nil {
 		t.Fatalf("runGatewayLoop() error = %v", err)
 	}
 
@@ -168,6 +214,10 @@ func TestRunGatewayLoopDeliversBootstrapAndMessage(t *testing.T) {
 	connectBootstrap := requests[0]
 	if connectBootstrap.Method != "connect" {
 		t.Fatalf("unexpected bootstrap connect method %q", connectBootstrap.Method)
+	}
+	if connectBootstrap.Params["minProtocol"] != float64(4) ||
+		connectBootstrap.Params["maxProtocol"] != float64(4) {
+		t.Fatalf("unexpected connect protocol range %#v", connectBootstrap.Params)
 	}
 	auth, _ := connectBootstrap.Params["auth"].(map[string]any)
 	if token, _ := auth["token"].(string); token != "runtime-secret" {
@@ -242,6 +292,21 @@ func TestRunGatewayLoopDeliversBootstrapAndMessage(t *testing.T) {
 		if !strings.Contains(inboundMessage, expected) {
 			t.Fatalf("expected inbound message to contain %q, got %q", expected, inboundMessage)
 		}
+	}
+
+	select {
+	case published := <-sent:
+		if published.Target.Kind != protocol.TargetKindRoom || published.Target.RoomID != "research" {
+			t.Fatalf("unexpected published target %#v", published.Target)
+		}
+		if published.From.ID != "reviewer" || published.From.Name != "Reviewer" {
+			t.Fatalf("unexpected published actor %#v", published.From)
+		}
+		if len(published.Parts) != 1 || published.Parts[0].Text != "@writer reviewed" {
+			t.Fatalf("unexpected published parts %#v", published.Parts)
+		}
+	default:
+		t.Fatal("expected OpenClaw final reply to be published to Moltnet")
 	}
 }
 

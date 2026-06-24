@@ -12,12 +12,13 @@ import (
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
-type eventStreamer interface {
+type moltnetClient interface {
 	StreamEvents(
 		ctx context.Context,
 		config bridgeconfig.Config,
 		handle func(event protocol.Event) error,
 	) error
+	SendMessage(ctx context.Context, request protocol.SendMessageRequest) (protocol.MessageAccepted, error)
 }
 
 type backoffPolicy interface {
@@ -27,7 +28,7 @@ type backoffPolicy interface {
 func runGatewayLoop(
 	ctx context.Context,
 	config bridgeconfig.Config,
-	streamer eventStreamer,
+	client moltnetClient,
 	backoff backoffPolicy,
 ) error {
 	attempt := 0
@@ -54,11 +55,11 @@ func runGatewayLoop(
 			bootstrapped = true
 		}
 
-		err := streamer.StreamEvents(ctx, config, func(event protocol.Event) error {
+		err := client.StreamEvents(ctx, config, func(event protocol.Event) error {
 			if !shouldDeliver(config, event) {
 				return nil
 			}
-			return sendEventDispatch(ctx, config, event)
+			return sendEventDispatch(ctx, config, client, event)
 		})
 		if err == nil || ctx.Err() != nil {
 			return err
@@ -133,12 +134,13 @@ func shouldDeliverDirectMessage(config bridgeconfig.Config, message *protocol.Me
 
 func sendBootstrapDispatches(ctx context.Context, config bridgeconfig.Config) error {
 	for _, target := range bootstrapTargets(config) {
-		if err := sendGatewayChat(
+		if _, err := sendGatewayChat(
 			ctx,
 			config,
 			sessionKeyForTarget(config, target),
 			buildBootstrapMessage(config, target),
 			bootstrapIdempotencyKey(config, target),
+			gatewayChatSendOptions{},
 		); err != nil {
 			return err
 		}
@@ -163,7 +165,7 @@ func bootstrapTargets(config bridgeconfig.Config) []protocol.Target {
 	return targets
 }
 
-func sendEventDispatch(ctx context.Context, config bridgeconfig.Config, event protocol.Event) error {
+func sendEventDispatch(ctx context.Context, config bridgeconfig.Config, client moltnetClient, event protocol.Event) error {
 	if event.Message == nil {
 		return fmt.Errorf("event has no message")
 	}
@@ -173,11 +175,41 @@ func sendEventDispatch(ctx context.Context, config bridgeconfig.Config, event pr
 		return err
 	}
 
-	return sendGatewayChat(
+	result, err := sendGatewayChat(
 		ctx,
 		config,
 		sessionKey(config, event.Message),
 		message,
 		idempotencyKey(config, event),
+		gatewayChatSendOptions{AwaitFinal: true},
 	)
+	if err != nil {
+		return err
+	}
+
+	return publishGatewayReply(ctx, config, client, event.Message.Target, result.FinalText)
+}
+
+func publishGatewayReply(
+	ctx context.Context,
+	config bridgeconfig.Config,
+	client moltnetClient,
+	target protocol.Target,
+	text string,
+) error {
+	message := strings.TrimSpace(text)
+	if message == "" {
+		return nil
+	}
+
+	_, err := client.SendMessage(ctx, protocol.SendMessageRequest{
+		Target: target,
+		From: protocol.Actor{
+			Type: "agent",
+			ID:   config.Agent.ID,
+			Name: bridgeutil.DisplayName(config.Agent),
+		},
+		Parts: []protocol.Part{{Kind: protocol.PartKindText, Text: message}},
+	})
+	return err
 }

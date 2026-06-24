@@ -80,8 +80,11 @@ func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
 				return nil
 			}
 
-			_, err := sendControlMessage(ctx, controlClient, config, event)
-			return err
+			response, err := sendControlMessage(ctx, controlClient, config, event)
+			if err != nil {
+				return err
+			}
+			return publishControlResponse(ctx, client, config, event.Message.Target, response)
 		})
 		cancelStream()
 
@@ -232,6 +235,32 @@ func sendControlText(
 	}
 
 	return payload, nil
+}
+
+func publishControlResponse(
+	ctx context.Context,
+	client *MoltnetClient,
+	config bridgeconfig.Config,
+	target protocol.Target,
+	response controlResponse,
+) error {
+	if config.Runtime.Kind != bridgeconfig.RuntimePi {
+		return nil
+	}
+	message := strings.TrimSpace(response.Message)
+	if message == "" {
+		return nil
+	}
+	_, err := client.SendMessage(ctx, protocol.SendMessageRequest{
+		Target: target,
+		From: protocol.Actor{
+			Type: "agent",
+			ID:   config.Agent.ID,
+			Name: bridgeutil.DisplayName(config.Agent),
+		},
+		Parts: []protocol.Part{{Kind: protocol.PartKindText, Text: message}},
+	})
+	return err
 }
 
 func buildBootstrapControlMessage(config bridgeconfig.Config, target protocol.Target) string {
