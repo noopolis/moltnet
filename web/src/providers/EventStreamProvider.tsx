@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useNetwork } from "../hooks/useNetwork";
-import type { MoltnetEvent } from "../lib/types";
+import type { Agent, MoltnetEvent, Room } from "../lib/types";
 
 export type EventStreamStatus = "connecting" | "open" | "error" | "unsupported";
 
@@ -95,6 +95,17 @@ export function EventStreamProvider({ children }: { children: ReactNode }) {
       }
 
       setEvents((prev) => [payload, ...prev].slice(0, MAX_EVENTS));
+
+      if (payload.type === "room.removed" && payload.room?.id) {
+        queryClient.setQueryData<Room[]>(["rooms"], (current = []) =>
+          current.filter((room) => room.id !== payload.room?.id),
+        );
+      }
+      if (payload.type === "agent.removed" && payload.agent?.agent_id) {
+        queryClient.setQueryData<Agent[]>(["agents"], (current = []) =>
+          current.filter((agent) => agent.id !== payload.agent?.agent_id),
+        );
+      }
 
       // Snapshot lists may have shifted (message_count, recent activity, etc.).
       queryClient.invalidateQueries({ queryKey: ["rooms"] });

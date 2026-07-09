@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
+	"github.com/noopolis/moltnet/internal/events"
+	"github.com/noopolis/moltnet/internal/rooms"
+	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -283,5 +286,51 @@ func TestSkillWithAdminTokenShowsPrivateRooms(t *testing.T) {
 	}
 	if body := response.Body.String(); !strings.Contains(body, "private-floor") {
 		t.Fatalf("admin skill should include private room\n%s", body)
+	}
+}
+
+func TestGeneratedSkillHidesRemovedRooms(t *testing.T) {
+	t.Parallel()
+
+	memory := store.NewMemoryStore()
+	service := rooms.NewService(rooms.ServiceConfig{
+		AllowHumanIngress: true,
+		NetworkID:         "local",
+		NetworkName:       "Local",
+		Version:           "test",
+		Store:             memory,
+		Messages:          memory,
+		Broker:            events.NewBroker(),
+	})
+	for _, room := range []protocol.CreateRoomRequest{
+		{ID: "agora", Visibility: protocol.RoomVisibilityPublic},
+		{ID: "ops", Visibility: protocol.RoomVisibilityPublic},
+	} {
+		if _, err := service.CreateRoom(room); err != nil {
+			t.Fatalf("CreateRoom(%q) error = %v", room.ID, err)
+		}
+	}
+	if _, err := service.RemoveRoomContext(t.Context(), "agora"); err != nil {
+		t.Fatalf("RemoveRoomContext() error = %v", err)
+	}
+
+	policy, err := authn.NewPolicy(authn.Config{Mode: authn.ModeOpen})
+	if err != nil {
+		t.Fatalf("NewPolicy() error = %v", err)
+	}
+	handler := NewHTTPHandler(service, policy)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/skill.md", nil)
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected public skill, got %d", response.Code)
+	}
+	body := response.Body.String()
+	if strings.Contains(body, "`agora`") {
+		t.Fatalf("generated skill should hide removed room\n%s", body)
+	}
+	if !strings.Contains(body, "Readable rooms: `ops`") {
+		t.Fatalf("generated skill should keep active room\n%s", body)
 	}
 }
