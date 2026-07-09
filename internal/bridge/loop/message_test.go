@@ -89,6 +89,15 @@ func TestShouldHandle(t *testing.T) {
 		t.Fatal("expected non-message event to be ignored")
 	}
 
+	event.Type = protocol.EventTypeAgentConnected
+	event.Message.NetworkID = "local"
+	event.Message.Target = protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"}
+	event.Message.Mentions = []string{"researcher"}
+	if ShouldHandle(config, event) {
+		t.Fatal("expected lifecycle event with message-shaped payload to be ignored")
+	}
+	event.Type = protocol.EventTypeMessageCreated
+
 	event.Message.NetworkID = "other"
 	if ShouldHandle(config, event) {
 		t.Fatal("expected other network to be ignored")

@@ -324,6 +324,7 @@ func TestSendControlMessageErrors(t *testing.T) {
 		},
 		Runtime: bridgeconfig.RuntimeConfig{ControlURL: controlServer.URL},
 	}, protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			ID:        "msg_1",
 			NetworkID: "local",
@@ -336,7 +337,21 @@ func TestSendControlMessageErrors(t *testing.T) {
 		t.Fatalf("expected control url error, got %v", err)
 	}
 
-	_, err = sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{}, protocol.Event{})
+	_, err = sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{}, protocol.Event{
+		Type: protocol.EventTypeAgentConnected,
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+			From:      protocol.Actor{Type: "agent", ID: "writer"},
+			CreatedAt: time.Now().UTC(),
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "control wake requires message.created event") {
+		t.Fatalf("expected unsupported control event error, got %v", err)
+	}
+
+	_, err = sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{}, protocol.Event{Type: protocol.EventTypeMessageCreated})
 	if err == nil || !strings.Contains(err.Error(), "event has no message") {
 		t.Fatalf("expected missing message error, got %v", err)
 	}
@@ -352,6 +367,7 @@ func TestSendControlMessageErrors(t *testing.T) {
 		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
 		Runtime: bridgeconfig.RuntimeConfig{ControlURL: invalidResponseServer.URL},
 	}, protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			ID:        "msg_1",
 			NetworkID: "local",
@@ -389,6 +405,7 @@ func TestSendControlMessageUsesStableDMContextID(t *testing.T) {
 		},
 		Runtime: bridgeconfig.RuntimeConfig{ControlURL: controlServer.URL},
 	}, protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			ID:        "msg_1",
 			NetworkID: "local",
@@ -427,6 +444,7 @@ func TestSendControlMessageIncludesRuntimeAuthToken(t *testing.T) {
 		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
 		Runtime: bridgeconfig.RuntimeConfig{ControlURL: controlServer.URL, Token: "runtime-secret"},
 	}, protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			ID:        "msg_1",
 			NetworkID: "local",

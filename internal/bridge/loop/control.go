@@ -15,7 +15,7 @@ import (
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
-const controlRequestTimeout = 15 * time.Second
+const controlRequestTimeout = 5 * time.Minute
 const maxControlResponseBytes = 1 << 20
 
 type controlRequest struct {
@@ -170,6 +170,9 @@ func sendControlMessage(
 	config bridgeconfig.Config,
 	event protocol.Event,
 ) (controlResponse, error) {
+	if event.Type != protocol.EventTypeMessageCreated {
+		return controlResponse{}, fmt.Errorf("control wake requires %s event, got %s", protocol.EventTypeMessageCreated, event.Type)
+	}
 	if event.Message == nil {
 		return controlResponse{}, fmt.Errorf("event has no message")
 	}

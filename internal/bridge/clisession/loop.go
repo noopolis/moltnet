@@ -57,6 +57,7 @@ type Runner struct {
 	queues   map[string]*wakeQueue
 	queueWG  sync.WaitGroup
 	mu       sync.Mutex
+	observe  RunnerObserver
 }
 
 func NewRunner(
@@ -78,6 +79,7 @@ func NewRunner(
 		store:    NewSessionStore(storePath),
 		locks:    map[string]*sync.Mutex{},
 		queues:   map[string]*wakeQueue{},
+		observe:  func(RunnerEventType, RunnerEvent) {},
 	}
 }
 
@@ -216,7 +218,7 @@ func (r *Runner) eventDelivery(event protocol.Event) (Delivery, error) {
 
 func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
 	if err := EnsureWorkspaceClientConfig(r.config); err != nil {
-		return err
+		return r.failDelivery(delivery, err)
 	}
 
 	contextKey := strings.TrimSpace(delivery.ContextKey)
@@ -230,14 +232,14 @@ func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
 
 	record, exists, err := r.store.Get(contextKey)
 	if err != nil {
-		return err
+		return r.failDelivery(delivery, err)
 	}
 
 	sessionID := record.RuntimeSessionID
 	if !exists && r.driver.UsesSessionIDForFirstDelivery() {
 		sessionID, err = GenerateUUID()
 		if err != nil {
-			return err
+			return r.failDelivery(delivery, err)
 		}
 	}
 
@@ -247,33 +249,35 @@ func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
 
 	spec, err := r.commandSpec(delivery)
 	if err != nil {
-		return err
+		return r.failDelivery(delivery, err)
 	}
 	if workspacePath := strings.TrimSpace(r.config.Runtime.WorkspacePath); workspacePath != "" {
 		if err := os.MkdirAll(filepath.Join(workspacePath, ".moltnet"), 0o700); err != nil {
-			return fmt.Errorf("create runtime Moltnet workspace directory: %w", err)
+			return r.failDelivery(delivery, fmt.Errorf("create runtime Moltnet workspace directory: %w", err))
 		}
 	}
+
+	r.emit(RunnerEventTurnStarted, r.eventPayloadForDelivery(delivery, 0, nil))
 
 	result, err := RunCommand(ctx, spec)
 	if err != nil && shouldRetryWithFreshSession(exists, err) {
 		if err := r.store.Delete(contextKey); err != nil {
-			return err
+			return r.failDelivery(delivery, err)
 		}
 		sessionID, err = GenerateUUID()
 		if err != nil {
-			return err
+			return r.failDelivery(delivery, err)
 		}
 		delivery.ExistingSession = false
 		delivery.RuntimeSessionID = sessionID
 		spec, err = r.commandSpec(delivery)
 		if err != nil {
-			return err
+			return r.failDelivery(delivery, err)
 		}
 		result, err = RunCommand(ctx, spec)
 	}
 	if err != nil {
-		return err
+		return r.failDelivery(delivery, err)
 	}
 
 	extractedSessionID := strings.TrimSpace(r.driver.ExtractRuntimeSessionID(result))
@@ -296,6 +300,7 @@ func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
 		observability.Logger(ctx, "bridge."+r.driver.Name(), "agent_id", r.config.Agent.ID, "output", output).
 			Debug("CLI runtime command completed")
 	}
+	r.emit(RunnerEventTurnCompleted, r.eventPayloadForDelivery(delivery, 0, nil))
 	return nil
 }
 
