@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/noopolis/moltnet/internal/observability"
 	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -34,6 +35,11 @@ type ServiceConfig struct {
 	Messages              store.MessageStore
 	Broker                EventBroker
 	PairingClient         PairingClient
+	// CausalWriter is optional. When set, SendMessageContext stamps a
+	// message.accepted causal event (pkg/protocol.CausalEvent) after each
+	// durable, non-duplicate message append. When nil, causal stamping is
+	// skipped entirely and message send behavior is unchanged.
+	CausalWriter *observability.CausalWriter
 }
 
 type Service struct {
@@ -53,6 +59,7 @@ type Service struct {
 	agentRegistry         store.ContextAgentRegistryStore
 	broker                EventBroker
 	pairingClient         PairingClient
+	causalWriter          *observability.CausalWriter
 	relaySlots            chan struct{}
 	pairingsMu            sync.RWMutex
 	pairingPublishMu      sync.Mutex
@@ -104,6 +111,7 @@ func NewService(config ServiceConfig) *Service {
 		agentRegistry:         agentRegistry,
 		broker:                config.Broker,
 		pairingClient:         config.PairingClient,
+		causalWriter:          config.CausalWriter,
 		relaySlots:            make(chan struct{}, 8),
 		pairingStatuses:       statuses,
 		connectedAgents:       make(map[string]bool),

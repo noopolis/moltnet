@@ -40,6 +40,14 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	from := protocol.NormalizeActor(s.networkID, request.From)
 	if request.Target.Kind == protocol.TargetKindRoom || request.Target.Kind == protocol.TargetKindThread {
 		if err := s.enforceTargetWritePolicy(ctx, request.Target, from); err != nil {
+			// A canWriteRoom denial (non-member / write-policy rejection)
+			// must always be ledger-visible, never a silent drop: stamp
+			// message.denied before returning the existing error. Other
+			// enforceTargetWritePolicy failures (e.g. unknown room) are not
+			// write-policy denials and are left unstamped.
+			if errors.Is(err, ErrWriteForbidden) {
+				s.stampMessageDenied(ctx, messageID, request, err.Error())
+			}
 			return protocol.MessageAccepted{}, err
 		}
 	}
@@ -99,6 +107,11 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 			return protocol.MessageAccepted{}, err
 		}
 	}
+
+	// The durable append above has succeeded and this is not a duplicate
+	// (both ErrDuplicateMessage branches return before reaching here), so
+	// this is exactly one message.accepted causal stamp per accepted message.
+	s.stampMessageAccepted(ctx, message, request)
 
 	if lifecycle.Thread != nil {
 		s.publishEvent(protocol.Event{
