@@ -25,3 +25,20 @@ This package is intended to remain usable by:
 - Spawnfile integration code
 - future bridge processes
 - external clients
+
+## Causal Event Types
+
+`causal.go` mirrors the cross-repo `noopolis.causal-event.v1` envelope
+(canonical schema lives in root `specs/`). Moltnet emits two event types,
+both stamped from `internal/rooms/causal.go`:
+
+- `EventTypeMessageAccepted` / `MessageAcceptedPayload` — a message durably
+  landed and cleared write policy (`PolicyDecisionAccepted`).
+- `EventTypeMessageDenied` / `MessageDeniedPayload` — a message was
+  rejected by room write policy (`PolicyDecisionDenied`); carries `target`,
+  `reason`, and `content_sha256` so deny paths stay ledger-visible instead
+  of a silent drop.
+
+`principal_id` on both follows the shared grammar
+(`^(agent|operator|system):.+`) and is minted only from authenticated
+`authn.Claims`, never from `protocol.Actor`/`From` fields on a request.

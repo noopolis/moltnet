@@ -196,6 +196,12 @@ type SendMessageRequest struct {
 	From     Actor         `json:"from"`
 	Parts    []Part        `json:"parts"`
 	Mentions []string      `json:"mentions,omitempty"`
+	// CauseEventIDs additively threads causal-event parentage (see
+	// pkg/protocol/causal.go) through to the message.accepted event stamped
+	// once this request durably lands. It is caller-supplied context, never
+	// derived from it: harnesses such as daimon's turn harness set this, the
+	// model never does.
+	CauseEventIDs []string `json:"cause_event_ids,omitempty"`
 }
 
 type MessageAccepted struct {
