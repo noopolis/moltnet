@@ -75,6 +75,25 @@ func handleAttachment(
 		_ = writeAttachmentError(writer, fmt.Sprintf("attachment agent.id %q is not allowed for this token", agent.ID))
 		return
 	}
+
+	// Establish the broker subscription BEFORE RegisterAgentContext makes this
+	// agent observable (it then appears, with its rooms, in /v1/agents, and
+	// shortly after as connected). A room message published in the window
+	// between registration and a later SubscribeFrom would otherwise be
+	// delivered to no subscriber, and — on a first attach, whose resume cursor
+	// is empty and thus replays nothing ("from now") — lost with no recovery.
+	// Subscribing here guarantees the subscription is already live by the time
+	// the agent is visible/connected, so no post-visibility message slips
+	// through. Placed after the claims check so an unauthorized caller never
+	// gets even a transient subscription; the brief subscription before
+	// attachments.acquire on a rejected duplicate is harmless (defer cancel
+	// tears it down). Empty-cursor "from now" semantics are unchanged — we do
+	// not replay history on first attach.
+	ctx, cancel := context.WithCancel(request.Context())
+	defer cancel()
+	session := newAttachmentSession(strings.TrimSpace(frame.Cursor))
+	stream := service.SubscribeFrom(ctx, session.ResumeCursor())
+
 	registration, err := service.RegisterAgentContext(request.Context(), protocol.RegisterAgentRequest{
 		RequestedAgentID: agent.ID,
 		Name:             agent.Name,
@@ -104,7 +123,6 @@ func handleAttachment(
 		return
 	}
 	defer release()
-	session := newAttachmentSession(strings.TrimSpace(frame.Cursor))
 
 	if err := writer.write(protocol.AttachmentFrame{
 		Op:         protocol.AttachmentOpReady,
@@ -124,9 +142,6 @@ func handleAttachment(
 		service.AgentDisconnected(context.Background(), agent, disconnectReason, disconnectErr)
 	}()
 
-	ctx, cancel := context.WithCancel(request.Context())
-	defer cancel()
-
 	readErrCh := make(chan error, 1)
 	go func() {
 		readErrCh <- consumeAttachmentFrames(ctx, connection, writer, session, attachmentReadTimeout(), func(event protocol.Event) {
@@ -138,7 +153,6 @@ func handleAttachment(
 	defer heartbeatTicker.Stop()
 
 	filter := attachmentEventFilter(policy, request.Context(), service, service.Network().ID, agent.ID)
-	stream := service.SubscribeFrom(ctx, session.ResumeCursor())
 	for {
 		select {
 		case <-ctx.Done():

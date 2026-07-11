@@ -12,10 +12,18 @@ import (
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
+// Broker fans out events to live subscribers and replays recent history to
+// resuming ones. A single mutex guards nextID, history, AND subscribers so
+// that Publish and subscribeFrom are strictly serialized: an event is either
+// captured in a new subscriber's replay snapshot (published before the
+// subscribe critical section) or fanned out to it (published after) — never
+// both (which would double-deliver and break the client's per-frame ACK) and
+// never neither (the delivery gap this collapse closes). Do not reintroduce a
+// second lock: the fan-out below runs inside the critical section and relies
+// on being serialized against subscriber registration/removal.
 type Broker struct {
 	mu          sync.Mutex
 	nextID      uint64
-	subsMu      sync.RWMutex
 	subscribers map[uint64]chan protocol.Event
 	history     []protocol.Event
 }
@@ -38,24 +46,33 @@ func (b *Broker) SubscribeFrom(ctx context.Context, lastEventID string) <-chan p
 }
 
 func (b *Broker) Publish(event protocol.Event) {
+	droppedCount := 0
+
 	b.mu.Lock()
 	b.history = append(b.history, event)
 	if len(b.history) > brokerHistoryLimit {
 		copy(b.history, b.history[len(b.history)-brokerHistoryLimit:])
 		b.history = b.history[:brokerHistoryLimit]
 	}
-	b.mu.Unlock()
-
-	b.subsMu.RLock()
-	defer b.subsMu.RUnlock()
+	// Non-blocking fan-out inside the single critical section: sends can never
+	// block (buffered channels, drop-on-full), so holding b.mu here cannot
+	// deadlock. Slow-subscriber logging is deferred until after unlock so no
+	// arbitrary work runs under the lock.
 	for _, subscriber := range b.subscribers {
 		select {
 		case subscriber <- event:
 		default:
-			observability.DefaultMetrics.RecordDroppedEvent()
-			observability.Logger(context.Background(), "events.broker", "event_id", event.ID).
-				Warn("drop event for slow subscriber")
+			droppedCount++
 		}
+	}
+	b.mu.Unlock()
+
+	for i := 0; i < droppedCount; i++ {
+		observability.DefaultMetrics.RecordDroppedEvent()
+	}
+	if droppedCount > 0 {
+		observability.Logger(context.Background(), "events.broker", "event_id", event.ID).
+			Warn("drop event for slow subscriber")
 	}
 }
 
@@ -64,8 +81,9 @@ func (b *Broker) subscribeFrom(ctx context.Context, lastEventID string) <-chan p
 	b.nextID++
 	id := b.nextID
 	replay := b.eventsAfterLocked(lastEventID)
-	b.mu.Unlock()
 
+	// Buffer holds the full replay (len(replay) <= history <= brokerHistoryLimit)
+	// plus headroom, so pushing replay below never blocks under the lock.
 	bufferSize := brokerHistoryLimit
 	if len(replay)+16 > bufferSize {
 		bufferSize = len(replay) + 16
@@ -74,14 +92,16 @@ func (b *Broker) subscribeFrom(ctx context.Context, lastEventID string) <-chan p
 	for _, event := range replay {
 		ch <- event
 	}
-	b.subsMu.Lock()
+	// Snapshot-then-register in one critical section: Publish is serialized on
+	// the same b.mu, so no event can be both replayed and fanned out, nor lost
+	// between the snapshot and registration.
 	b.subscribers[id] = ch
-	b.subsMu.Unlock()
+	b.mu.Unlock()
 
 	go func() {
 		<-ctx.Done()
-		b.subsMu.Lock()
-		defer b.subsMu.Unlock()
+		b.mu.Lock()
+		defer b.mu.Unlock()
 
 		delete(b.subscribers, id)
 		close(ch)
