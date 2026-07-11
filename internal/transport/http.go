@@ -35,7 +35,7 @@ type Service interface {
 	AgentConnected(ctx context.Context, agent protocol.Actor)
 	AgentDisconnected(ctx context.Context, agent protocol.Actor, reason string, err error)
 	AgentWakeDelivered(ctx context.Context, agent protocol.Actor, event protocol.Event)
-	AgentWakeFailed(ctx context.Context, agent protocol.Actor, event protocol.Event, err error)
+	AgentWakeFailed(ctx context.Context, agent protocol.Actor, event protocol.Event, err error, details protocol.WakeFailureDetails)
 	ListRoomMessagesContext(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.MessagePage, error)
 	ListThreadsContext(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.ThreadPage, error)
 	ListThreadMessagesContext(ctx context.Context, threadID string, page protocol.PageRequest) (protocol.MessagePage, error)
@@ -386,6 +386,8 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 
 		writeJSON(response, http.StatusAccepted, accepted)
 	}))
+
+	registerWakeFailedRoute(mux, policy, service)
 
 	mux.HandleFunc("GET /v1/attach", authorizedAttach(policy, service, func(response http.ResponseWriter, request *http.Request) {
 		handleAttachment(response, request, service, policy, attachments)

@@ -234,7 +234,7 @@ func attachmentDisconnectCause(err error) (string, error) {
 
 func publishPendingWakeFailures(service Service, agent protocol.Actor, session *attachmentSession, err error) {
 	for _, event := range session.PendingWakes() {
-		service.AgentWakeFailed(context.Background(), agent, event, err)
+		service.AgentWakeFailed(context.Background(), agent, event, err, protocol.WakeFailureDetails{})
 	}
 }
 

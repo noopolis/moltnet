@@ -167,12 +167,26 @@ func TestAgentWakeEventsPublishMessageContext(t *testing.T) {
 		t.Fatalf("unexpected delivered event %#v", delivered)
 	}
 
-	service.AgentWakeFailed(context.Background(), protocol.Actor{ID: "luna", Name: "Luna"}, messageEvent, context.Canceled)
+	service.AgentWakeFailed(context.Background(), protocol.Actor{ID: "luna", Name: "Luna"}, messageEvent, context.Canceled, protocol.WakeFailureDetails{})
 	failed := <-stream
 	if failed.Type != protocol.EventTypeAgentWakeFailed ||
 		failed.Agent == nil ||
-		failed.Agent.Error != "context canceled" {
+		failed.Agent.Error != "context canceled" ||
+		failed.Agent.Attempts != 0 ||
+		failed.Agent.Classification != "" {
 		t.Fatalf("unexpected failed event %#v", failed)
+	}
+
+	service.AgentWakeFailed(context.Background(), protocol.Actor{ID: "luna", Name: "Luna"}, messageEvent, errors.New("control url returned 400 Bad Request"), protocol.WakeFailureDetails{
+		Attempts:       1,
+		Classification: protocol.WakeFailureClassificationPermanent,
+	})
+	classifiedFailed := <-stream
+	if classifiedFailed.Type != protocol.EventTypeAgentWakeFailed ||
+		classifiedFailed.Agent == nil ||
+		classifiedFailed.Agent.Attempts != 1 ||
+		classifiedFailed.Agent.Classification != protocol.WakeFailureClassificationPermanent {
+		t.Fatalf("unexpected classified failed event %#v", classifiedFailed)
 	}
 }
 

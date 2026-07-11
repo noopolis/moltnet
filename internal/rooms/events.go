@@ -50,18 +50,26 @@ func (s *Service) AgentWakeDelivered(ctx context.Context, agent protocol.Actor, 
 	})
 }
 
-func (s *Service) AgentWakeFailed(ctx context.Context, agent protocol.Actor, event protocol.Event, err error) {
+func (s *Service) AgentWakeFailed(
+	ctx context.Context,
+	agent protocol.Actor,
+	event protocol.Event,
+	err error,
+	details protocol.WakeFailureDetails,
+) {
 	if event.Message == nil {
 		return
 	}
 	failure := protocol.AgentEvent{
-		AgentID:   strings.TrimSpace(agent.ID),
-		NetworkID: s.networkID,
-		FQID:      protocol.AgentFQID(s.networkID, strings.TrimSpace(agent.ID)),
-		Name:      strings.TrimSpace(agent.Name),
-		MessageID: event.Message.ID,
-		Reason:    agentWakeReason(s.networkID, agent, event),
-		Target:    &event.Message.Target,
+		AgentID:        strings.TrimSpace(agent.ID),
+		NetworkID:      s.networkID,
+		FQID:           protocol.AgentFQID(s.networkID, strings.TrimSpace(agent.ID)),
+		Name:           strings.TrimSpace(agent.Name),
+		MessageID:      event.Message.ID,
+		Reason:         agentWakeReason(s.networkID, agent, event),
+		Target:         &event.Message.Target,
+		Attempts:       details.Attempts,
+		Classification: details.Classification,
 	}
 	if err != nil {
 		failure.Error = strings.TrimSpace(err.Error())

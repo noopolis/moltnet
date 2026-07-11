@@ -41,6 +41,11 @@ func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
 	backoff := bridgeutil.NewBackoff(bridgeutil.DefaultReconnectBaseDelay, bridgeutil.DefaultReconnectMaxDelay)
 	attempt := 0
 	bootstrapped := false
+	// Created once, outside the reconnect loop below, so a permanently
+	// failing event.ID stays known across reconnects instead of every
+	// reconnect restarting its retry budget at zero (the structural cause
+	// of the retry-storm this loop used to be able to produce).
+	deliveries := newControlDeliveryTracker()
 
 	for {
 		if ctx.Err() != nil {
@@ -80,11 +85,7 @@ func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
 				return nil
 			}
 
-			response, err := sendControlMessage(ctx, controlClient, config, event)
-			if err != nil {
-				return err
-			}
-			return publishControlResponse(ctx, client, config, event.Message.Target, response)
+			return deliverControlMessage(ctx, controlClient, client, config, event, deliveries)
 		})
 		cancelStream()
 
