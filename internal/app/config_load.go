@@ -139,6 +139,9 @@ func mergeEnvConfig(config Config) (Config, error) {
 	if value, ok := envBoolValue("MOLTNET_ALLOW_HUMAN_INGRESS"); ok {
 		config.AllowHumanIngress = value
 	}
+	if value, ok := envValue("MOLTNET_CAUSAL_EVENTS_PATH"); ok {
+		config.CausalEventsPath = value
+	}
 	if value, ok := envBoolValue("MOLTNET_DEBUG_EVENTS"); ok {
 		config.DebugEvents = value
 	}

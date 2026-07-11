@@ -145,6 +145,17 @@ func splitCausalEventID(eventID string) (system string, local string, ok bool) {
 	return eventID[:index], eventID[index+1:], true
 }
 
+// MessageEventID formats messageID as moltnet's causal event id for that
+// message: "<moltnet>:<messageID>", per the event_id grammar in
+// specs/causal-event.v1.schema.json (system prefix, colon, local id).
+// Hoisted here so every moltnet-authority "moltnet:" + id construction
+// (internal/rooms/causal.go's message.accepted/message.denied stamps, and
+// the bridge's control.go/control_delivery.go causal wiring) goes through
+// one place instead of each hand-rolling the concatenation.
+func MessageEventID(messageID string) string {
+	return CausalSystemMoltnet + ":" + messageID
+}
+
 func causalSystemRecognized(system string) bool {
 	switch system {
 	case CausalSystemSimfile, CausalSystemMoltnet, CausalSystemMneme, CausalSystemDaimon:

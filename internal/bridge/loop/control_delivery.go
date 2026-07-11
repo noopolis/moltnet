@@ -62,7 +62,7 @@ func deliverControlMessage(
 
 		response, err := sendControlMessage(ctx, controlClient, config, event)
 		if err == nil {
-			return publishControlResponse(ctx, client, config, event.Message.Target, response)
+			return publishControlResponse(ctx, client, config, event.Message.Target, event.Message.ID, response)
 		}
 
 		switch classifyControlError(ctx, err) {

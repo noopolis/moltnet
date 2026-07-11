@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
@@ -41,8 +42,17 @@ func New(config Config) (*App, error) {
 		return nil, err
 	}
 
+	var causalWriter *observability.CausalWriter
+	if path := strings.TrimSpace(config.CausalEventsPath); path != "" {
+		causalWriter, err = observability.NewCausalFileWriter(path)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	service := rooms.NewService(rooms.ServiceConfig{
 		AllowHumanIngress:     config.AllowHumanIngress,
+		CausalWriter:          causalWriter,
 		DebugEvents:           config.DebugEvents,
 		DisableDirectMessages: config.DisableDirectMessages,
 		NetworkID:             config.NetworkID,
@@ -87,6 +97,9 @@ func New(config Config) (*App, error) {
 	}
 	if closer, ok := any(service).(io.Closer); ok {
 		instance.closers = append(instance.closers, closer)
+	}
+	if causalWriter != nil {
+		instance.closers = append(instance.closers, causalWriter)
 	}
 
 	applyRequest, err := applyRequestFromConfig(config)

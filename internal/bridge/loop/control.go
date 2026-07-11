@@ -20,9 +20,18 @@ const maxControlResponseBytes = 1 << 20
 
 type controlRequest struct {
 	ContextID string `json:"context_id,omitempty"`
-	From      string `json:"from"`
-	Message   string `json:"message"`
-	To        string `json:"to"`
+	// EventID is the moltnet causal event id ("moltnet:<messageID>", via
+	// protocol.MessageEventID) of the inbound message.created event that
+	// triggered this control wake. It is empty for bootstrap sends, which
+	// have no inbound moltnet message to derive an id from. The runtime's
+	// control source (src/runtime/pi/appControlSource.ts
+	// formatControlEventId) prefers this field verbatim over its
+	// synthesized context_id+timestamp fallback, so daimon and mneme chain
+	// off a real moltnet id instead of a stand-in.
+	EventID string `json:"event_id,omitempty"`
+	From    string `json:"from"`
+	Message string `json:"message"`
+	To      string `json:"to"`
 }
 
 type controlResponse struct {
@@ -132,6 +141,7 @@ func sendBootstrapControlMessages(
 			controlClient,
 			config,
 			target.target,
+			"", // bootstrap sends have no inbound moltnet message to derive an event id from
 			"Moltnet Bootstrap",
 			target.message,
 		)
@@ -183,6 +193,7 @@ func sendControlMessage(
 		controlClient,
 		config,
 		event.Message.Target,
+		protocol.MessageEventID(event.Message.ID),
 		bridgeutil.SenderName(event.Message.From),
 		bridgeutil.RenderInboundText(event.Message),
 	)
@@ -193,6 +204,7 @@ func sendControlText(
 	controlClient *http.Client,
 	config bridgeconfig.Config,
 	target protocol.Target,
+	eventID string,
 	from string,
 	message string,
 ) (controlResponse, error) {
@@ -200,6 +212,7 @@ func sendControlText(
 
 	body, err := json.Marshal(controlRequest{
 		ContextID: contextID,
+		EventID:   eventID,
 		From:      from,
 		Message:   message,
 		To:        config.Agent.ID,
@@ -246,6 +259,7 @@ func publishControlResponse(
 	client *MoltnetClient,
 	config bridgeconfig.Config,
 	target protocol.Target,
+	inboundMessageID string,
 	response controlResponse,
 ) error {
 	if config.Runtime.Kind != bridgeconfig.RuntimePi {
@@ -262,7 +276,8 @@ func publishControlResponse(
 			ID:   config.Agent.ID,
 			Name: bridgeutil.DisplayName(config.Agent),
 		},
-		Parts: []protocol.Part{{Kind: protocol.PartKindText, Text: message}},
+		Parts:         []protocol.Part{{Kind: protocol.PartKindText, Text: message}},
+		CauseEventIDs: []string{protocol.MessageEventID(inboundMessageID)},
 	})
 	return err
 }

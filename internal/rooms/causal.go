@@ -83,7 +83,7 @@ func (s *Service) stampMessageAccepted(ctx context.Context, message protocol.Mes
 	event := protocol.CausalEvent{
 		Version: protocol.CausalEventVersion,
 		RunID:   runID,
-		EventID: protocol.CausalSystemMoltnet + ":" + message.ID,
+		EventID: protocol.MessageEventID(message.ID),
 		Emitter: protocol.CausalEmitter{
 			System:   protocol.CausalSystemMoltnet,
 			StreamID: observability.NetworkStreamID(s.networkID),
@@ -139,7 +139,7 @@ func (s *Service) stampMessageDenied(
 	event := protocol.CausalEvent{
 		Version: protocol.CausalEventVersion,
 		RunID:   runID,
-		EventID: protocol.CausalSystemMoltnet + ":" + messageID + ".denied",
+		EventID: protocol.MessageEventID(messageID) + ".denied",
 		Emitter: protocol.CausalEmitter{
 			System:   protocol.CausalSystemMoltnet,
 			StreamID: observability.NetworkStreamID(s.networkID),

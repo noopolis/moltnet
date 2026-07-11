@@ -31,6 +31,7 @@ const (
 
 type Config struct {
 	AllowHumanIngress     bool
+	CausalEventsPath      string
 	Console               ConsoleConfig
 	DebugEvents           bool
 	DisableDirectMessages bool

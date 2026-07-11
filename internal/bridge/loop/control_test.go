@@ -173,9 +173,23 @@ func TestRunControlLoop(t *testing.T) {
 		}
 		if strings.Contains(body, "\"from\":\"Moltnet Bootstrap\"") {
 			sawBootstrap = true
+			// Gap 3: bootstrap sends have no inbound moltnet message to
+			// derive an event id from, so event_id must stay absent
+			// (omitempty), never a synthesized value.
+			if strings.Contains(body, "\"event_id\"") {
+				t.Fatalf("expected no event_id on the bootstrap control request, got %#v", body)
+			}
 		}
 		if strings.Contains(body, "\"from\":\"Writer\"") {
 			sawInbound = true
+			// Gap 3: an inbound wake's control POST must carry the real
+			// moltnet causal event id for its triggering message
+			// (protocol.MessageEventID(event.Message.ID)) so daimon and
+			// mneme chain off it instead of formatControlEventId's
+			// context_id+timestamp synthesized fallback.
+			if !strings.Contains(body, "\"event_id\":\"moltnet:msg_1\"") {
+				t.Fatalf("expected inbound control request to carry the real moltnet event id, got %#v", body)
+			}
 		}
 	}
 	if !sawBootstrap || !sawInbound {
