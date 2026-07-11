@@ -18,6 +18,13 @@ import (
 // sourced from request payloads or model output.
 const causalRunIDEnv = "NOOPOLIS_RUN_ID"
 
+// causalUnsetRunID is the run_id stamped when causalRunIDEnv is empty. It
+// matches mneme's resolveCausalRunId and daimon's resolveRunId fallback
+// exactly, so if a run id is ever genuinely absent, all three authorities
+// still emit — under the same "unset-run" run_id — rather than moltnet
+// silently diverging by emitting nothing while mneme/daimon still write.
+const causalUnsetRunID = "unset-run"
+
 // causalPrincipalAnonymous is the principal_id stamped for the
 // unauthenticated dev-mode case (no authn.Claims on the context at all).
 // It is a system: principal per the grammar in specs/CAUSAL.md §3, never
@@ -70,8 +77,8 @@ func (s *Service) stampMessageAccepted(ctx context.Context, message protocol.Mes
 
 	runID := strings.TrimSpace(os.Getenv(causalRunIDEnv))
 	if runID == "" {
-		logger.Warn("skipping message.accepted causal stamp: " + causalRunIDEnv + " is not set")
-		return
+		logger.Warn("message.accepted causal stamp falling back to run_id " + causalUnsetRunID + ": " + causalRunIDEnv + " is not set")
+		runID = causalUnsetRunID
 	}
 
 	payload, err := messageAcceptedPayload(message)
@@ -126,8 +133,8 @@ func (s *Service) stampMessageDenied(
 
 	runID := strings.TrimSpace(os.Getenv(causalRunIDEnv))
 	if runID == "" {
-		logger.Warn("skipping message.denied causal stamp: " + causalRunIDEnv + " is not set")
-		return
+		logger.Warn("message.denied causal stamp falling back to run_id " + causalUnsetRunID + ": " + causalRunIDEnv + " is not set")
+		runID = causalUnsetRunID
 	}
 
 	payload, err := messageDeniedPayload(request, reason)

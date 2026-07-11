@@ -242,7 +242,7 @@ func TestStampMessageAcceptedSeqIsContiguousAcrossMessages(t *testing.T) {
 	}
 }
 
-func TestStampMessageAcceptedSkippedWithoutRunID(t *testing.T) {
+func TestStampMessageAcceptedFallsBackToUnsetRunWithoutRunID(t *testing.T) {
 	t.Setenv(causalRunIDEnv, "")
 	service, buf := newCausalTestService(t)
 
@@ -256,8 +256,17 @@ func TestStampMessageAcceptedSkippedWithoutRunID(t *testing.T) {
 	if _, err := service.SendMessage(request); err != nil {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
-	if buf.Len() != 0 {
-		t.Fatalf("expected no causal record to be written without %s set, got %q", causalRunIDEnv, buf.String())
+
+	// Aligns moltnet with mneme's resolveCausalRunId and daimon's
+	// resolveRunId: an unset NOOPOLIS_RUN_ID falls back to emitting under
+	// "unset-run" rather than moltnet silently writing nothing while the
+	// other two authorities still emit.
+	recorded := causalLines(t, buf)
+	if len(recorded) != 1 {
+		t.Fatalf("expected exactly 1 causal record even without %s set, got %d: %#v", causalRunIDEnv, len(recorded), recorded)
+	}
+	if recorded[0].RunID != causalUnsetRunID {
+		t.Fatalf("RunID = %q, want %q", recorded[0].RunID, causalUnsetRunID)
 	}
 }
 
