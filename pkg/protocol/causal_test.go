@@ -28,7 +28,7 @@ func validCausalEvent(t *testing.T) CausalEvent {
 			Seq:      1,
 		},
 		Type:          EventTypeMessageAccepted,
-		PrincipalID:   "token:writer",
+		PrincipalID:   "agent:writer",
 		RecordedAt:    time.Now().UTC(),
 		CauseEventIDs: []string{},
 		Payload:       payload,

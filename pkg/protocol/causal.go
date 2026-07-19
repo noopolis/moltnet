@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -110,8 +111,8 @@ func (e CausalEvent) Validate() error {
 	if strings.TrimSpace(e.Type) == "" {
 		return fmt.Errorf("causal event: type is required")
 	}
-	if strings.TrimSpace(e.PrincipalID) == "" {
-		return fmt.Errorf("causal event: principal_id is required")
+	if !causalPrincipalGrammar.MatchString(e.PrincipalID) {
+		return fmt.Errorf("causal event: principal_id must match ^(agent|operator|system):.+")
 	}
 	if e.RecordedAt.IsZero() {
 		return fmt.Errorf("causal event: recorded_at is required")
@@ -119,10 +120,22 @@ func (e CausalEvent) Validate() error {
 	if e.CauseEventIDs == nil {
 		return fmt.Errorf("causal event: cause_event_ids must not be nil (use an empty slice for no causes)")
 	}
+	seenCauses := map[string]struct{}{}
 	for index, causeID := range e.CauseEventIDs {
 		if strings.TrimSpace(causeID) == "" {
 			return fmt.Errorf("causal event: cause_event_ids[%d] must not be empty", index)
 		}
+		causeSystem, _, ok := splitCausalEventID(causeID)
+		if !ok {
+			return fmt.Errorf("causal event: cause_event_ids[%d] invalid event_id", index)
+		}
+		if !causalSystemRecognized(causeSystem) {
+			return fmt.Errorf("causal event: cause_event_ids[%d] invalid event_id", index)
+		}
+		if _, seen := seenCauses[causeID]; seen {
+			return fmt.Errorf("causal event: cause_event_ids[%d] duplicate event_id %q", index, causeID)
+		}
+		seenCauses[causeID] = struct{}{}
 	}
 	if len(e.Payload) == 0 {
 		return fmt.Errorf("causal event: payload is required")
@@ -142,7 +155,11 @@ func splitCausalEventID(eventID string) (system string, local string, ok bool) {
 	if index <= 0 || index == len(eventID)-1 {
 		return "", "", false
 	}
-	return eventID[:index], eventID[index+1:], true
+	system = eventID[:index]
+	if !causalSystemRecognized(system) {
+		return "", "", false
+	}
+	return system, eventID[index+1:], true
 }
 
 // MessageEventID formats messageID as moltnet's causal event id for that
@@ -155,6 +172,8 @@ func splitCausalEventID(eventID string) (system string, local string, ok bool) {
 func MessageEventID(messageID string) string {
 	return CausalSystemMoltnet + ":" + messageID
 }
+
+var causalPrincipalGrammar = regexp.MustCompile(`^(agent|operator|system):.+`)
 
 func causalSystemRecognized(system string) bool {
 	switch system {
