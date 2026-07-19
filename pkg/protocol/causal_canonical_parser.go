@@ -73,6 +73,7 @@ func (parser *canonicalJSONParser) parseObject() (any, error) {
 			return nil, fmt.Errorf("duplicate key %q", key)
 		}
 		keys[key] = struct{}{}
+		parser.skipWhitespace()
 		if parser.i >= len(parser.data) || parser.data[parser.i] != ':' {
 			return nil, fmt.Errorf("invalid object key/value delimiter at position %d", parser.i)
 		}
@@ -225,6 +226,9 @@ func (parser *canonicalJSONParser) parseUnicodeEscape() (rune, error) {
 	high, err := parser.parseHex4()
 	if err != nil {
 		return 0, err
+	}
+	if high >= 0xDC00 && high <= 0xDFFF {
+		return 0, fmt.Errorf("invalid low surrogate at position %d", parser.i-4)
 	}
 	if high < 0xD800 || high > 0xDBFF {
 		return high, nil

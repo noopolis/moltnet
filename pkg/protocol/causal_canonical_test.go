@@ -33,6 +33,15 @@ func TestParseCanonicalJSONRejectsMalformedJSONValues(t *testing.T) {
 }
 
 func TestParseCanonicalJSONRejectsInvalidUnicode(t *testing.T) {
+	if _, err := ParseCanonicalJSON(`{"x":"\uDC00"}`); err == nil {
+		t.Fatal("expected lone low surrogate value rejection")
+	}
+	if _, err := ParseCanonicalJSON(`{"\uDC00":"value"}`); err == nil {
+		t.Fatal("expected lone low surrogate key rejection")
+	}
+	if _, err := ParseCanonicalJSON(`{"x":"\uD834\uDF06"}`); err != nil {
+		t.Fatalf("expected valid surrogate pair acceptance: %v", err)
+	}
 	if _, err := ParseCanonicalJSON(`{"value":"\uD800"}`); err == nil {
 		t.Fatal("expected lone surrogate rejection")
 	}
@@ -45,6 +54,79 @@ func TestParseCanonicalJSONRejectsInvalidUnicode(t *testing.T) {
 	if _, err := ParseCanonicalJSONBytes([]byte{0xef, 0xbb, 0xbf, '{', '}'}); err == nil {
 		t.Fatal("expected BOM rejection")
 	}
+}
+
+func TestParseCanonicalJSONObjectWhitespaceRules(t *testing.T) {
+	for _, json := range []string{
+		`{"a":1,"b":2}`,
+		`{"a" :1,"b" :2}`,
+		`{"a":1,` + "\t" + `"b":` + "\r" + `2,` + ` "c":` + "\n" + `3}`,
+		`{"a" ` + "\t\n\r" + `:` + "\n \r\t" + `1, "b"` + "\r\t" + `:` + "\t\n" + `2}`,
+		`{"outer":{"inner"` + "\t" + `:1,"leaf":"x"},"next":2}`,
+		`{"outer" : {"inner"` + "\n" + `:` + "\r" + `1}, "next" : 2}`,
+	} {
+		value, err := ParseCanonicalJSON(json)
+		if err != nil {
+			t.Fatalf("unexpected error for %q: %v", json, err)
+		}
+		record, ok := value.(map[string]any)
+		if !ok {
+			t.Fatal("expected object")
+		}
+		_ = record
+	}
+
+	for _, ws := range []string{"", " ", "\t", "\n", "\r", "\t \n", "\n\r\t", " \r\n\t "} {
+		t.Run(fmt.Sprintf("legal_ws_%q", ws), func(t *testing.T) {
+			json := fmt.Sprintf(`{"a"%s:%s1}`, ws, ws)
+			if _, err := ParseCanonicalJSON(json); err != nil {
+				t.Fatalf("unexpected error for whitespace %q: %v", ws, err)
+			}
+		})
+	}
+
+	for _, ws := range []string{"\v", "\f", "\u00a0"} {
+		t.Run(fmt.Sprintf("illegal_ws_%q", ws), func(t *testing.T) {
+			json := fmt.Sprintf(`{"a"%s:1}`, ws)
+			if _, err := ParseCanonicalJSON(json); err == nil {
+				t.Fatalf("expected parse rejection for illegal whitespace %q", ws)
+			}
+		})
+	}
+}
+
+func TestCanonicalJSONStringEscapesControlCodePointsPerJSONRule(t *testing.T) {
+	test := func(raw string, want string) {
+		serialized, err := CanonicalJSONString(map[string]any{"value": raw})
+		if err != nil {
+			t.Fatalf("CanonicalJSONString() error = %v", err)
+		}
+		expected := "{\"value\":\"" + want + "\"}"
+		if serialized != expected {
+			t.Fatalf("unexpected canonical output for %q: got %q expected %q", raw, serialized, expected)
+		}
+	}
+
+	for codepoint := 0; codepoint <= 0x1F; codepoint++ {
+		raw := string(rune(codepoint))
+		switch codepoint {
+		case '\b':
+			test(raw, "\\b")
+		case '\t':
+			test(raw, "\\t")
+		case '\n':
+			test(raw, "\\n")
+		case '\f':
+			test(raw, "\\f")
+		case '\r':
+			test(raw, "\\r")
+		default:
+			test(raw, fmt.Sprintf("\\u%04x", codepoint))
+		}
+	}
+
+	test(`\`, "\\\\")
+	test(`"`, "\\\"")
 }
 
 func TestCanonicalJSONStringSortsUTF16KeysAndPreservesArrayOrder(t *testing.T) {

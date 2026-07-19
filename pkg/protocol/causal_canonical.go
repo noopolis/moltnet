@@ -321,7 +321,7 @@ func encodeCanonicalJSONString(builder *strings.Builder, value string) error {
 			builder.WriteString(`\t`)
 		default:
 			if char >= 0x00 && char <= 0x1f {
-				builder.WriteString(`\u00`)
+				builder.WriteString(`\u`)
 				builder.WriteString(formatUTF16(char))
 			} else {
 				builder.WriteRune(char)
