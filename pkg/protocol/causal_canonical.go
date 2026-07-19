@@ -172,6 +172,9 @@ func normalizeCanonicalValue(value any) (any, error) {
 	case map[string]any:
 		canonical := make(map[string]any, len(typed))
 		for key, child := range typed {
+			if err := validateCanonicalString(key); err != nil {
+				return nil, err
+			}
 			normalized, err := normalizeCanonicalValue(child)
 			if err != nil {
 				return nil, err

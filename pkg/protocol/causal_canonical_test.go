@@ -144,6 +144,28 @@ func TestCanonicalJSONStringSortsUTF16KeysAndPreservesArrayOrder(t *testing.T) {
 	}
 }
 
+func TestCanonicalJSONStringSortsUTF16KeysNestedAndNumericValues(t *testing.T) {
+	value := map[string]any{
+		"z":  1,
+		"2":  "outer-two",
+		"10": "outer-ten",
+		"a": map[string]any{
+			"10":         "ten",
+			"2":          "two",
+			"a":          "letter",
+			"\U0001F600": "smile",
+		},
+		"\u2665": "heart",
+	}
+	serialized, err := CanonicalJSONString(value)
+	if err != nil {
+		t.Fatalf("CanonicalJSONString() error = %v", err)
+	}
+	if serialized != "{\"10\":\"outer-ten\",\"2\":\"outer-two\",\"a\":{\"10\":\"ten\",\"2\":\"two\",\"a\":\"letter\",\"😀\":\"smile\"},\"z\":1,\"♥\":\"heart\"}" {
+		t.Fatalf("unexpected canonical order: %s", serialized)
+	}
+}
+
 func TestCanonicalJSONStringRejectsUnsupportedValues(t *testing.T) {
 	if _, err := CanonicalJSONString(func() {}); err == nil {
 		t.Fatal("expected unsupported value error")
@@ -175,6 +197,30 @@ func TestCanonicalJSONStringEscapesNumbersLikeECMAScript(t *testing.T) {
 	expected, _ := hex.DecodeString("7b226261673a313030307d")
 	if len(expected) == 0 {
 		t.Fatalf("expected hex decode sanity check")
+	}
+}
+
+func TestCanonicalJSONStringRejectsInvalidRuntimeMapKeys(t *testing.T) {
+	highSurrogate := string([]byte{0xed, 0xa0, 0x80})
+	if _, err := CanonicalJSONString(map[string]any{highSurrogate: 1}); err == nil {
+		t.Fatal("expected lone high surrogate key rejection")
+	}
+	lowSurrogate := string([]byte{0xed, 0xb0, 0x80})
+	if _, err := CanonicalJSONString(map[string]any{lowSurrogate: 1}); err == nil {
+		t.Fatal("expected lone low surrogate key rejection")
+	}
+	if _, err := CanonicalJSONString(map[string]any{string([]byte{0xff, 0xfe, 'x'}): 1}); err == nil {
+		t.Fatal("expected invalid UTF-8 map key rejection")
+	}
+}
+
+func TestCanonicalJSONStringSupportsValidSupplementaryRuntimeKeys(t *testing.T) {
+	serialized, err := CanonicalJSONString(map[string]any{"\U0001D11E": 1})
+	if err != nil {
+		t.Fatalf("CanonicalJSONString() error = %v", err)
+	}
+	if serialized != "{\"𝄞\":1}" {
+		t.Fatalf("unexpected canonical output: %s", serialized)
 	}
 }
 
