@@ -15,7 +15,7 @@ type Service interface {
 	Network() protocol.Network
 	GetAgent(agentID string) (protocol.AgentSummary, error)
 	GetAgentContext(ctx context.Context, agentID string) (protocol.AgentSummary, error)
-	GetDirectConversation(dmID string) (protocol.DirectConversation, error)
+	GetDirectConversationContext(ctx context.Context, dmID string) (protocol.DirectConversation, error)
 	GetRoom(roomID string) (protocol.Room, error)
 	GetRoomContext(ctx context.Context, roomID string) (protocol.Room, error)
 	GetThread(threadID string) (protocol.Thread, error)
@@ -329,7 +329,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 	}))
 
 	mux.HandleFunc("GET /v1/dms/{dmID}", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
-		dm, err := service.GetDirectConversation(request.PathValue("dmID"))
+		dm, err := directConversationForRequest(service, request.Context(), request.PathValue("dmID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
 			return

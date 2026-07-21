@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -23,7 +24,9 @@ func (s *Service) SubscribeFrom(ctx context.Context, lastEventID string) <-chan 
 }
 
 func (s *Service) filterEvents(ctx context.Context, stream <-chan protocol.Event) <-chan protocol.Event {
-	if !s.disableDirectMessages {
+	claims, restricted := authn.ClaimsFromContext(ctx)
+	restricted = restricted && claims.HasAgentRestriction()
+	if !s.disableDirectMessages && !restricted {
 		return stream
 	}
 
@@ -38,7 +41,7 @@ func (s *Service) filterEvents(ctx context.Context, stream <-chan protocol.Event
 				if !ok {
 					return
 				}
-				if directMessageEvent(event) {
+				if (s.disableDirectMessages && directMessageEvent(event)) || (restricted && !s.eventVisible(ctx, event)) {
 					continue
 				}
 				select {
@@ -112,6 +115,10 @@ func (s *Service) GetThreadContext(ctx context.Context, threadID string) (protoc
 }
 
 func (s *Service) GetDirectConversation(dmID string) (protocol.DirectConversation, error) {
+	return s.GetDirectConversationContext(context.Background(), dmID)
+}
+
+func (s *Service) GetDirectConversationContext(ctx context.Context, dmID string) (protocol.DirectConversation, error) {
 	id := strings.TrimSpace(dmID)
 	if id == "" {
 		return protocol.DirectConversation{}, invalidDMIDError()
@@ -120,11 +127,14 @@ func (s *Service) GetDirectConversation(dmID string) (protocol.DirectConversatio
 		return protocol.DirectConversation{}, directMessagesDisabledError()
 	}
 
-	conversation, ok, err := s.getDirectConversation(context.Background(), id)
+	conversation, ok, err := s.getDirectConversation(ctx, id)
 	if err != nil {
 		return protocol.DirectConversation{}, err
 	}
 	if ok {
+		if !s.canReadDirectConversation(ctx, conversation) {
+			return protocol.DirectConversation{}, agentForbiddenError("direct conversation is not readable")
+		}
 		return conversation, nil
 	}
 

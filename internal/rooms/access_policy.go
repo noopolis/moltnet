@@ -122,11 +122,67 @@ func (s *Service) canReadRoom(ctx context.Context, room protocol.Room) bool {
 	if mode == authn.ModeNone && !authn.PublicReadFromContext(ctx) {
 		return true
 	}
+	if hasClaims && claims.HasAgentRestriction() {
+		if protocol.NormalizeRoomVisibility(room.Visibility) == protocol.RoomVisibilityPublic {
+			return true
+		}
+		for _, agentID := range claims.AgentIDs() {
+			if !claims.AllowsAgent(agentID) {
+				continue
+			}
+			for _, memberID := range room.Members {
+				if allowedAgentMatches(s.networkID, agentID, room.NetworkID, memberID) {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	if hasClaims && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}) {
 		return true
 	}
 	return authn.PublicReadFromContext(ctx) &&
 		protocol.NormalizeRoomVisibility(room.Visibility) == protocol.RoomVisibilityPublic
+}
+
+func (s *Service) canReadDirectConversation(ctx context.Context, conversation protocol.DirectConversation) bool {
+	claims, ok := authn.ClaimsFromContext(ctx)
+	if !ok || !claims.HasAgentRestriction() {
+		return true
+	}
+	for _, agentID := range claims.AgentIDs() {
+		if !claims.AllowsAgent(agentID) {
+			continue
+		}
+		for _, participantID := range conversation.ParticipantIDs {
+			if allowedAgentMatches(s.networkID, agentID, conversation.NetworkID, participantID) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func AgentIdentityMatches(credentialNetwork, credentialID, parentNetwork, parentID string) bool {
+	allowedNetwork, allowedAgent := normalizedAgentIdentity(credentialNetwork, credentialID)
+	candidateNetwork, candidateAgent := normalizedAgentIdentity(parentNetwork, parentID)
+	return allowedNetwork != "" && allowedAgent != "" &&
+		allowedNetwork == candidateNetwork && allowedAgent == candidateAgent
+}
+
+func allowedAgentMatches(credentialNetwork, credentialID, parentNetwork, parentID string) bool {
+	return AgentIdentityMatches(credentialNetwork, credentialID, parentNetwork, parentID)
+}
+
+func normalizedAgentIdentity(defaultNetworkID, value string) (string, string) {
+	trimmed := strings.TrimSpace(value)
+	if networkID, agentID, ok := protocol.ParseScopedAgentID(trimmed); ok {
+		return strings.TrimSpace(networkID), strings.TrimSpace(agentID)
+	}
+	if networkID, agentID, ok := protocol.ParseAgentFQID(trimmed); ok {
+		return strings.TrimSpace(networkID), strings.TrimSpace(agentID)
+	}
+	return strings.TrimSpace(defaultNetworkID), trimmed
 }
 
 func actorFromClaims(ctx context.Context) protocol.Actor {

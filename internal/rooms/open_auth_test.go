@@ -121,13 +121,20 @@ func TestGeneratedAgentTokenCannotSendHumanInBearerOpenRegistration(t *testing.T
 	}
 }
 
-func TestGeneratedAgentTokenDoesNotReadPrivateMemberRoom(t *testing.T) {
+func TestGeneratedAgentTokenReadsOwnPrivateRoomButNotUnrelatedRoom(t *testing.T) {
 	t.Parallel()
 
 	service := newAgentRegistryTestService()
 	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
-		ID:         "private-room",
+		ID:         "own-private-room",
 		Members:    []string{"luna"},
+		Visibility: protocol.RoomVisibilityPrivate,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:         "unrelated-private-room",
+		Members:    []string{"atlas"},
 		Visibility: protocol.RoomVisibilityPrivate,
 	}); err != nil {
 		t.Fatal(err)
@@ -139,8 +146,14 @@ func TestGeneratedAgentTokenDoesNotReadPrivateMemberRoom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRoomsContext() error = %v", err)
 	}
-	if len(page.Rooms) != 0 {
-		t.Fatalf("generated agent token should not observe private rooms, got %#v", page.Rooms)
+	if len(page.Rooms) != 1 || page.Rooms[0].ID != "own-private-room" {
+		t.Fatalf("generated agent token should observe only its private room, got %#v", page.Rooms)
+	}
+	if _, err := service.GetRoomContext(ctx, "own-private-room"); err != nil {
+		t.Fatalf("generated agent token should get its private room: %v", err)
+	}
+	if _, err := service.GetRoomContext(ctx, "unrelated-private-room"); err == nil {
+		t.Fatal("generated agent token read an unrelated private room")
 	}
 }
 
