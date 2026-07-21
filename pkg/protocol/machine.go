@@ -15,7 +15,7 @@ const (
 	MachineMaxBodyBytes           = 2048
 	MachineMaxCauseBytes          = 128
 	MachineMaxCursorBytes         = 128
-	MachineMaxTranscriptBytes     = 262144
+	MachineMaxTranscriptBytes     = MachineMaxOutputLineBytes - 1024
 	MachineMaxExportRoomTargets   = 32
 	MachineMaxExportPeerTargets   = 32
 	MachineMaxReadLimit           = 128
@@ -24,6 +24,13 @@ const (
 	MachineMaxCorrelationRegistry = 1024
 	MachineMaxDeliveryRegistry    = 1024
 	MachineMaxCauseEventIDs       = 32
+	MachineMaxReadMessageParts    = 64
+	MachineMaxReadMentions        = 128
+	MachineMaxReadPartTextBytes   = 4096
+	MachineMaxReadPartMediaType   = 128
+	MachineMaxReadPartFilename    = 256
+	MachineMaxReadPartDataBytes   = 8192
+	MachineMaxReadPartURLBytes    = 2048
 )
 
 const (

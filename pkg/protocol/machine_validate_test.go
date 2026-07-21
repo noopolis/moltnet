@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -211,6 +212,18 @@ func TestMachineReadResultValidation(t *testing.T) {
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("expected valid read result: %v", err)
 	}
+
+	invalidTarget := valid
+	invalidTarget.Page.Messages[0].Target.ThreadID = "thread_1"
+	if err := invalidTarget.Validate(); err == nil {
+		t.Fatal("expected invalid room target shape")
+	}
+
+	oversizedID := valid
+	oversizedID.Page.Messages[0].ID = strings.Repeat("x", MachineMaxTargetBytes+1)
+	if err := oversizedID.Validate(); err == nil {
+		t.Fatal("expected oversized message id rejection")
+	}
 }
 
 func TestMachineSubscribeValidation(t *testing.T) {
@@ -307,6 +320,33 @@ func TestMachineSubscribeEventAndExportResultValidation(t *testing.T) {
 		TranscriptSHA: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 	}).Validate(); err == nil {
 		t.Fatal("expected bad hash rejection")
+	}
+}
+
+func TestMachineRequestAndResponseErrorSentinelValidation(t *testing.T) {
+	t.Parallel()
+
+	if err := (MachineError{Code: MachineErrorInvalidRequest}).Validate(); err != nil {
+		t.Fatalf("expected supported error code: %v", err)
+	}
+
+	if err := (MachineError{Code: "forbidden"}).Validate(); err == nil {
+		t.Fatal("expected unsupported error code rejection")
+	}
+
+	secret := "attacker_code_987"
+	response := MachineResponse{
+		Version:       MachineProtocolV1,
+		CorrelationID: "corr_secret",
+		Operation:     MachineOpRead,
+		Error: &MachineError{
+			Code: secret,
+		},
+	}
+	if err := response.Validate(); err == nil {
+		t.Fatal("expected secret response error code rejection")
+	} else if strings.Contains(err.Error(), secret) {
+		t.Fatalf("error leaked secret response token: %v", err)
 	}
 }
 

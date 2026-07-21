@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -11,7 +12,7 @@ func validateMachineOperation(operation string) error {
 	case MachineOpSendNudge, MachineOpRead, MachineOpSubscribe, MachineOpExport, MachineOpCancel:
 		return nil
 	default:
-		return fmt.Errorf("unsupported operation %q", operation)
+		return errors.New("unsupported operation")
 	}
 }
 
@@ -58,6 +59,8 @@ func validateMachineStringSlice(values []string, maxCount int, maxLen int, field
 }
 
 func validateJSON(raw json.RawMessage) error {
-	var marker any
-	return json.Unmarshal(raw, &marker)
+	if err := validateNoDuplicateJSONValues(raw); err != nil {
+		return errors.New("invalid JSON")
+	}
+	return nil
 }

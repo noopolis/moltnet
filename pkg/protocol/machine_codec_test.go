@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -92,29 +93,198 @@ func TestMachineCodecErrorFramesAreCodeOnlyAndSecretSafe(t *testing.T) {
 
 func TestMachineCodecPreservesOpaqueSubscribePayloadBytes(t *testing.T) {
 	t.Parallel()
-
-	rawPayload := json.RawMessage(`{"payload":{"token":"api_key_123","value":{"a":1}},"meta":["x"]}`)
-
-	response := MachineResponse{
-		Version:       MachineProtocolV1,
-		CorrelationID: "corr_2",
-		Operation:     MachineOpSubscribe,
-		Event: &MachineSubscribeEvent{
-			EventID: "evt_1",
-			Type:    "message",
-			Payload: rawPayload,
+	tests := []struct {
+		name        string
+		correlation string
+		payload     json.RawMessage
+	}{
+		{
+			name:        "pretty payload preserved",
+			correlation: "corr_2",
+			payload: json.RawMessage(`{
+  "payload": {
+    "token":"api_key_123",
+    "value":{"a":1}
+  },
+  "meta":["x"]
+}`),
+		},
+		{
+			name:        "secret payload raw bytes preserved",
+			correlation: "corr_sub_payload",
+			payload:     json.RawMessage("{\n  \"token\": \"value_with_secret_xyz\",\n  \"payload\": {\n    \"deep\": {\n      \"line\": \"keep\"\n    }\n  }\n}"),
 		},
 	}
-	responseLine, err := EncodeMachineResponseLine(response)
-	if err != nil {
-		t.Fatalf("response encode: %v", err)
+	for _, tc := range tests {
+		response := MachineResponse{
+			Version:       MachineProtocolV1,
+			CorrelationID: tc.correlation,
+			Operation:     MachineOpSubscribe,
+			Event: &MachineSubscribeEvent{
+				EventID: "evt_1",
+				Type:    "message",
+				Payload: tc.payload,
+			},
+		}
+		encoded, err := EncodeMachineResponseLine(response)
+		if err != nil {
+			t.Fatalf("%s: response encode: %v", tc.name, err)
+		}
+		decoded, err := DecodeMachineResponseLine(encoded)
+		if err != nil {
+			t.Fatalf("%s: response decode: %v", tc.name, err)
+		}
+		if !bytes.Equal(decoded.Event.Payload, tc.payload) {
+			t.Fatalf("%s: provider payload bytes changed by validation/encoding", tc.name)
+		}
 	}
-	decoded, err := DecodeMachineResponseLine(responseLine)
-	if err != nil {
-		t.Fatalf("response decode: %v", err)
+
+	if _, err := DecodeMachineResponseLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"subscribe","event":{"event_id":"evt","type":"message","payload":{"token":"a",},"payload":""}}`); err == nil {
+		t.Fatal("expected malformed payload rejection")
 	}
-	if !bytes.Equal(decoded.Event.Payload, rawPayload) {
-		t.Fatal("provider payload bytes changed by validation/encoding")
+
+	duplicatePayload := `{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"subscribe","event":{"event_id":"evt","type":"message","payload":{"token":"a","token":"b"}}}`
+	if _, err := DecodeMachineResponseLine(duplicatePayload); err == nil {
+		t.Fatal("expected duplicate payload rejection")
+	}
+}
+
+func TestMachineCodecSentinelProofSafeErrors(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		raw    string
+		secret string
+	}{
+		{`{"version":"` + MachineProtocolV1 + `","version":"v","correlation_id":"secret_request_42","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"limit":1}}`, "secret_request_42"},
+		{`{"version":"` + MachineProtocolV1 + `","correlation_id":"secret_response_99","operation":"send_nudge","read":{"message_id":"m1","event_id":"e1","accepted":true,"thread_created":true,"thread_id":"t1","dm_created":false}}`, "secret_response_99"},
+		{`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_err_unknown","operation":"send_nudge","error":{"code":"open sesame"}}`, "open sesame"},
+		{`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_dup_1","operation":"read","read":{"target":{"kind":"room","id":"room_1","id":"room_2"},"limit":1}}`, "room_2"},
+		{`{"version":"` + MachineProtocolV1 + `","correlation_id":"bad_json_secret","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"limit":1`, "bad_json_secret"},
+	} {
+		assertMachineResponseDecodeErrorSafe(t, tc.raw, tc.secret, "open sesame")
+	}
+
+	for _, tc := range []struct {
+		name  string
+		build func() MachineResponse
+	}{{name: "invalid mismatch payload", build: func() MachineResponse {
+		return MachineResponse{
+			Version:       MachineProtocolV1,
+			CorrelationID: "corr_send_err",
+			Operation:     MachineOpRead,
+			SendNudge: &MachineSendNudgeResult{
+				MessageID:     "m1",
+				EventID:       "e1",
+				Accepted:      boolPtr(true),
+				ThreadCreated: boolPtr(true),
+				ThreadID:      "t1",
+				DMCreated:     boolPtr(true),
+			},
+		}
+	}},
+		{name: "unknown error code boundary", build: func() MachineResponse {
+			return MachineResponse{
+				Version:       MachineProtocolV1,
+				CorrelationID: "corr_err_boundary",
+				Operation:     MachineOpSendNudge,
+				Error: &MachineError{
+					Code: "open sesame",
+				},
+			}
+		}},
+	} {
+		response := tc.build()
+		if err := response.Validate(); err == nil {
+			t.Fatalf("%s: expected boundary validation failure", tc.name)
+		} else {
+			assertMachineErrorSafeText(t, err, "open sesame")
+		}
+		if _, err := EncodeMachineResponseLine(response); err == nil {
+			t.Fatalf("%s: expected encode failure", tc.name)
+		}
+	}
+}
+
+func assertMachineResponseDecodeErrorSafe(t *testing.T, raw, secret, sentinel string) {
+	t.Helper()
+	_, err := DecodeMachineResponseLine(raw)
+	if err == nil {
+		t.Fatal("expected decode failure for case")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("decode error leaked hostile value %q", secret)
+	}
+	if strings.Contains(err.Error(), sentinel) {
+		t.Fatal("decode error leaked sentinel token")
+	}
+}
+
+func assertMachineErrorSafeText(t *testing.T, err error, sentinel string) {
+	t.Helper()
+	if strings.Contains(err.Error(), sentinel) {
+		t.Fatalf("error text leaked sentinel token")
+	}
+}
+
+func TestMachineCodecReadHostileNestedPageValidation(t *testing.T) {
+	t.Parallel()
+
+	baseMessage := `{"id":"m1","network_id":"net_1","origin":{"network_id":"net_1","message_id":"origin_1"},"target":{"kind":"room","room_id":"room_1"},"from":{"type":"agent","id":"agent_1"},"parts":[{"kind":"text","text":"hello"}],"created_at":"2026-07-21T00:00:00Z"}`
+	valid := fmt.Sprintf(`{"version":"%s","correlation_id":"corr_read_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"page":{"messages":[%s],"page":{"has_more":false}}}}`, MachineProtocolV1, baseMessage)
+	if _, err := DecodeMachineResponseLine(valid); err != nil {
+		t.Fatalf("expected valid baseline read response: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		raw       string
+		forbidden string
+	}{
+		{
+			name:      "missing message identity",
+			raw:       fmt.Sprintf(`{"version":"%s","correlation_id":"corr_read_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"page":{"messages":[{"network_id":"net_1","origin":{"network_id":"net_1","message_id":"origin_1"},"target":{"kind":"room","room_id":"room_1"},"from":{"type":"agent","id":"agent_1"},"parts":[{"kind":"text","text":"hello"}],"created_at":"2026-07-21T00:00:00Z"}],"page":{"has_more":false}}}}`, MachineProtocolV1),
+			forbidden: "",
+		},
+		{
+			name:      "invalid origin id",
+			raw:       fmt.Sprintf(`{"version":"%s","correlation_id":"corr_read_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"page":{"messages":[{"id":"m1","network_id":"net_1","origin":{"network_id":"net_1","message_id":"bad msg"},"target":{"kind":"room","room_id":"room_1"},"from":{"type":"agent","id":"agent_1"},"parts":[{"kind":"text","text":"hello"}],"created_at":"2026-07-21T00:00:00Z"}],"page":{"has_more":false}}}}`, MachineProtocolV1),
+			forbidden: "bad msg",
+		},
+		{
+			name:      "irrelevant target fields",
+			raw:       fmt.Sprintf(`{"version":"%s","correlation_id":"corr_read_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"page":{"messages":[{"id":"m1","network_id":"net_1","origin":{"network_id":"net_1","message_id":"origin_1"},"target":{"kind":"room","room_id":"room_1","thread_id":"th1"},"from":{"type":"agent","id":"agent_1"},"parts":[{"kind":"text","text":"hello"}],"created_at":"2026-07-21T00:00:00Z"}],"page":{"has_more":false}}}}`, MachineProtocolV1),
+			forbidden: "",
+		},
+		{
+			name:      "invalid nested URL",
+			raw:       fmt.Sprintf(`{"version":"%s","correlation_id":"corr_read_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"page":{"messages":[{"id":"m1","network_id":"net_1","origin":{"network_id":"net_1","message_id":"origin_1"},"target":{"kind":"room","room_id":"room_1"},"from":{"type":"agent","id":"agent_1"},"parts":[{"kind":"url","url":"ftp://bad"}],"created_at":"2026-07-21T00:00:00Z"}],"page":{"has_more":false}}}}`, MachineProtocolV1),
+			forbidden: "ftp://bad",
+		},
+		{
+			name:      "invalid time format",
+			raw:       fmt.Sprintf(`{"version":"%s","correlation_id":"corr_read_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"page":{"messages":[{"id":"m1","network_id":"net_1","origin":{"network_id":"net_1","message_id":"origin_1"},"target":{"kind":"room","room_id":"room_1"},"from":{"type":"agent","id":"agent_1"},"parts":[{"kind":"text","text":"hello"}],"created_at":"21/07/2026"}],"page":{"has_more":false}}}}`, MachineProtocolV1),
+			forbidden: "21/07/2026",
+		},
+	}
+
+	for _, tc := range tests {
+		_, err := DecodeMachineResponseLine(tc.raw)
+		if err == nil {
+			t.Fatalf("%s: expected hostile nested payload rejection", tc.name)
+		}
+		if tc.forbidden != "" && strings.Contains(err.Error(), tc.forbidden) {
+			t.Fatalf("%s: leaked hostile token in error", tc.name)
+		}
+	}
+
+	parts := make([]string, MachineMaxReadMessageParts+1)
+	for i := range parts {
+		parts[i] = `{"kind":"text","text":"x"}`
+	}
+	raw := fmt.Sprintf(`{"version":"%s","correlation_id":"corr_read_parts","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"page":{"messages":[{"id":"m1","network_id":"net_1","origin":{"network_id":"net_1","message_id":"origin_1"},"target":{"kind":"room","room_id":"room_1"},"from":{"type":"agent","id":"agent_1"},"parts":[%s],"created_at":"2026-07-21T00:00:00Z"}],"page":{"has_more":false}}}}`, MachineProtocolV1, strings.Join(parts, ","))
+	if _, err := DecodeMachineResponseLine(raw); err == nil {
+		t.Fatal("expected oversized message part rejection")
 	}
 }
 

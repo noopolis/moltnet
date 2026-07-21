@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -11,22 +12,22 @@ import (
 func decodeJSONEnvelope(raw string) (map[string]json.RawMessage, error) {
 	record := strings.TrimSpace(raw)
 	if record == "" {
-		return nil, fmt.Errorf("empty input")
+		return nil, errors.New("empty input")
 	}
 	if err := validateNoDuplicateJSONValues([]byte(record)); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
+		return nil, errors.New("invalid JSON")
 	}
 
 	dec := json.NewDecoder(strings.NewReader(record))
 	var envelope map[string]json.RawMessage
 	if err := dec.Decode(&envelope); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
+		return nil, errors.New("invalid JSON")
 	}
 	if err := ensureSingleJSONValueDecoder(dec); err != nil {
-		return nil, err
+		return nil, errors.New("invalid JSON")
 	}
 	if envelope == nil {
-		return nil, fmt.Errorf("top-level must be an object")
+		return nil, errors.New("invalid JSON")
 	}
 	return envelope, nil
 }
@@ -34,18 +35,18 @@ func decodeJSONEnvelope(raw string) (map[string]json.RawMessage, error) {
 func decodeStrictJSONValue(raw json.RawMessage, target any) error {
 	record := bytes.TrimSpace(raw)
 	if len(record) == 0 || isNull(record) {
-		return fmt.Errorf("missing payload")
+		return errors.New("missing payload")
 	}
 	if err := validateNoDuplicateJSONValues(record); err != nil {
-		return err
+		return errors.New("invalid JSON")
 	}
 	dec := json.NewDecoder(bytes.NewReader(record))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(target); err != nil {
-		return err
+		return errors.New("invalid JSON")
 	}
 	if err := ensureSingleJSONValueDecoder(dec); err != nil {
-		return err
+		return errors.New("invalid JSON")
 	}
 	return nil
 }

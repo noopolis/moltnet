@@ -44,6 +44,10 @@ var machineResponseGoldens = map[string]struct {
 		raw: `{"version":"moltnet.machine.v1","correlation_id":"corr_read_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"page":{"messages":[{"id":"msg_2","network_id":"net_1","origin":{"network_id":"net_1","message_id":"msg_1"},"target":{"kind":"room","room_id":"room_1"},"from":{"type":"agent","id":"agent_1"},"parts":[{"kind":"text","text":"hello"}],"mentions":["agent_2"],"created_at":"2026-07-21T00:00:00Z"}],"page":{"has_more":true,"next_after":"msg_3"}}}}`,
 		sha: "1cf6b11be03b57dcfb921228fdf3f7a6bc9acb0cef427bd45afa227d66d4d9aa",
 	},
+	"read_success_nonempty_with_before": {
+		raw: `{"version":"moltnet.machine.v1","correlation_id":"corr_read_2","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"page":{"messages":[{"id":"msg_2","network_id":"net_1","origin":{"network_id":"net_1","message_id":"msg_1"},"target":{"kind":"room","room_id":"room_1"},"from":{"type":"agent","id":"agent_1"},"parts":[{"kind":"text","text":"hello"}],"mentions":["agent_2"],"created_at":"2026-07-21T00:00:00Z"}],"page":{"has_more":true,"next_before":"msg_1"}}}}`,
+		sha: "2c09baa66b91d07639e78863a3a8d7853cd3e53480973d35d00ebed8ab40af61",
+	},
 	"subscribe_event": {
 		raw: `{"version":"moltnet.machine.v1","correlation_id":"corr_sub_1","operation":"subscribe","event":{"event_id":"e1","type":"message","payload":{"message":"m"}}}`,
 		sha: "df2df6cc41e19605eb325f64cda95da1ed5dd2e167bf2ede3db1e522ab1193e9",

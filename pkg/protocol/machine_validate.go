@@ -21,31 +21,31 @@ func (request MachineRequest) Validate() error {
 	switch request.Operation {
 	case MachineOpSendNudge:
 		if request.SendNudge == nil || request.Read != nil || request.Subscribe != nil || request.Export != nil || request.Cancel != nil {
-			return fmt.Errorf("send_nudge requires only send_nudge payload")
+			return fmt.Errorf("invalid request payload")
 		}
 		return request.SendNudge.Validate()
 	case MachineOpRead:
 		if request.Read == nil || request.SendNudge != nil || request.Subscribe != nil || request.Export != nil || request.Cancel != nil {
-			return fmt.Errorf("read requires only read payload")
+			return fmt.Errorf("invalid request payload")
 		}
 		return request.Read.Validate()
 	case MachineOpSubscribe:
 		if request.Subscribe == nil || request.SendNudge != nil || request.Read != nil || request.Export != nil || request.Cancel != nil {
-			return fmt.Errorf("subscribe requires only subscribe payload")
+			return fmt.Errorf("invalid request payload")
 		}
 		return request.Subscribe.Validate()
 	case MachineOpExport:
 		if request.Export == nil || request.SendNudge != nil || request.Read != nil || request.Subscribe != nil || request.Cancel != nil {
-			return fmt.Errorf("export requires only export payload")
+			return fmt.Errorf("invalid request payload")
 		}
 		return request.Export.Validate()
 	case MachineOpCancel:
 		if request.Cancel == nil || request.SendNudge != nil || request.Read != nil || request.Subscribe != nil || request.Export != nil {
-			return fmt.Errorf("cancel requires only cancel payload")
+			return fmt.Errorf("invalid request payload")
 		}
 		return request.Cancel.Validate()
 	default:
-		return fmt.Errorf("unsupported operation %q", request.Operation)
+		return fmt.Errorf("unsupported operation")
 	}
 }
 
@@ -96,7 +96,7 @@ func (response MachineResponse) Validate() error {
 			return fmt.Errorf("send_nudge payload is required")
 		}
 		if response.Read != nil || response.Subscribe != nil || response.Export != nil || response.Cancel != nil || response.Event != nil {
-			return fmt.Errorf("send_nudge response contains unsupported payloads")
+			return fmt.Errorf("unsupported response payload")
 		}
 		return response.SendNudge.Validate()
 	case MachineOpRead:
@@ -104,12 +104,12 @@ func (response MachineResponse) Validate() error {
 			return fmt.Errorf("read payload is required")
 		}
 		if response.SendNudge != nil || response.Subscribe != nil || response.Export != nil || response.Cancel != nil || response.Event != nil {
-			return fmt.Errorf("read response contains unsupported payloads")
+			return fmt.Errorf("unsupported response payload")
 		}
 		return response.Read.Validate()
 	case MachineOpSubscribe:
 		if response.Read != nil || response.SendNudge != nil || response.Export != nil || response.Cancel != nil {
-			return fmt.Errorf("subscribe response contains unsupported payloads")
+			return fmt.Errorf("unsupported response payload")
 		}
 		if response.Subscribe == nil && response.Event == nil {
 			return fmt.Errorf("subscribe payload is required")
@@ -123,7 +123,7 @@ func (response MachineResponse) Validate() error {
 			return fmt.Errorf("export payload is required")
 		}
 		if response.SendNudge != nil || response.Read != nil || response.Subscribe != nil || response.Cancel != nil || response.Event != nil {
-			return fmt.Errorf("export response contains unsupported payloads")
+			return fmt.Errorf("unsupported response payload")
 		}
 		return response.Export.Validate()
 	case MachineOpCancel:
@@ -131,11 +131,11 @@ func (response MachineResponse) Validate() error {
 			return fmt.Errorf("cancel payload is required")
 		}
 		if response.SendNudge != nil || response.Read != nil || response.Subscribe != nil || response.Export != nil || response.Event != nil {
-			return fmt.Errorf("cancel response contains unsupported payloads")
+			return fmt.Errorf("unsupported response payload")
 		}
 		return response.Cancel.Validate()
 	default:
-		return fmt.Errorf("unsupported operation %q", response.Operation)
+		return fmt.Errorf("unsupported operation")
 	}
 }
 
@@ -296,7 +296,7 @@ func (event MachineSubscribeEvent) Validate() error {
 		return fmt.Errorf("payload must be at most %d bytes", MachineMaxOutputLineBytes)
 	}
 	if err := validateJSON(event.Payload); err != nil {
-		return fmt.Errorf("payload %w", err)
+		return fmt.Errorf("invalid payload")
 	}
 	return nil
 }
@@ -358,6 +358,6 @@ func (errorResponse MachineError) Validate() error {
 		MachineErrorConflict, MachineErrorCapacity, MachineErrorTransport, MachineErrorCanceled:
 		return nil
 	default:
-		return fmt.Errorf("unknown error code %q", errorResponse.Code)
+		return fmt.Errorf("unsupported error code")
 	}
 }
