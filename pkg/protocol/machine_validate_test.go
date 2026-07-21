@@ -174,15 +174,7 @@ func TestMachineReadValidation(t *testing.T) {
 func TestMachineReadResultValidation(t *testing.T) {
 	t.Parallel()
 
-	validTarget := MachineReadMessage{
-		ID:        "msg_1",
-		NetworkID: "net_1",
-		Origin:    MessageOrigin{NetworkID: "net_1", MessageID: "origin_1"},
-		Target:    Target{Kind: TargetKindRoom, RoomID: "room_1"},
-		From:      Actor{Type: "agent", ID: "agent_1"},
-		Parts:     []Part{{Kind: PartKindText, Text: "hello"}},
-		CreatedAt: time.Date(2026, 7, 21, 0, 0, 0, 0, time.UTC),
-	}
+	validTarget := baseMachineReadMessage()
 
 	result := MachineReadResult{
 		Target: MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"},
@@ -199,7 +191,7 @@ func TestMachineReadResultValidation(t *testing.T) {
 		t.Fatal("expected dual cursor rejection")
 	}
 
-	valid := MachineReadResult{
+	basic := MachineReadResult{
 		Target: MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"},
 		Page: MachineReadPage{
 			Messages: []MachineReadMessage{validTarget},
@@ -209,21 +201,34 @@ func TestMachineReadResultValidation(t *testing.T) {
 			},
 		},
 	}
-	if err := valid.Validate(); err != nil {
+	if err := basic.Validate(); err != nil {
 		t.Fatalf("expected valid read result: %v", err)
 	}
 
-	invalidTarget := valid
-	invalidTarget.Page.Messages[0].Target.ThreadID = "thread_1"
-	if err := invalidTarget.Validate(); err == nil {
+	invalidTarget := baseMachineReadMessage()
+	invalidTarget.Target.ThreadID = "thread_1"
+	if err := (MachineReadResult{
+		Target: basic.Target,
+		Page: MachineReadPage{
+			Messages: []MachineReadMessage{invalidTarget},
+			Page:     basic.Page.Page,
+		},
+	}).Validate(); err == nil {
 		t.Fatal("expected invalid room target shape")
 	}
 
-	oversizedID := valid
-	oversizedID.Page.Messages[0].ID = strings.Repeat("x", MachineMaxTargetBytes+1)
-	if err := oversizedID.Validate(); err == nil {
+	oversizedID := baseMachineReadMessage()
+	oversizedID.ID = strings.Repeat("x", MachineMaxTargetBytes+1)
+	if err := (MachineReadResult{
+		Target: basic.Target,
+		Page: MachineReadPage{
+			Messages: []MachineReadMessage{oversizedID},
+			Page:     basic.Page.Page,
+		},
+	}).Validate(); err == nil {
 		t.Fatal("expected oversized message id rejection")
 	}
+
 }
 
 func TestMachineSubscribeValidation(t *testing.T) {
@@ -255,6 +260,16 @@ func TestMachineSubscribeValidation(t *testing.T) {
 	if err := event.Validate(); err != nil {
 		t.Fatalf("expected valid subscribe event: %v", err)
 	}
+	maxEventID := strings.Repeat("e", MachineMaxTargetBytes)
+	maxType := strings.Repeat("t", MachineMaxTargetBytes)
+
+	if err := (MachineSubscribeEvent{
+		EventID: maxEventID,
+		Type:    maxType,
+		Payload: json.RawMessage(`{"value":"\"quoted\" and \\\\ backslash \\n in one payload"}`),
+	}).Validate(); err != nil {
+		t.Fatalf("expected escaped subscribe payload acceptance: %v", err)
+	}
 }
 
 func TestMachineExportValidation(t *testing.T) {
@@ -280,6 +295,7 @@ func TestMachineExportValidation(t *testing.T) {
 	}).Validate(); err == nil {
 		t.Fatal("expected export peer bound rejection")
 	}
+
 }
 
 func TestMachineCancelValidation(t *testing.T) {
@@ -363,6 +379,18 @@ func TestMachineErrorValidationRejectsInvalidCodes(t *testing.T) {
 
 	if (MachineError{Code: "open"}).Validate() == nil {
 		t.Fatal("expected unknown error code rejection")
+	}
+}
+
+func baseMachineReadMessage() MachineReadMessage {
+	return MachineReadMessage{
+		ID:        "msg_1",
+		NetworkID: "net_1",
+		Origin:    MessageOrigin{NetworkID: "net_1", MessageID: "origin_1"},
+		Target:    Target{Kind: TargetKindRoom, RoomID: "room_1"},
+		From:      Actor{Type: "agent", ID: "agent_1"},
+		Parts:     []Part{{Kind: PartKindText, Text: "hello"}},
+		CreatedAt: time.Date(2026, 7, 21, 0, 0, 0, 0, time.UTC),
 	}
 }
 

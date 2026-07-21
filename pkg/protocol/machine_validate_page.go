@@ -19,6 +19,20 @@ func (page MachineReadPage) Validate() error {
 			return fmt.Errorf("page.messages[%d]: %s", index, err)
 		}
 	}
+	if err := validateMachineResponseLineBytes(MachineResponse{
+		Version:       MachineProtocolV1,
+		CorrelationID: strings.Repeat("x", MachineMaxCorrelationBytes),
+		Operation:     MachineOpRead,
+		Read: &MachineReadResult{
+			Target: MachineTarget{
+				Kind: MachineTargetKindRoom,
+				ID:   strings.Repeat("x", MachineMaxTargetBytes),
+			},
+			Page: page,
+		},
+	}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -147,6 +161,12 @@ func validateReadActor(actor Actor) error {
 	}
 	if err := ValidateMemberID(actor.ID); err != nil {
 		return fmt.Errorf("from.id is invalid")
+	}
+	if len(actor.Name) > MachineMaxTargetBytes {
+		return fmt.Errorf("from.name exceeds maximum size")
+	}
+	if len(actor.FQID) > MachineMaxTargetBytes {
+		return fmt.Errorf("from.fqid exceeds maximum size")
 	}
 	if actor.NetworkID != "" {
 		if strings.TrimSpace(actor.NetworkID) != actor.NetworkID {

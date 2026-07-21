@@ -58,6 +58,17 @@ func validateMachineStringSlice(values []string, maxCount int, maxLen int, field
 	return nil
 }
 
+func validateMachineResponseLineBytes(response MachineResponse) error {
+	raw, err := encodeMachineResponse(response)
+	if err != nil {
+		return err
+	}
+	if len(raw) > MachineMaxOutputLineBytes {
+		return fmt.Errorf("response exceeds %d bytes", MachineMaxOutputLineBytes)
+	}
+	return nil
+}
+
 func validateJSON(raw json.RawMessage) error {
 	if err := validateNoDuplicateJSONValues(raw); err != nil {
 		return errors.New("invalid JSON")

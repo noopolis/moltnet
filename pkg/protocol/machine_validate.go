@@ -298,6 +298,14 @@ func (event MachineSubscribeEvent) Validate() error {
 	if err := validateJSON(event.Payload); err != nil {
 		return fmt.Errorf("invalid payload")
 	}
+	if err := validateMachineResponseLineBytes(MachineResponse{
+		Version:       MachineProtocolV1,
+		CorrelationID: strings.Repeat("x", MachineMaxCorrelationBytes),
+		Operation:     MachineOpSubscribe,
+		Event:         &event,
+	}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -321,6 +329,14 @@ func (result MachineExportResult) Validate() error {
 	expected := strings.ToLower(hex.EncodeToString(actual[:]))
 	if result.TranscriptSHA != expected {
 		return fmt.Errorf("transcript_sha256 does not match transcript")
+	}
+	if err := validateMachineResponseLineBytes(MachineResponse{
+		Version:       MachineProtocolV1,
+		CorrelationID: strings.Repeat("x", MachineMaxCorrelationBytes),
+		Operation:     MachineOpExport,
+		Export:        &result,
+	}); err != nil {
+		return err
 	}
 	return nil
 }
