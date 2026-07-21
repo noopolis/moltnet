@@ -13,6 +13,7 @@ import (
 )
 
 type dmTopologyTestStore interface {
+	ContextRoomStore
 	ContextLifecycleMessageStore
 	ContextMessageStore
 }
@@ -55,12 +56,73 @@ func TestDMTopologyIsImmutableAcrossStoreBackends(t *testing.T) {
 				})
 			}
 
+			matchingDuplicate := dmTopologyMessage("msg-first", "dm-fixed", "local", []string{"alpha", "beta"}, protocol.Actor{ID: "alpha"})
+			if lifecycle, err := messages.AppendMessageWithLifecycleContext(context.Background(), matchingDuplicate); !errors.Is(err, ErrDuplicateMessage) || lifecycle != (AppendLifecycle{}) {
+				t.Fatalf("matching duplicate = %#v, %v, want empty lifecycle and ErrDuplicateMessage", lifecycle, err)
+			}
+
 			duplicateConflict := dmTopologyMessage("msg-first", "dm-fixed", "local", []string{"alpha", "gamma"}, protocol.Actor{ID: "alpha"})
-			if _, err := messages.AppendMessageWithLifecycleContext(context.Background(), duplicateConflict); !errors.Is(err, ErrDuplicateMessage) {
-				t.Fatalf("duplicate error = %v, want ErrDuplicateMessage", err)
+			duplicateConflict.Parts = []protocol.Part{{Kind: protocol.PartKindFile, Filename: "stolen.txt"}}
+			if lifecycle, err := messages.AppendMessageWithLifecycleContext(context.Background(), duplicateConflict); !errors.Is(err, ErrDMTopologyConflict) || lifecycle != (AppendLifecycle{}) {
+				t.Fatalf("conflicting duplicate = %#v, %v, want empty lifecycle and ErrDMTopologyConflict", lifecycle, err)
+			}
+			duplicateNetwork := dmTopologyMessage("msg-first", "dm-fixed", "remote", []string{"alpha", "beta"}, protocol.Actor{ID: "alpha"})
+			if _, err := messages.AppendMessageWithLifecycleContext(context.Background(), duplicateNetwork); !errors.Is(err, ErrDMTopologyConflict) {
+				t.Fatalf("different-network duplicate error = %v, want ErrDMTopologyConflict", err)
+			}
+
+			freshDMConflict := dmTopologyMessage("msg-first", "dm-phantom", "local", []string{"alpha", "delta"}, protocol.Actor{ID: "alpha"})
+			if _, err := messages.AppendMessageWithLifecycleContext(context.Background(), freshDMConflict); !errors.Is(err, ErrDMTopologyConflict) {
+				t.Fatalf("fresh-DM duplicate error = %v, want ErrDMTopologyConflict", err)
+			}
+			if _, ok, err := messages.GetDirectConversationContext(context.Background(), "dm-phantom"); err != nil || ok {
+				t.Fatalf("fresh-DM duplicate left phantom conversation: ok=%v err=%v", ok, err)
 			}
 
 			assertDMTopologyState(t, messages, "dm-fixed", []string{"alpha", "beta"}, 2, 1)
+		})
+	}
+}
+
+func TestCrossScopeDuplicateCannotClaimFreshDMTopology(t *testing.T) {
+	for _, backend := range dmTopologyStoreFactories() {
+		t.Run(backend.name, func(t *testing.T) {
+			messages, cleanup := backend.open(t)
+			defer cleanup()
+
+			room := protocol.Room{
+				ID:        "research",
+				NetworkID: "local",
+				FQID:      protocol.RoomFQID("local", "research"),
+				Name:      "Research",
+				CreatedAt: time.Date(2026, time.July, 21, 11, 0, 0, 0, time.UTC),
+			}
+			if err := messages.CreateRoomContext(context.Background(), room); err != nil {
+				t.Fatalf("create room: %v", err)
+			}
+			roomMessage := protocol.Message{
+				ID:        "msg-cross-scope",
+				NetworkID: "local",
+				Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: room.ID},
+				From:      protocol.Actor{ID: "alpha"},
+				Parts:     []protocol.Part{{Kind: protocol.PartKindText, Text: "room"}},
+				CreatedAt: time.Date(2026, time.July, 21, 12, 0, 0, 0, time.UTC),
+			}
+			if _, err := messages.AppendMessageWithLifecycleContext(context.Background(), roomMessage); err != nil {
+				t.Fatalf("append room message: %v", err)
+			}
+
+			conflict := dmTopologyMessage("msg-cross-scope", "dm-cross-scope", "local", []string{"alpha", "beta"}, protocol.Actor{ID: "alpha"})
+			if _, err := messages.AppendMessageWithLifecycleContext(context.Background(), conflict); !errors.Is(err, ErrDMTopologyConflict) {
+				t.Fatalf("cross-scope duplicate error = %v, want ErrDMTopologyConflict", err)
+			}
+			if _, ok, err := messages.GetDirectConversationContext(context.Background(), "dm-cross-scope"); err != nil || ok {
+				t.Fatalf("cross-scope duplicate left phantom conversation: ok=%v err=%v", ok, err)
+			}
+			page, err := messages.ListRoomMessagesContext(context.Background(), room.ID, protocol.PageRequest{Limit: 10})
+			if err != nil || len(page.Messages) != 1 || page.Messages[0].ID != roomMessage.ID {
+				t.Fatalf("room messages changed: %#v, %v", page, err)
+			}
 		})
 	}
 }
@@ -144,6 +206,66 @@ func TestConcurrentDMTopologyClaimsNeverUnionParticipants(t *testing.T) {
 					t.Fatalf("message topology %#v differs from frozen %#v", message.Target.ParticipantIDs, conversation.ParticipantIDs)
 				}
 			}
+		})
+	}
+}
+
+func TestConcurrentSameIDDMTopologyContestIsAtomic(t *testing.T) {
+	for _, backend := range dmTopologyStoreFactories() {
+		t.Run(backend.name, func(t *testing.T) {
+			messages, cleanup := backend.open(t)
+			defer cleanup()
+
+			const attempts = 20
+			start := make(chan struct{})
+			errorsByAttempt := make([]error, attempts)
+			var wait sync.WaitGroup
+			for index := 0; index < attempts; index++ {
+				index := index
+				wait.Add(1)
+				go func() {
+					defer wait.Done()
+					<-start
+					participants := []string{"alpha", "beta"}
+					if index%2 == 1 {
+						participants = []string{"alpha", "gamma"}
+					}
+					message := dmTopologyMessage("msg-same-id", "dm-same-id", "local", participants, protocol.Actor{ID: "alpha"})
+					message.Parts = []protocol.Part{{Kind: protocol.PartKindFile, Filename: "winner.txt"}}
+					_, errorsByAttempt[index] = messages.AppendMessageWithLifecycleContext(context.Background(), message)
+				}()
+			}
+			close(start)
+			wait.Wait()
+
+			conversation, ok, err := messages.GetDirectConversationContext(context.Background(), "dm-same-id")
+			if err != nil || !ok || len(conversation.ParticipantIDs) != 2 {
+				t.Fatalf("conversation = %#v, %v, %v", conversation, ok, err)
+			}
+			successes := 0
+			duplicates := 0
+			conflicts := 0
+			for index, err := range errorsByAttempt {
+				participants := []string{"alpha", "beta"}
+				if index%2 == 1 {
+					participants = []string{"alpha", "gamma"}
+				}
+				matchesWinner := sameStrings(participants, conversation.ParticipantIDs)
+				switch {
+				case matchesWinner && err == nil:
+					successes++
+				case matchesWinner && errors.Is(err, ErrDuplicateMessage):
+					duplicates++
+				case !matchesWinner && errors.Is(err, ErrDMTopologyConflict):
+					conflicts++
+				default:
+					t.Fatalf("attempt %d participants=%#v winner=%#v err=%v", index, participants, conversation.ParticipantIDs, err)
+				}
+			}
+			if successes != 1 || duplicates != attempts/2-1 || conflicts != attempts/2 {
+				t.Fatalf("successes=%d duplicates=%d conflicts=%d", successes, duplicates, conflicts)
+			}
+			assertDMTopologyState(t, messages, "dm-same-id", conversation.ParticipantIDs, 1, 1)
 		})
 	}
 }

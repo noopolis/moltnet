@@ -31,16 +31,20 @@ func (s *MemoryStore) AppendMessageWithLifecycleContext(_ context.Context, messa
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, exists := s.messageIDs[message.ID]; exists {
-		return AppendLifecycle{}, ErrDuplicateMessage
-	}
+	_, duplicate := s.messageIDs[message.ID]
 
 	lifecycle := AppendLifecycle{}
 
 	switch message.Target.Kind {
 	case protocol.TargetKindRoom:
+		if duplicate {
+			return AppendLifecycle{}, ErrDuplicateMessage
+		}
 		s.roomMessages[message.Target.RoomID] = append(s.roomMessages[message.Target.RoomID], message)
 	case protocol.TargetKindThread:
+		if duplicate {
+			return AppendLifecycle{}, ErrDuplicateMessage
+		}
 		s.threadMessages[message.Target.ThreadID] = append(s.threadMessages[message.Target.ThreadID], message)
 		thread, ok := s.threads[message.Target.ThreadID]
 		if !ok {
@@ -69,6 +73,12 @@ func (s *MemoryStore) AppendMessageWithLifecycleContext(_ context.Context, messa
 			return AppendLifecycle{}, err
 		}
 		message.Target.ParticipantIDs = topology.participantIDs
+		if duplicate {
+			if !s.duplicateDMTopologyMatchesLocked(message, topology) {
+				return AppendLifecycle{}, dmTopologyConflict()
+			}
+			return AppendLifecycle{}, ErrDuplicateMessage
+		}
 		existing := s.directMessages[message.Target.DMID]
 		if len(existing) > 0 {
 			if !topology.matches(existing[0].NetworkID, directMemberIDs(s.directMembers[message.Target.DMID])) {
@@ -85,6 +95,10 @@ func (s *MemoryStore) AppendMessageWithLifecycleContext(_ context.Context, messa
 		if conversation, ok := s.directConversationLocked(message.Target.DMID); ok && conversation.MessageCount == 1 {
 			copyConversation := conversation
 			lifecycle.DM = &copyConversation
+		}
+	default:
+		if duplicate {
+			return AppendLifecycle{}, ErrDuplicateMessage
 		}
 	}
 	s.messageIDs[message.ID] = struct{}{}

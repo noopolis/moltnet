@@ -18,13 +18,10 @@ func (s *SQLStore) AppendMessageContext(ctx context.Context, message protocol.Me
 }
 
 func (s *SQLStore) AppendMessageWithLifecycleContext(ctx context.Context, message protocol.Message) (AppendLifecycle, error) {
-	if exists, err := messageCursorExistsContext(ctx, s.db, s.dialect, message.ID); err != nil {
-		return AppendLifecycle{}, fmt.Errorf("check duplicate message: %w", err)
-	} else if exists {
-		return AppendLifecycle{}, ErrDuplicateMessage
-	}
+	topology := dmTopology{}
 	if message.Target.Kind == protocol.TargetKindDM {
-		topology, err := topologyForDMMessage(message)
+		var err error
+		topology, err = topologyForDMMessage(message)
 		if err != nil {
 			return AppendLifecycle{}, err
 		}
@@ -37,11 +34,33 @@ func (s *SQLStore) AppendMessageWithLifecycleContext(ctx context.Context, messag
 	}
 	defer rollback(tx)
 
+	duplicate, err := messageCursorExistsContext(ctx, tx, s.dialect, message.ID)
+	if err != nil {
+		return AppendLifecycle{}, fmt.Errorf("check duplicate message: %w", err)
+	}
+	if duplicate {
+		if message.Target.Kind == protocol.TargetKindDM {
+			if err := s.requireMatchingDuplicateDM(ctx, tx, message, topology); err != nil {
+				return AppendLifecycle{}, err
+			}
+		}
+		return AppendLifecycle{}, ErrDuplicateMessage
+	}
+
 	if err := s.upsertConversation(ctx, tx, message); err != nil {
 		return AppendLifecycle{}, err
 	}
-	if err := s.insertMessage(ctx, tx, message); err != nil {
+	inserted, err := s.insertMessage(ctx, tx, message)
+	if err != nil {
 		return AppendLifecycle{}, err
+	}
+	if !inserted {
+		if message.Target.Kind == protocol.TargetKindDM {
+			if err := s.requireMatchingDuplicateDM(ctx, tx, message, topology); err != nil {
+				return AppendLifecycle{}, err
+			}
+		}
+		return AppendLifecycle{}, ErrDuplicateMessage
 	}
 	if err := s.insertArtifacts(ctx, tx, message); err != nil {
 		return AppendLifecycle{}, err
@@ -119,15 +138,16 @@ func (s *SQLStore) ListArtifactsContext(
 	return s.listArtifactsContext(ctx, filter, page)
 }
 
-func (s *SQLStore) insertMessage(ctx context.Context, tx *sql.Tx, message protocol.Message) error {
+func (s *SQLStore) insertMessage(ctx context.Context, tx *sql.Tx, message protocol.Message) (bool, error) {
 	query := bindQuery(s.dialect, `
 		INSERT INTO messages (
 			id, network_id, target_kind, room_id, thread_id, parent_message_id, dm_id,
 			origin_json, target_json, from_json, parts_json, mentions_json, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (id) DO NOTHING
 	`)
 
-	_, err := tx.ExecContext(
+	result, err := tx.ExecContext(
 		ctx,
 		query,
 		message.ID,
@@ -145,17 +165,13 @@ func (s *SQLStore) insertMessage(ctx context.Context, tx *sql.Tx, message protoc
 		formatTime(message.CreatedAt),
 	)
 	if err != nil {
-		if isDuplicateMessageError(err) {
-			return ErrDuplicateMessage
-		}
-		return fmt.Errorf("insert message: %w", err)
+		return false, fmt.Errorf("insert message: %w", err)
 	}
-
-	return nil
-}
-
-func isDuplicateMessageError(err error) bool {
-	return isUniqueConstraintError(err)
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("inspect message insert: %w", err)
+	}
+	return rows == 1, nil
 }
 
 func (s *SQLStore) upsertConversation(ctx context.Context, tx *sql.Tx, message protocol.Message) error {

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -135,6 +136,21 @@ func dmTopologyConflict() error {
 	return fmt.Errorf("%w", ErrDMTopologyConflict)
 }
 
+func (s *MemoryStore) duplicateDMTopologyMatchesLocked(message protocol.Message, topology dmTopology) bool {
+	messages := s.directMessages[message.Target.DMID]
+	if len(messages) == 0 || !topology.matches(messages[0].NetworkID, directMemberIDs(s.directMembers[message.Target.DMID])) {
+		return false
+	}
+	for _, stored := range messages {
+		if stored.ID == message.ID {
+			return stored.Target.Kind == protocol.TargetKindDM &&
+				stored.Target.DMID == message.Target.DMID &&
+				topology.matches(stored.NetworkID, stored.Target.ParticipantIDs)
+		}
+	}
+	return false
+}
+
 func (s *SQLStore) upsertDMConversation(ctx context.Context, tx *sql.Tx, message protocol.Message) error {
 	topology, err := topologyForDMMessage(message)
 	if err != nil {
@@ -208,6 +224,9 @@ func (s *SQLStore) requireMatchingDMTopology(
 	}
 	var networkID string
 	if err := tx.QueryRowContext(ctx, bindQuery(s.dialect, query), dmID).Scan(&networkID); err != nil {
+		if isNoRows(err) {
+			return dmTopologyConflict()
+		}
 		return fmt.Errorf("read dm conversation topology: %w", err)
 	}
 
@@ -231,6 +250,50 @@ func (s *SQLStore) requireMatchingDMTopology(
 		return fmt.Errorf("iterate dm participants: %w", err)
 	}
 	if !topology.matches(networkID, participantIDs) {
+		return dmTopologyConflict()
+	}
+	return nil
+}
+
+func (s *SQLStore) requireMatchingDuplicateDM(
+	ctx context.Context,
+	tx *sql.Tx,
+	message protocol.Message,
+	topology dmTopology,
+) error {
+	if err := s.requireMatchingDMTopology(ctx, tx, message.Target.DMID, topology); err != nil {
+		return err
+	}
+
+	query := `SELECT network_id, target_kind, dm_id, target_json FROM messages WHERE id = ?`
+	if s.dialect == dialectPostgres {
+		query += ` FOR UPDATE`
+	}
+	var (
+		networkID  string
+		targetKind string
+		dmID       sql.NullString
+		targetJSON string
+	)
+	if err := tx.QueryRowContext(ctx, bindQuery(s.dialect, query), message.ID).Scan(
+		&networkID,
+		&targetKind,
+		&dmID,
+		&targetJSON,
+	); err != nil {
+		if isNoRows(err) {
+			return dmTopologyConflict()
+		}
+		return fmt.Errorf("read duplicate message topology: %w", err)
+	}
+
+	var target protocol.Target
+	if err := json.Unmarshal([]byte(targetJSON), &target); err != nil {
+		return fmt.Errorf("decode duplicate message topology: %w", err)
+	}
+	if targetKind != protocol.TargetKindDM || !dmID.Valid || dmID.String != message.Target.DMID ||
+		target.Kind != protocol.TargetKindDM || target.DMID != message.Target.DMID ||
+		!topology.matches(networkID, target.ParticipantIDs) {
 		return dmTopologyConflict()
 	}
 	return nil
