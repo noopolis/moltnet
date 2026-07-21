@@ -92,6 +92,7 @@ func (s *Service) PairingRoomsContext(ctx context.Context, pairingID string, pag
 		s.setPairingError(pairing.ID, "Remote rooms could not be fetched.")
 		return protocol.RoomPage{}, remotePairingError(err)
 	}
+	rooms = s.filterPairingRooms(ctx, pairing, rooms)
 
 	items := make([]roomItem, 0, len(rooms))
 	for _, room := range rooms {
@@ -144,6 +145,14 @@ func (s *Service) PairingAgentsContext(ctx context.Context, pairingID string, pa
 	if err != nil {
 		s.setPairingError(pairing.ID, "Remote agents could not be fetched.")
 		return protocol.AgentPage{}, remotePairingError(err)
+	}
+	if s.pairingDiscoveryRestricted(ctx) {
+		rooms, roomErr := s.pairingClient.FetchRooms(ctx, pairing)
+		if roomErr != nil {
+			s.setPairingError(pairing.ID, "Remote rooms could not be fetched.")
+			return protocol.AgentPage{}, remotePairingError(roomErr)
+		}
+		agents = s.filterPairingAgents(ctx, pairing, agents, s.filterPairingRooms(ctx, pairing, rooms))
 	}
 
 	items := make([]agentItem, 0, len(agents))

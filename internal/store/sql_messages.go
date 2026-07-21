@@ -18,6 +18,19 @@ func (s *SQLStore) AppendMessageContext(ctx context.Context, message protocol.Me
 }
 
 func (s *SQLStore) AppendMessageWithLifecycleContext(ctx context.Context, message protocol.Message) (AppendLifecycle, error) {
+	if exists, err := messageCursorExistsContext(ctx, s.db, s.dialect, message.ID); err != nil {
+		return AppendLifecycle{}, fmt.Errorf("check duplicate message: %w", err)
+	} else if exists {
+		return AppendLifecycle{}, ErrDuplicateMessage
+	}
+	if message.Target.Kind == protocol.TargetKindDM {
+		topology, err := topologyForDMMessage(message)
+		if err != nil {
+			return AppendLifecycle{}, err
+		}
+		message.Target.ParticipantIDs = topology.participantIDs
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return AppendLifecycle{}, fmt.Errorf("begin append message: %w", err)
@@ -160,28 +173,7 @@ func (s *SQLStore) upsertConversation(ctx context.Context, tx *sql.Tx, message p
 			return fmt.Errorf("upsert thread: %w", err)
 		}
 	case protocol.TargetKindDM:
-		query := bindQuery(s.dialect, `
-			INSERT INTO dm_conversations (dm_id, network_id, fqid, message_count, last_message_at)
-			VALUES (?, ?, ?, 1, ?)
-			ON CONFLICT (dm_id) DO UPDATE SET
-				message_count = dm_conversations.message_count + 1,
-				last_message_at = excluded.last_message_at,
-				network_id = excluded.network_id,
-				fqid = excluded.fqid
-		`)
-		_, err := tx.ExecContext(ctx, query, message.Target.DMID, message.NetworkID, protocol.DMFQID(message.NetworkID, message.Target.DMID), formatTime(message.CreatedAt))
-		if err != nil {
-			return fmt.Errorf("upsert dm conversation: %w", err)
-		}
-
-		participants := append([]string(nil), message.Target.ParticipantIDs...)
-		participants = append(participants, protocol.RemoteParticipantID(message.NetworkID, message.From))
-		for _, participantID := range protocol.SortedUniqueTrimmedStrings(participants) {
-			memberQuery := bindQuery(s.dialect, `INSERT INTO dm_participants (dm_id, participant_id) VALUES (?, ?) ON CONFLICT (dm_id, participant_id) DO NOTHING`)
-			if _, err := tx.ExecContext(ctx, memberQuery, message.Target.DMID, participantID); err != nil {
-				return fmt.Errorf("insert dm participant: %w", err)
-			}
-		}
+		return s.upsertDMConversation(ctx, tx, message)
 	}
 
 	return nil

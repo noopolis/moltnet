@@ -64,14 +64,24 @@ func (s *MemoryStore) AppendMessageWithLifecycleContext(_ context.Context, messa
 			lifecycle.Thread = &copyThread
 		}
 	case protocol.TargetKindDM:
-		s.directMessages[message.Target.DMID] = append(s.directMessages[message.Target.DMID], message)
-		if _, ok := s.directMembers[message.Target.DMID]; !ok {
-			s.directMembers[message.Target.DMID] = make(map[string]struct{})
+		topology, err := topologyForDMMessage(message)
+		if err != nil {
+			return AppendLifecycle{}, err
 		}
-		for _, participantID := range message.Target.ParticipantIDs {
-			s.directMembers[message.Target.DMID][participantID] = struct{}{}
+		message.Target.ParticipantIDs = topology.participantIDs
+		existing := s.directMessages[message.Target.DMID]
+		if len(existing) > 0 {
+			if !topology.matches(existing[0].NetworkID, directMemberIDs(s.directMembers[message.Target.DMID])) {
+				return AppendLifecycle{}, dmTopologyConflict()
+			}
+		} else {
+			members := make(map[string]struct{}, len(topology.participantIDs))
+			for _, participantID := range topology.participantIDs {
+				members[participantID] = struct{}{}
+			}
+			s.directMembers[message.Target.DMID] = members
 		}
-		s.directMembers[message.Target.DMID][protocol.RemoteParticipantID(message.NetworkID, message.From)] = struct{}{}
+		s.directMessages[message.Target.DMID] = append(existing, message)
 		if conversation, ok := s.directConversationLocked(message.Target.DMID); ok && conversation.MessageCount == 1 {
 			copyConversation := conversation
 			lifecycle.DM = &copyConversation
@@ -277,10 +287,11 @@ func (s *MemoryStore) directConversationLocked(dmID string) (protocol.DirectConv
 		MessageCount: len(messages),
 	}
 	if len(messages) > 0 {
+		first := messages[0]
 		last := messages[len(messages)-1]
-		conversation.NetworkID = last.NetworkID
+		conversation.NetworkID = first.NetworkID
 		conversation.LastMessageAt = last.CreatedAt
-		conversation.FQID = protocol.DMFQID(last.NetworkID, dmID)
+		conversation.FQID = protocol.DMFQID(first.NetworkID, dmID)
 	}
 
 	members := make([]string, 0, len(s.directMembers[dmID]))
@@ -291,4 +302,12 @@ func (s *MemoryStore) directConversationLocked(dmID string) (protocol.DirectConv
 	conversation.ParticipantIDs = members
 
 	return conversation, true
+}
+
+func directMemberIDs(members map[string]struct{}) []string {
+	values := make([]string, 0, len(members))
+	for memberID := range members {
+		values = append(values, memberID)
+	}
+	return values
 }

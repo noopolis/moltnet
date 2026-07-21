@@ -42,6 +42,9 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	// uses the same Actor wire type as stored messages, so overwrite it after
 	// normalization even when a caller supplied true.
 	from.CredentialBound = s.senderCredentialBound(ctx, from)
+	if err := s.validateDMSenderTopology(request.Target, from); err != nil {
+		return protocol.MessageAccepted{}, err
+	}
 	if request.Target.Kind == protocol.TargetKindRoom || request.Target.Kind == protocol.TargetKindThread {
 		if err := s.enforceTargetWritePolicy(ctx, request.Target, from); err != nil {
 			// A canWriteRoom denial (non-member / write-policy rejection)
@@ -94,6 +97,9 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 					Accepted:  true,
 				}, nil
 			}
+			if errors.Is(err, store.ErrDMTopologyConflict) {
+				return protocol.MessageAccepted{}, dmTopologyConflictError()
+			}
 			return protocol.MessageAccepted{}, err
 		}
 	} else if err := s.appendMessage(ctx, message); err != nil {
@@ -103,6 +109,9 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 				EventID:   event.ID,
 				Accepted:  true,
 			}, nil
+		}
+		if errors.Is(err, store.ErrDMTopologyConflict) {
+			return protocol.MessageAccepted{}, dmTopologyConflictError()
 		}
 		return protocol.MessageAccepted{}, err
 	} else {
@@ -145,6 +154,31 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		ThreadCreated: lifecycle.Thread != nil,
 		DMCreated:     lifecycle.DM != nil,
 	}, nil
+}
+
+func (s *Service) validateDMSenderTopology(target protocol.Target, actor protocol.Actor) error {
+	if target.Kind != protocol.TargetKindDM {
+		return nil
+	}
+
+	participantIDs := protocol.UniqueTrimmedStrings(target.ParticipantIDs)
+	canonicalIDs := make(map[string]struct{}, len(participantIDs))
+	senderIncluded := false
+	for _, participantID := range participantIDs {
+		networkID, agentID := normalizedAgentIdentity(s.networkID, participantID)
+		canonicalID := protocol.ScopedAgentID(networkID, agentID)
+		if _, duplicate := canonicalIDs[canonicalID]; duplicate {
+			return dmTopologyConflictError()
+		}
+		canonicalIDs[canonicalID] = struct{}{}
+		if AgentIdentityMatches(actor.NetworkID, actor.ID, s.networkID, participantID) {
+			senderIncluded = true
+		}
+	}
+	if len(canonicalIDs) < 2 || !senderIncluded {
+		return dmTopologyConflictError()
+	}
+	return nil
 }
 
 func (s *Service) senderCredentialBound(ctx context.Context, actor protocol.Actor) bool {

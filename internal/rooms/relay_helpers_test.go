@@ -113,16 +113,26 @@ func TestRelayHelpers(t *testing.T) {
 	if len(target.ParticipantIDs) != 2 || target.ParticipantIDs[0] != "net_a:alpha" || target.ParticipantIDs[1] != "net_b:gamma" {
 		t.Fatalf("unexpected normalized target %#v", target)
 	}
+	localTarget := service.normalizeTarget(protocol.Target{
+		Kind: protocol.TargetKindDM,
+		DMID: "dm_local",
+		ParticipantIDs: []string{
+			"molt://net_a/agents/alpha",
+			"net_a:beta",
+		},
+	}, protocol.Actor{ID: "alpha", NetworkID: "net_a"})
+	if !sameStrings(localTarget.ParticipantIDs, []string{"alpha", "beta"}) {
+		t.Fatalf("unexpected local canonical target %#v", localTarget)
+	}
+	mixedBareSender := service.normalizeTarget(protocol.Target{
+		Kind:           protocol.TargetKindDM,
+		DMID:           "dm_mixed",
+		ParticipantIDs: []string{"gamma", "net_a:alpha"},
+	}, protocol.Actor{ID: "gamma", NetworkID: "net_b"})
+	if !sameStrings(mixedBareSender.ParticipantIDs, []string{"net_a:alpha", "net_b:gamma"}) {
+		t.Fatalf("unexpected mixed canonical target %#v", mixedBareSender)
+	}
 
-	if !hasScopedParticipant(target.ParticipantIDs) {
-		t.Fatal("expected scoped participants to be detected")
-	}
-	if normalizeParticipantID("plain") != "" {
-		t.Fatal("expected plain participant to stay unresolved")
-	}
-	if normalizeParticipantID("molt://net_b/agents/gamma") != "net_b:gamma" {
-		t.Fatal("expected fqid participant normalization")
-	}
 	if sanitizeIDComponent("net a/demo:one") != "net_a_demo_one" {
 		t.Fatal("unexpected sanitized id component")
 	}
@@ -226,16 +236,6 @@ func TestRelayMessageSelection(t *testing.T) {
 		t.Fatalf("unexpected relay request %#v %v", request, ok)
 	}
 
-	normalized := relayParticipantIDs(service.pairings[0], protocol.Message{
-		From: protocol.Actor{ID: "alpha", NetworkID: "net_a"},
-		Target: protocol.Target{
-			Kind:           protocol.TargetKindDM,
-			ParticipantIDs: []string{"alpha", "gamma", "net_b:gamma", "molt://net_b/agents/gamma"},
-		},
-	})
-	if len(normalized) != 2 || normalized[0] != "net_a:alpha" || normalized[1] != "net_b:gamma" {
-		t.Fatalf("unexpected normalized relay participants %#v", normalized)
-	}
 	if _, ok := service.relayRequest(service.pairings[0], protocol.Message{
 		Target: protocol.Target{
 			Kind:           protocol.TargetKindDM,

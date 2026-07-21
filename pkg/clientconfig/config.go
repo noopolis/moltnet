@@ -161,6 +161,9 @@ func (a AttachmentConfig) Validate() error {
 		if err := bridgeconfig.ValidateWakeValue("dms.wake", a.DMs.Wake); err != nil {
 			return err
 		}
+		if err := bridgeconfig.ValidateAllowedWakeSenders("dms.allowed_wake_senders", a.DMs.AllowedWakeSenders); err != nil {
+			return err
+		}
 	}
 
 	switch a.effectiveAuthMode() {

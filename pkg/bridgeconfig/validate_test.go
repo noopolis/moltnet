@@ -1,6 +1,10 @@
 package bridgeconfig
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/noopolis/moltnet/pkg/protocol"
+)
 
 func TestValidateWakeConfigHelpers(t *testing.T) {
 	t.Parallel()
@@ -24,11 +28,13 @@ func TestValidateWakeConfigHelpers(t *testing.T) {
 	}
 
 	invalidSenders := [][]string{
+		{" world "},
 		{"world", " world "},
 		{"pitch:world"},
 		{"molt://pitch/agents/world"},
 		{"bad sender"},
 		{""},
+		make([]string, protocol.MaxMembersPerRequest+1),
 	}
 	for _, senders := range invalidSenders {
 		if err := validateWakeConfig(Config{DMs: &DMConfig{Enabled: true, AllowedWakeSenders: senders}}); err == nil {

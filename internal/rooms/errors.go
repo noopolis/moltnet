@@ -17,6 +17,7 @@ var (
 	ErrInvalidDMID            = errors.New("dm id is required")
 	ErrInvalidCursor          = errors.New("invalid cursor")
 	ErrInvalidMessage         = errors.New("invalid message request")
+	ErrDMTopologyConflict     = errors.New("direct message participant topology is invalid")
 	ErrUnknownDM              = errors.New("unknown direct conversation")
 	ErrArtifactFilter         = errors.New("artifact filter is required")
 	ErrUnknownPairing         = errors.New("unknown pairing")
@@ -107,6 +108,14 @@ func invalidMessageRequestError(message string) error {
 		status: http.StatusUnprocessableEntity,
 		msg:    strings.TrimSpace(message),
 		cause:  ErrInvalidMessage,
+	}
+}
+
+func dmTopologyConflictError() error {
+	return &Error{
+		status: http.StatusUnprocessableEntity,
+		msg:    ErrDMTopologyConflict.Error(),
+		cause:  ErrDMTopologyConflict,
 	}
 }
 

@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noopolis/moltnet/pkg/bridgeconfig"
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 func TestLoadFile(t *testing.T) {
@@ -156,6 +159,29 @@ func TestLoadFilePreservesAllowedWakeSenders(t *testing.T) {
 	dms := config.Attachments[0].DMs
 	if dms == nil || len(dms.AllowedWakeSenders) != 1 || dms.AllowedWakeSenders[0] != "world" {
 		t.Fatalf("allowed wake senders did not round-trip: %#v", dms)
+	}
+}
+
+func TestAttachmentRejectsInvalidAllowedWakeSenders(t *testing.T) {
+	invalid := [][]string{
+		{""},
+		{" world "},
+		{"remote:world"},
+		{"molt://remote/agents/world"},
+		{"world", " world "},
+		make([]string, protocol.MaxMembersPerRequest+1),
+	}
+	for _, senders := range invalid {
+		attachment := AttachmentConfig{
+			Auth:      AuthConfig{Mode: "none"},
+			BaseURL:   "http://127.0.0.1:8787",
+			MemberID:  "alpha",
+			NetworkID: "local",
+			DMs:       &bridgeconfig.DMConfig{Enabled: true, AllowedWakeSenders: senders},
+		}
+		if err := attachment.Validate(); err == nil {
+			t.Fatalf("expected invalid allowed wake senders error for %#v", senders)
+		}
 	}
 }
 
