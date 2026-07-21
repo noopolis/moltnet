@@ -37,14 +37,15 @@ type AgentConfig struct {
 }
 
 type AttachmentConfig struct {
-	AgentName string                     `json:"agent_name,omitempty"`
-	Auth      AuthConfig                 `json:"auth"`
-	BaseURL   string                     `json:"base_url"`
-	DMs       *bridgeconfig.DMConfig     `json:"dms,omitempty"`
-	MemberID  string                     `json:"member_id"`
-	NetworkID string                     `json:"network_id"`
-	Rooms     []bridgeconfig.RoomBinding `json:"rooms,omitempty"`
-	Runtime   string                     `json:"runtime,omitempty"`
+	AgentName       string                     `json:"agent_name,omitempty"`
+	Auth            AuthConfig                 `json:"auth"`
+	BaseURL         string                     `json:"base_url"`
+	DMs             *bridgeconfig.DMConfig     `json:"dms,omitempty"`
+	OutboundDMPEers []string                   `json:"outbound_dm_peers,omitempty"`
+	MemberID        string                     `json:"member_id"`
+	NetworkID       string                     `json:"network_id"`
+	Rooms           []bridgeconfig.RoomBinding `json:"rooms,omitempty"`
+	Runtime         string                     `json:"runtime,omitempty"`
 }
 
 type AuthConfig struct {
@@ -165,6 +166,9 @@ func (a AttachmentConfig) Validate() error {
 			return err
 		}
 	}
+	if err := validateOutboundDMConfigPeers("outbound_dm_peers", a.OutboundDMPEers, strings.TrimSpace(a.MemberID)); err != nil {
+		return err
+	}
 
 	switch a.effectiveAuthMode() {
 	case "", "none":
@@ -222,7 +226,7 @@ func (c Config) ResolveAttachmentFor(networkID string, memberID string) (Attachm
 	networkID = strings.TrimSpace(networkID)
 	memberID = strings.TrimSpace(memberID)
 	if len(c.Attachments) == 1 && networkID == "" && memberID == "" {
-		return c.Attachments[0], nil
+		return c.Attachments[0].clone(), nil
 	}
 
 	matches := make([]AttachmentConfig, 0, len(c.Attachments))
@@ -238,7 +242,7 @@ func (c Config) ResolveAttachmentFor(networkID string, memberID string) (Attachm
 
 	switch len(matches) {
 	case 1:
-		return matches[0], nil
+		return matches[0].clone(), nil
 	case 0:
 		if networkID != "" && memberID != "" {
 			return AttachmentConfig{}, fmt.Errorf(
