@@ -1,8 +1,8 @@
 package protocol
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -11,7 +11,7 @@ func (request MachineRequest) Validate() error {
 	if request.Version != MachineProtocolV1 {
 		return fmt.Errorf("version must be %q", MachineProtocolV1)
 	}
-	if err := validateBoundedIdentifier(request.CorrelationID, "correlation_id", MachineMaxCorrelationBytes); err != nil {
+	if err := validateMachineIdentifier(request.CorrelationID, "correlation_id", MachineMaxCorrelationBytes); err != nil {
 		return err
 	}
 	if err := validateMachineOperation(request.Operation); err != nil {
@@ -53,7 +53,7 @@ func (response MachineResponse) Validate() error {
 	if response.Version != MachineProtocolV1 {
 		return fmt.Errorf("version must be %q", MachineProtocolV1)
 	}
-	if err := validateBoundedIdentifier(response.CorrelationID, "correlation_id", MachineMaxCorrelationBytes); err != nil {
+	if err := validateMachineIdentifier(response.CorrelationID, "correlation_id", MachineMaxCorrelationBytes); err != nil {
 		return err
 	}
 	if err := validateMachineOperation(response.Operation); err != nil {
@@ -87,59 +87,60 @@ func (response MachineResponse) Validate() error {
 	}
 
 	if response.Error != nil {
-		if err := response.Error.Validate(); err != nil {
-			return err
-		}
+		return response.Error.Validate()
 	}
 
 	switch response.Operation {
 	case MachineOpSendNudge:
-		if response.SendNudge != nil {
-			return response.SendNudge.Validate()
+		if response.SendNudge == nil {
+			return fmt.Errorf("send_nudge payload is required")
 		}
-		if response.Event != nil {
-			return fmt.Errorf("send_nudge does not support event payload")
+		if response.Read != nil || response.Subscribe != nil || response.Export != nil || response.Cancel != nil || response.Event != nil {
+			return fmt.Errorf("send_nudge response contains unsupported payloads")
 		}
-		return nil
+		return response.SendNudge.Validate()
 	case MachineOpRead:
-		if response.Read != nil {
-			return response.Read.Validate()
+		if response.Read == nil {
+			return fmt.Errorf("read payload is required")
 		}
-		if response.Event != nil {
-			return fmt.Errorf("read does not support event payload")
+		if response.SendNudge != nil || response.Subscribe != nil || response.Export != nil || response.Cancel != nil || response.Event != nil {
+			return fmt.Errorf("read response contains unsupported payloads")
 		}
-		return nil
+		return response.Read.Validate()
 	case MachineOpSubscribe:
+		if response.Read != nil || response.SendNudge != nil || response.Export != nil || response.Cancel != nil {
+			return fmt.Errorf("subscribe response contains unsupported payloads")
+		}
+		if response.Subscribe == nil && response.Event == nil {
+			return fmt.Errorf("subscribe payload is required")
+		}
 		if response.Subscribe != nil {
 			return response.Subscribe.Validate()
 		}
-		if response.Event != nil {
-			return response.Event.Validate()
-		}
-		return nil
+		return response.Event.Validate()
 	case MachineOpExport:
-		if response.Export != nil {
-			return response.Export.Validate()
+		if response.Export == nil {
+			return fmt.Errorf("export payload is required")
 		}
-		if response.Event != nil {
-			return fmt.Errorf("export does not support event payload")
+		if response.SendNudge != nil || response.Read != nil || response.Subscribe != nil || response.Cancel != nil || response.Event != nil {
+			return fmt.Errorf("export response contains unsupported payloads")
 		}
-		return nil
+		return response.Export.Validate()
 	case MachineOpCancel:
-		if response.Cancel != nil {
-			return response.Cancel.Validate()
+		if response.Cancel == nil {
+			return fmt.Errorf("cancel payload is required")
 		}
-		if response.Event != nil {
-			return fmt.Errorf("cancel does not support event payload")
+		if response.SendNudge != nil || response.Read != nil || response.Subscribe != nil || response.Export != nil || response.Event != nil {
+			return fmt.Errorf("cancel response contains unsupported payloads")
 		}
-		return nil
+		return response.Cancel.Validate()
 	default:
 		return fmt.Errorf("unsupported operation %q", response.Operation)
 	}
 }
 
 func (request MachineSendNudgeRequest) Validate() error {
-	if err := validateBoundedIdentifier(request.DeliveryID, "delivery_id", MachineMaxDeliveryBytes); err != nil {
+	if err := validateMachineIdentifier(request.DeliveryID, "delivery_id", MachineMaxDeliveryBytes); err != nil {
 		return err
 	}
 	if err := request.Target.Validate(); err != nil {
@@ -151,13 +152,13 @@ func (request MachineSendNudgeRequest) Validate() error {
 	if len(request.Body) > MachineMaxBodyBytes {
 		return fmt.Errorf("body must be at most %d bytes", MachineMaxBodyBytes)
 	}
-	if strings.TrimSpace(request.OriginMessageID) != "" {
-		if err := validateBoundedIdentifier(request.OriginMessageID, "origin_message_id", MachineMaxCursorBytes); err != nil {
+	if request.OriginMessageID != "" {
+		if err := validateMachineIdentifier(request.OriginMessageID, "origin_message_id", MachineMaxCursorBytes); err != nil {
 			return err
 		}
 	}
 	if len(request.CauseEventIDs) > 0 {
-		if err := validateBoundedStringSlice(request.CauseEventIDs, MachineMaxCauseEventIDs, MachineMaxCauseBytes, "cause_event_ids"); err != nil {
+		if err := validateMachineStringSlice(request.CauseEventIDs, MachineMaxCauseEventIDs, MachineMaxCauseBytes, "cause_event_ids"); err != nil {
 			return err
 		}
 	}
@@ -175,12 +176,12 @@ func (request MachineReadRequest) Validate() error {
 		return fmt.Errorf("before and after cannot both be set")
 	}
 	if request.Before != "" {
-		if err := validateBoundedIdentifier(request.Before, "before", MachineMaxCursorBytes); err != nil {
+		if err := validateMachineIdentifier(request.Before, "before", MachineMaxCursorBytes); err != nil {
 			return err
 		}
 	}
 	if request.After != "" {
-		if err := validateBoundedIdentifier(request.After, "after", MachineMaxCursorBytes); err != nil {
+		if err := validateMachineIdentifier(request.After, "after", MachineMaxCursorBytes); err != nil {
 			return err
 		}
 	}
@@ -194,8 +195,8 @@ func (request MachineSubscribeRequest) Validate() error {
 	if request.MaxEvents < 1 || request.MaxEvents > MachineMaxSubscribeEvents {
 		return fmt.Errorf("max_events must be in range 1..%d", MachineMaxSubscribeEvents)
 	}
-	if strings.TrimSpace(request.ResumeCursor) != "" {
-		if err := validateBoundedIdentifier(request.ResumeCursor, "resume_cursor", MachineMaxCursorBytes); err != nil {
+	if request.ResumeCursor != "" {
+		if err := validateMachineIdentifier(request.ResumeCursor, "resume_cursor", MachineMaxCursorBytes); err != nil {
 			return err
 		}
 	}
@@ -203,44 +204,64 @@ func (request MachineSubscribeRequest) Validate() error {
 }
 
 func (request MachineExportRequest) Validate() error {
-	if err := validateBoundedStringSlice(request.RoomIDs, MachineMaxExportRoomTargets, MachineMaxTargetBytes, "room_ids"); err != nil {
+	if err := validateMachineStringSlice(request.RoomIDs, MachineMaxExportRoomTargets, MachineMaxTargetBytes, "room_ids"); err != nil {
 		return err
 	}
-	if err := validateBoundedStringSlice(request.DMPeerIDs, MachineMaxExportPeerTargets, MachineMaxTargetBytes, "dm_peer_ids"); err != nil {
+	if err := validateMachineStringSlice(request.DMPeerIDs, MachineMaxExportPeerTargets, MachineMaxTargetBytes, "dm_peer_ids"); err != nil {
 		return err
 	}
 	if len(request.RoomIDs) == 0 && len(request.DMPeerIDs) == 0 {
 		return fmt.Errorf("at least one of room_ids or dm_peer_ids is required")
 	}
+	if request.IncludeSocial == nil {
+		return fmt.Errorf("include_social_speech is required")
+	}
 	return nil
 }
 
 func (request MachineCancelRequest) Validate() error {
-	return validateBoundedIdentifier(request.TargetCorrelationID, "target_correlation_id", MachineMaxCorrelationBytes)
+	return validateMachineIdentifier(request.TargetCorrelationID, "target_correlation_id", MachineMaxCorrelationBytes)
 }
 
 func (result MachineSendNudgeResult) Validate() error {
-	if err := validateBoundedIdentifier(result.MessageID, "message_id", MachineMaxTargetBytes); err != nil {
+	if result.Accepted == nil {
+		return fmt.Errorf("accepted is required")
+	}
+	if result.ThreadCreated == nil {
+		return fmt.Errorf("thread_created is required")
+	}
+	if result.DMCreated == nil {
+		return fmt.Errorf("dm_created is required")
+	}
+	if *result.ThreadCreated && result.ThreadID == "" {
+		return fmt.Errorf("thread_id is required when thread_created is true")
+	}
+	if !*result.ThreadCreated && result.ThreadID != "" {
+		return fmt.Errorf("thread_id must be empty when thread_created is false")
+	}
+	if *result.DMCreated && result.DMID == "" {
+		return fmt.Errorf("dm_id is required when dm_created is true")
+	}
+	if !*result.DMCreated && result.DMID != "" {
+		return fmt.Errorf("dm_id must be empty when dm_created is false")
+	}
+	if err := validateMachineIdentifier(result.MessageID, "message_id", MachineMaxTargetBytes); err != nil {
 		return err
 	}
-	if err := validateBoundedIdentifier(result.EventID, "event_id", MachineMaxTargetBytes); err != nil {
+	if err := validateMachineIdentifier(result.EventID, "event_id", MachineMaxTargetBytes); err != nil {
 		return err
 	}
 	if result.ThreadID != "" {
-		if err := validateBoundedIdentifier(result.ThreadID, "thread_id", MachineMaxTargetBytes); err != nil {
+		if err := validateMachineIdentifier(result.ThreadID, "thread_id", MachineMaxTargetBytes); err != nil {
 			return err
 		}
 	}
 	if result.DMID != "" {
-		if err := validateBoundedIdentifier(result.DMID, "dm_id", MachineMaxTargetBytes); err != nil {
+		if err := validateMachineIdentifier(result.DMID, "dm_id", MachineMaxTargetBytes); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (result MachineReadResult) Validate() error {
-	return result.Target.Validate()
 }
 
 func (result MachineSubscribeResult) Validate() error {
@@ -249,21 +270,30 @@ func (result MachineSubscribeResult) Validate() error {
 	}
 	switch result.Reason {
 	case MachineSubscribeReasonDone, MachineSubscribeReasonLimit, MachineSubscribeReasonEOF:
+		return nil
 	default:
 		return fmt.Errorf("reason must be one of done, limit, or eof")
 	}
-	return nil
 }
 
 func (event MachineSubscribeEvent) Validate() error {
-	if err := validateBoundedIdentifier(event.EventID, "event_id", MachineMaxTargetBytes); err != nil {
+	if err := validateMachineIdentifier(event.EventID, "event_id", MachineMaxTargetBytes); err != nil {
 		return err
 	}
-	if strings.TrimSpace(event.Type) == "" {
+	if event.Type == "" {
 		return fmt.Errorf("type is required")
+	}
+	if strings.TrimSpace(event.Type) != event.Type {
+		return fmt.Errorf("type must not include leading or trailing whitespace")
+	}
+	if len(event.Type) > MachineMaxTargetBytes {
+		return fmt.Errorf("type must be at most %d bytes", MachineMaxTargetBytes)
 	}
 	if len(event.Payload) == 0 {
 		return fmt.Errorf("payload is required")
+	}
+	if len(event.Payload) > MachineMaxOutputLineBytes {
+		return fmt.Errorf("payload must be at most %d bytes", MachineMaxOutputLineBytes)
 	}
 	if err := validateJSON(event.Payload); err != nil {
 		return fmt.Errorf("payload %w", err)
@@ -284,22 +314,27 @@ func (result MachineExportResult) Validate() error {
 	if len(result.TranscriptSHA) != 64 {
 		return fmt.Errorf("transcript_sha256 must be 64 hex characters")
 	}
-	if _, err := hex.DecodeString(result.TranscriptSHA); err != nil {
-		return fmt.Errorf("transcript_sha256 must be valid hex: %w", err)
+	if strings.ToLower(result.TranscriptSHA) != result.TranscriptSHA {
+		return fmt.Errorf("transcript_sha256 must be lowercase")
+	}
+	actual := sha256.Sum256([]byte(result.Transcript))
+	expected := strings.ToLower(hex.EncodeToString(actual[:]))
+	if result.TranscriptSHA != expected {
+		return fmt.Errorf("transcript_sha256 does not match transcript")
 	}
 	return nil
 }
 
 func (result MachineCancelResult) Validate() error {
-	if err := validateBoundedIdentifier(result.TargetCorrelationID, "target_correlation_id", MachineMaxCorrelationBytes); err != nil {
+	if err := validateMachineIdentifier(result.TargetCorrelationID, "target_correlation_id", MachineMaxCorrelationBytes); err != nil {
 		return err
 	}
 	switch result.State {
 	case MachineCancelStateCanceled, MachineCancelStateAlreadyFinal, MachineCancelStateNotFound:
+		return nil
 	default:
 		return fmt.Errorf("state must be canceled, already_final, or not_found")
 	}
-	return nil
 }
 
 func (target MachineTarget) Validate() error {
@@ -308,7 +343,10 @@ func (target MachineTarget) Validate() error {
 	default:
 		return fmt.Errorf("kind must be room or dm")
 	}
-	return validateBoundedIdentifier(target.ID, "target.id", MachineMaxTargetBytes)
+	if err := validateMachineIdentifier(target.ID, "target.id", MachineMaxTargetBytes); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (errorResponse MachineError) Validate() error {
@@ -318,62 +356,8 @@ func (errorResponse MachineError) Validate() error {
 	switch errorResponse.Code {
 	case MachineErrorInvalidRequest, MachineErrorDuplicateRequest, MachineErrorUnsupported, MachineErrorNotFound,
 		MachineErrorConflict, MachineErrorCapacity, MachineErrorTransport, MachineErrorCanceled:
+		return nil
 	default:
 		return fmt.Errorf("unknown error code %q", errorResponse.Code)
 	}
-	if strings.TrimSpace(errorResponse.Message) == "" {
-		return fmt.Errorf("error message is required")
-	}
-	return nil
-}
-
-func validateMachineOperation(operation string) error {
-	switch operation {
-	case MachineOpSendNudge, MachineOpRead, MachineOpSubscribe, MachineOpExport, MachineOpCancel:
-		return nil
-	default:
-		return fmt.Errorf("unsupported operation %q", operation)
-	}
-}
-
-func validateBoundedIdentifier(value string, field string, max int) error {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return fmt.Errorf("%s is required", field)
-	}
-	if len(trimmed) > max {
-		return fmt.Errorf("%s must be at most %d bytes", field, max)
-	}
-	if err := ValidateMessageID(trimmed); err != nil {
-		return fmt.Errorf("%s %w", field, err)
-	}
-	return nil
-}
-
-func validateBoundedStringSlice(values []string, maxCount int, maxLen int, field string) error {
-	if len(values) == 0 {
-		return nil
-	}
-	if len(values) > maxCount {
-		return fmt.Errorf("%s must contain at most %d entries", field, maxCount)
-	}
-	seen := make(map[string]struct{}, len(values))
-	for index, value := range values {
-		if err := validateBoundedIdentifier(value, fmt.Sprintf("%s[%d]", field, index), maxLen); err != nil {
-			return err
-		}
-		if _, exists := seen[value]; exists {
-			return fmt.Errorf("%s must contain unique values", field)
-		}
-		seen[value] = struct{}{}
-	}
-	return nil
-}
-
-func validateJSON(raw json.RawMessage) error {
-	var marker any
-	if err := json.Unmarshal(raw, &marker); err != nil {
-		return err
-	}
-	return nil
 }

@@ -1,6 +1,16 @@
 package protocol
 
-import "testing"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"testing"
+	"time"
+)
+
+func boolPtr(value bool) *bool {
+	return &value
+}
 
 func TestMachineProtocolConstantsArePositiveAndBounded(t *testing.T) {
 	t.Parallel()
@@ -39,7 +49,7 @@ func TestMachineRequestValidationRejectsUnsupportedOperationAndBadShape(t *testi
 		},
 	}
 	if err := request.Validate(); err != nil {
-		t.Fatalf("expected valid send_nudge request, got %v", err)
+		t.Fatalf("expected valid request, got %v", err)
 	}
 
 	request.Operation = "bad"
@@ -49,8 +59,29 @@ func TestMachineRequestValidationRejectsUnsupportedOperationAndBadShape(t *testi
 
 	request.Operation = MachineOpRead
 	request.Read = &MachineReadRequest{Target: MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"}, Limit: 0}
+	request.SendNudge = nil
 	if err := request.Validate(); err == nil {
 		t.Fatal("expected read limit rejection")
+	}
+}
+
+func TestMachineIdentifierValidationRejectsWhitespaceAndScopedIDs(t *testing.T) {
+	t.Parallel()
+
+	request := MachineSubscribeRequest{
+		Target:    MachineTarget{Kind: MachineTargetKindRoom, ID: " room_1"},
+		MaxEvents: 1,
+	}
+	if err := request.Validate(); err == nil {
+		t.Fatal("expected whitespace-bound identifier rejection")
+	}
+
+	request = MachineSubscribeRequest{
+		Target:    MachineTarget{Kind: MachineTargetKindRoom, ID: "team/net_1"},
+		MaxEvents: 1,
+	}
+	if err := request.Validate(); err == nil {
+		t.Fatal("expected scoped id rejection")
 	}
 }
 
@@ -86,17 +117,37 @@ func TestMachineSendNudgeValidation(t *testing.T) {
 	}).Validate(); err == nil {
 		t.Fatal("expected oversized body rejection")
 	}
+}
 
-	if err := (MachineSendNudgeRequest{
-		DeliveryID: "delivery_1",
-		Target:     MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"},
-		Body:       "wake body",
-		CauseEventIDs: []string{
-			"ev_1",
-			"ev_1",
-		},
-	}).Validate(); err == nil {
-		t.Fatal("expected duplicate cause rejection")
+func TestMachineSendNudgeResultValidation(t *testing.T) {
+	t.Parallel()
+
+	valid := MachineSendNudgeResult{
+		MessageID:     "msg_1",
+		EventID:       "ev_1",
+		Accepted:      boolPtr(true),
+		ThreadCreated: boolPtr(true),
+		ThreadID:      "thread_1",
+		DMCreated:     boolPtr(false),
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("expected valid result: %v", err)
+	}
+
+	if err := (MachineSendNudgeResult{MessageID: "msg_1", EventID: "ev_1"}).Validate(); err == nil {
+		t.Fatal("expected omitted boolean fields rejection")
+	}
+
+	invalid := MachineSendNudgeResult{
+		MessageID:     "msg_1",
+		EventID:       "ev_1",
+		Accepted:      boolPtr(true),
+		ThreadCreated: boolPtr(false),
+		ThreadID:      "thread_1",
+		DMCreated:     boolPtr(false),
+	}
+	if err := invalid.Validate(); err == nil {
+		t.Fatal("expected thread_id-only-when-false rejection")
 	}
 }
 
@@ -112,10 +163,53 @@ func TestMachineReadValidation(t *testing.T) {
 	}
 
 	if err := (MachineReadRequest{Target: MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"}, Limit: 0}).Validate(); err == nil {
-		t.Fatal("expected invalid limit")
+		t.Fatal("expected invalid read limit")
 	}
 	if err := (MachineReadRequest{Target: MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"}, Limit: 1, Before: "m1", After: "m2"}).Validate(); err == nil {
 		t.Fatal("expected before/after exclusivity rejection")
+	}
+}
+
+func TestMachineReadResultValidation(t *testing.T) {
+	t.Parallel()
+
+	validTarget := MachineReadMessage{
+		ID:        "msg_1",
+		NetworkID: "net_1",
+		Origin:    MessageOrigin{NetworkID: "net_1", MessageID: "origin_1"},
+		Target:    Target{Kind: TargetKindRoom, RoomID: "room_1"},
+		From:      Actor{Type: "agent", ID: "agent_1"},
+		Parts:     []Part{{Kind: PartKindText, Text: "hello"}},
+		CreatedAt: time.Date(2026, 7, 21, 0, 0, 0, 0, time.UTC),
+	}
+
+	result := MachineReadResult{
+		Target: MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"},
+		Page: MachineReadPage{
+			Messages: []MachineReadMessage{validTarget},
+			Page: MachineReadPageInfo{
+				HasMore:    boolPtr(true),
+				NextAfter:  "msg_1",
+				NextBefore: "msg_0",
+			},
+		},
+	}
+	if err := result.Validate(); err == nil {
+		t.Fatal("expected dual cursor rejection")
+	}
+
+	valid := MachineReadResult{
+		Target: MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"},
+		Page: MachineReadPage{
+			Messages: []MachineReadMessage{validTarget},
+			Page: MachineReadPageInfo{
+				HasMore:   boolPtr(true),
+				NextAfter: "msg_2",
+			},
+		},
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("expected valid read result: %v", err)
 	}
 }
 
@@ -139,15 +233,25 @@ func TestMachineSubscribeValidation(t *testing.T) {
 	if err := (MachineSubscribeRequest{Target: MachineTarget{Kind: MachineTargetKindDM, ID: "peer_1"}, MaxEvents: MachineMaxSubscribeEvents + 1}).Validate(); err == nil {
 		t.Fatal("expected max_events upper bound rejection")
 	}
+
+	event := MachineSubscribeEvent{
+		EventID: "event_1",
+		Type:    "message",
+		Payload: json.RawMessage(`{"message":"ok"}`),
+	}
+	if err := event.Validate(); err != nil {
+		t.Fatalf("expected valid subscribe event: %v", err)
+	}
 }
 
 func TestMachineExportValidation(t *testing.T) {
 	t.Parallel()
 
+	includeSocial := true
 	valid := MachineExportRequest{
 		RoomIDs:       []string{"room_1", "room_2"},
 		DMPeerIDs:     []string{"peer_1"},
-		IncludeSocial: true,
+		IncludeSocial: &includeSocial,
 	}
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("expected valid export payload: %v", err)
@@ -157,7 +261,10 @@ func TestMachineExportValidation(t *testing.T) {
 		t.Fatal("expected empty targets rejection")
 	}
 
-	if err := (MachineExportRequest{DMPeerIDs: make([]string, MachineMaxExportPeerTargets+1), IncludeSocial: true}).Validate(); err == nil {
+	if err := (MachineExportRequest{
+		DMPeerIDs:     make([]string, MachineMaxExportPeerTargets+1),
+		IncludeSocial: &includeSocial,
+	}).Validate(); err == nil {
 		t.Fatal("expected export peer bound rejection")
 	}
 }
@@ -177,22 +284,49 @@ func TestMachineCancelValidation(t *testing.T) {
 func TestMachineSubscribeEventAndExportResultValidation(t *testing.T) {
 	t.Parallel()
 
-	event := MachineSubscribeEvent{EventID: "ev_1", Type: "message", Payload: []byte(`{"a":1}`)}
+	event := MachineSubscribeEvent{EventID: "ev_1", Type: "message", Payload: json.RawMessage(`{"a":1}`)}
 	if err := event.Validate(); err != nil {
 		t.Fatalf("expected valid subscribe event: %v", err)
 	}
 
+	hash := sha256sum("one\nline")
 	exportResult := MachineExportResult{
 		Version:       MachineExportSchemaVersion,
 		ControlMarker: MachineExportMarker,
-		Transcript:    "hello",
-		TranscriptSHA: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		Transcript:    "one\nline",
+		TranscriptSHA: hash,
 	}
 	if err := exportResult.Validate(); err != nil {
 		t.Fatalf("expected valid export result: %v", err)
 	}
 
-	if err := (MachineExportResult{Version: MachineExportSchemaVersion, ControlMarker: MachineExportMarker, Transcript: "hello", TranscriptSHA: "bad"}).Validate(); err == nil {
+	if err := (MachineExportResult{
+		Version:       MachineExportSchemaVersion,
+		ControlMarker: MachineExportMarker,
+		Transcript:    "one\nline",
+		TranscriptSHA: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+	}).Validate(); err == nil {
 		t.Fatal("expected bad hash rejection")
 	}
+}
+
+func TestMachineErrorValidationRejectsInvalidCodes(t *testing.T) {
+	t.Parallel()
+
+	if err := (MachineError{Code: MachineErrorInvalidRequest}).Validate(); err != nil {
+		t.Fatalf("expected valid error code: %v", err)
+	}
+
+	if (MachineError{}).Validate() == nil {
+		t.Fatal("expected missing error code rejection")
+	}
+
+	if (MachineError{Code: "open"}).Validate() == nil {
+		t.Fatal("expected unknown error code rejection")
+	}
+}
+
+func sha256sum(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
 }

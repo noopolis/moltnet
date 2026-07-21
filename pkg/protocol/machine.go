@@ -63,11 +63,6 @@ const (
 	MachineCancelStateNotFound     = "not_found"
 )
 
-const (
-	MachineUnsupportedSubscribeErrorMessage = "subscribe is not yet supported"
-	MachineUnsupportedExportErrorMessage    = "export is not yet supported"
-)
-
 type MachineRequest struct {
 	Version       string                   `json:"version"`
 	CorrelationID string                   `json:"correlation_id"`
@@ -93,8 +88,7 @@ type MachineResponse struct {
 }
 
 type MachineError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code string `json:"code"`
 }
 
 type MachineTarget struct {
@@ -113,11 +107,11 @@ type MachineSendNudgeRequest struct {
 type MachineSendNudgeResult struct {
 	MessageID     string `json:"message_id"`
 	EventID       string `json:"event_id"`
-	Accepted      bool   `json:"accepted"`
+	Accepted      *bool  `json:"accepted"`
 	ThreadID      string `json:"thread_id,omitempty"`
-	ThreadCreated bool   `json:"thread_created"`
+	ThreadCreated *bool  `json:"thread_created"`
 	DMID          string `json:"dm_id,omitempty"`
-	DMCreated     bool   `json:"dm_created"`
+	DMCreated     *bool  `json:"dm_created"`
 }
 
 type MachineReadRequest struct {
@@ -128,8 +122,21 @@ type MachineReadRequest struct {
 }
 
 type MachineReadResult struct {
-	Target MachineTarget `json:"target"`
-	Page   MessagePage   `json:"page"`
+	Target MachineTarget   `json:"target"`
+	Page   MachineReadPage `json:"page"`
+}
+
+type MachineReadPageInfo struct {
+	HasMore    *bool  `json:"has_more"`
+	NextBefore string `json:"next_before,omitempty"`
+	NextAfter  string `json:"next_after,omitempty"`
+}
+
+type MachineReadMessage Message
+
+type MachineReadPage struct {
+	Messages []MachineReadMessage `json:"messages"`
+	Page     MachineReadPageInfo  `json:"page"`
 }
 
 type MachineSubscribeRequest struct {
@@ -152,7 +159,7 @@ type MachineSubscribeEvent struct {
 type MachineExportRequest struct {
 	RoomIDs       []string `json:"room_ids"`
 	DMPeerIDs     []string `json:"dm_peer_ids"`
-	IncludeSocial bool     `json:"include_social_speech"`
+	IncludeSocial *bool    `json:"include_social_speech"`
 }
 
 type MachineExportResult struct {

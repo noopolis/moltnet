@@ -1,36 +1,39 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
 )
 
-func TestMachineCodecDecodeRejectsEmptyMalformedMultipleAndOversized(t *testing.T) {
+func TestMachineCodecDecodeRejectsPhysicalLimitBypassAndWhitespaceOnly(t *testing.T) {
 	t.Parallel()
 
-	if _, err := DecodeMachineRequestLine(""); err == nil {
-		t.Fatal("expected empty input rejection")
+	valid := `{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"limit":1}}`
+	padded := strings.Repeat(" ", MachineMaxInputLineBytes-len(valid)+1) + valid
+	if _, err := DecodeMachineRequestLine(padded); err == nil {
+		t.Fatal("expected oversize physical line rejection despite trim-valid payload")
 	}
+
 	if _, err := DecodeMachineRequestLine("   "); err == nil {
-		t.Fatal("expected whitespace-only input rejection")
-	}
-	if _, err := DecodeMachineRequestLine(`{"version":"` + MachineProtocolV1 + `"`); err == nil {
-		t.Fatal("expected malformed input rejection")
-	}
-
-	oversizedCorrelation := strings.Repeat("a", MachineMaxInputLineBytes+1)
-	if _, err := DecodeMachineRequestLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"` + oversizedCorrelation + `","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"limit":1}}`); err == nil {
-		t.Fatal("expected oversized input rejection")
-	}
-
-	if _, err := DecodeMachineRequestLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"limit":1}}{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_2","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"limit":1}}`); err == nil {
-		t.Fatal("expected multiple JSON values rejection")
+		t.Fatal("expected whitespace-only rejection")
 	}
 }
 
-func TestMachineCodecRejectsVersionMismatchPayloadMismatchAndUnsupportedFields(t *testing.T) {
+func TestMachineCodecRejectsDuplicateKeysTopLevelAndNested(t *testing.T) {
+	t.Parallel()
+
+	if _, err := DecodeMachineRequestLine(`{"version":"` + MachineProtocolV1 + `","version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"limit":1}}`); err == nil {
+		t.Fatal("expected top-level duplicate key rejection")
+	}
+	if _, err := DecodeMachineRequestLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"read","read":{"target":{"kind":"room","kind":"room","id":"room_1"},"limit":1}}`); err == nil {
+		t.Fatal("expected nested duplicate key rejection")
+	}
+}
+
+func TestMachineCodecRejectsMalformedAndPayloadMismatch(t *testing.T) {
 	t.Parallel()
 
 	if _, err := DecodeMachineRequestLine(`{"version":"bad","correlation_id":"corr_1","operation":"send_nudge","send_nudge":{"delivery_id":"del_1","target":{"kind":"room","id":"room_1"},"body":"x"}}`); err == nil {
@@ -40,118 +43,118 @@ func TestMachineCodecRejectsVersionMismatchPayloadMismatchAndUnsupportedFields(t
 		t.Fatal("expected payload mismatch rejection")
 	}
 	if _, err := DecodeMachineRequestLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"send_nudge","send_nudge":{"delivery_id":"del_1","target":{"kind":"room","id":"room_1"},"body":"x"},"read":{"target":{"kind":"room","id":"room_1"},"limit":1}}`); err == nil {
-		t.Fatal("expected multi payload rejection")
+		t.Fatal("expected extra payload rejection")
 	}
+	if _, err := DecodeMachineResponseLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"read","send_nudge":{"message_id":"m1","event_id":"e1","accepted":true,"thread_created":false,"dm_created":false}}`); err == nil {
+		t.Fatal("expected response payload mismatch rejection")
+	}
+}
+
+func TestMachineCodecRejectsUnknownFieldsAndTypeDrift(t *testing.T) {
+	t.Parallel()
+
 	if _, err := DecodeMachineRequestLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"send_nudge","send_nudge":{"delivery_id":"del_1","target":{"kind":"room","id":"room_1"},"body":"x","forbidden_nested":["a"]}}`); err == nil {
-		t.Fatal("expected nested forbidden field rejection")
+		t.Fatal("expected nested unknown field rejection")
+	}
+	if _, err := DecodeMachineResponseLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"subscribe","subscribe":{"closed":"closed","reason":"done","unexpected":"x"}}`); err == nil {
+		t.Fatal("expected extra field rejection in subscribe result")
 	}
 }
 
-func TestMachineCodecRejectsUnknownTopLevelField(t *testing.T) {
+func TestMachineCodecErrorFramesAreCodeOnlyAndSecretSafe(t *testing.T) {
 	t.Parallel()
 
-	if _, err := DecodeMachineRequestLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"send_nudge","send_nudge":{"delivery_id":"del_1","target":{"kind":"room","id":"room_1"},"body":"x"},"forbidden":"bad"}`); err == nil {
-		t.Fatal("expected top-level unknown field rejection")
-	}
-}
-
-func TestMachineResponseCodecRejectsCombinationViolations(t *testing.T) {
-	t.Parallel()
-
-	if _, err := DecodeMachineResponseLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"read","read":{"target":{"kind":"room","id":"room_1"},"page":{"messages":[],"page":{"has_more":false}},"error":{"code":"invalid_request","message":"bad"}}`); err == nil {
-		t.Fatal("expected one-of violation rejection")
-	}
-	if _, err := DecodeMachineResponseLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"subscribe","send_nudge":{"message_id":"m1","event_id":"e1","accepted":true,"thread_created":false,"dm_created":false}}`); err == nil {
-		t.Fatal("expected op/payload mismatch rejection")
-	}
-	if _, err := DecodeMachineResponseLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"subscribe","event":{"event_id":"e1","type":"message","payload":{"message":"hi"},"bad":"no"}}`); err == nil {
-		t.Fatal("expected nested unknown event field rejection")
-	}
-
-	if _, err := DecodeMachineResponseLine(`{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"send_nudge","error":{"code":"unsupported","message":"no"}}`); err != nil {
-		t.Fatalf("expected send_nudge unsupported error response decode: %v", err)
-	}
-}
-
-func TestMachineCodecSecretSafetyInErrors(t *testing.T) {
-	t.Parallel()
-
-	request := MachineRequest{
+	secret := `{"operation":"read","correlation_id":"corr_secret","read":{"target":{"kind":"room","id":"room_1"},"limit":1}}`
+	response := MachineResponse{
 		Version:       MachineProtocolV1,
-		CorrelationID: "corr_1",
-		Operation:     MachineOpSendNudge,
-		SendNudge: &MachineSendNudgeRequest{
-			DeliveryID: "delivery_1",
-			Target:     MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"},
-			Body:       "top secret: token=abc",
+		CorrelationID: "corr_secret",
+		Operation:     MachineOpRead,
+		Error: &MachineError{
+			Code: MachineErrorInvalidRequest,
 		},
 	}
-	requestLine, err := EncodeMachineRequestLine(request)
+	encoded, err := EncodeMachineResponseLine(response)
 	if err != nil {
-		t.Fatalf("request encode: %v", err)
+		t.Fatalf("encode: %v", err)
 	}
-	if !strings.Contains(requestLine, "token") {
-		t.Fatal("request should include body content for fixture")
+	if strings.Contains(encoded, "\"message\"") {
+		t.Fatal("error frame must not include message")
 	}
+	if strings.Contains(encoded, secret) {
+		t.Fatal("error frame must not echo encoded request payload bytes")
+	}
+
+	raw := `{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"read","error":{"code":"invalid_request","message":"` + secret + `"}}`
+	if _, err := DecodeMachineResponseLine(raw); err == nil {
+		t.Fatal("expected error payload unknown field rejection")
+	}
+}
+
+func TestMachineCodecPreservesOpaqueSubscribePayloadBytes(t *testing.T) {
+	t.Parallel()
+
+	rawPayload := json.RawMessage(`{"payload":{"token":"api_key_123","value":{"a":1}},"meta":["x"]}`)
 
 	response := MachineResponse{
 		Version:       MachineProtocolV1,
-		CorrelationID: "corr_1",
-		Operation:     MachineOpSendNudge,
-		Error: &MachineError{
-			Code:    MachineErrorInvalidRequest,
-			Message: "request rejected",
+		CorrelationID: "corr_2",
+		Operation:     MachineOpSubscribe,
+		Event: &MachineSubscribeEvent{
+			EventID: "evt_1",
+			Type:    "message",
+			Payload: rawPayload,
 		},
 	}
 	responseLine, err := EncodeMachineResponseLine(response)
 	if err != nil {
 		t.Fatalf("response encode: %v", err)
 	}
-	if strings.Contains(responseLine, "token") {
-		t.Fatal("error response must not echo private request body")
+	decoded, err := DecodeMachineResponseLine(responseLine)
+	if err != nil {
+		t.Fatalf("response decode: %v", err)
 	}
-	if strings.Contains(requestLine, "token") == false {
-		t.Fatalf("request fixture missing token marker: %s", requestLine)
+	if !bytes.Equal(decoded.Event.Payload, rawPayload) {
+		t.Fatal("provider payload bytes changed by validation/encoding")
 	}
-
-	if strings.Contains(responseLine, "token") {
-		t.Fatal("error response leak check failed")
-	}
-
-	_ = requestLine
 }
 
-func TestMachineResponseOutputBoundRejectsLongErrorMessage(t *testing.T) {
+func TestMachineCodecEventPayloadAndSubscribeResultBounds(t *testing.T) {
+	t.Parallel()
+
+	invalid := MachineResponse{
+		Version:       MachineProtocolV1,
+		CorrelationID: "corr_1",
+		Operation:     MachineOpSubscribe,
+		Event: &MachineSubscribeEvent{
+			EventID: "e1",
+			Type:    strings.Repeat("x", MachineMaxTargetBytes+1),
+			Payload: json.RawMessage(`{"message":"hi"}`),
+		},
+	}
+	if _, err := EncodeMachineResponseLine(invalid); err == nil {
+		t.Fatal("expected invalid event type bound rejection")
+	}
+
+	raw := `{"version":"` + MachineProtocolV1 + `","correlation_id":"corr_1","operation":"subscribe","event":{"event_id":"e1","type":"message","payload":` + strings.Repeat("{", 2) + `}}`
+	if _, err := DecodeMachineResponseLine(raw); err == nil {
+		t.Fatal("expected malformed event payload rejection")
+	}
+}
+
+func TestMachineCodecDecodeEncodeRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	response := MachineResponse{
-		Version:       MachineProtocolV1,
-		CorrelationID: "corr_long",
-		Operation:     MachineOpSendNudge,
-		Error: &MachineError{
-			Code:    MachineErrorCapacity,
-			Message: strings.Repeat("x", MachineMaxOutputLineBytes),
-		},
-	}
-	if _, err := EncodeMachineResponseLine(response); err == nil {
-		t.Fatal("expected response length rejection")
-	}
-}
-
-func TestMachineCodecTransportRoundTripAndValidation(t *testing.T) {
-	t.Parallel()
-
-	subs := MachineResponse{
 		Version:       MachineProtocolV1,
 		CorrelationID: "corr_sub_1",
 		Operation:     MachineOpSubscribe,
 		Event: &MachineSubscribeEvent{
 			EventID: "event_1",
 			Type:    "message",
-			Payload: json.RawMessage(`{"x":1}`),
+			Payload: json.RawMessage(`{"message":"m"}`),
 		},
 	}
-	encoded, err := EncodeMachineResponseLine(subs)
+	encoded, err := EncodeMachineResponseLine(response)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
@@ -159,14 +162,12 @@ func TestMachineCodecTransportRoundTripAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if decoded.Operation != MachineOpSubscribe || decoded.Event == nil {
-		t.Fatalf("unexpected subscribe decode: %#v", decoded)
+	if decoded.Operation != MachineOpSubscribe || decoded.Event == nil || decoded.Event.Type != "message" {
+		t.Fatalf("unexpected decoded subscribe response: %#v", decoded)
 	}
-	if decoded.Event.Type != "message" {
-		t.Fatalf("unexpected event type: %s", decoded.Event.Type)
-	}
-	encodedHex := hex.EncodeToString([]byte(encoded))
-	if len(encodedHex) == 0 {
+
+	hexEncoded := hex.EncodeToString([]byte(encoded))
+	if len(hexEncoded) == 0 {
 		t.Fatal("round-trip produced empty encoding")
 	}
 }

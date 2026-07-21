@@ -1,11 +1,8 @@
 package protocol
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"strings"
 )
 
 var machineRequestPayloadKeys = map[string]struct{}{
@@ -27,15 +24,14 @@ var machineResponsePayloadKeys = map[string]struct{}{
 }
 
 func DecodeMachineRequestLine(raw string) (MachineRequest, error) {
-	record := strings.TrimSpace(raw)
-	if record == "" {
+	if raw == "" {
 		return MachineRequest{}, fmt.Errorf("empty input")
 	}
-	if len(record) > MachineMaxInputLineBytes {
+	if len(raw) > MachineMaxInputLineBytes {
 		return MachineRequest{}, fmt.Errorf("request exceeds %d bytes", MachineMaxInputLineBytes)
 	}
 
-	envelope, err := decodeJSONEnvelope(record)
+	envelope, err := decodeJSONEnvelope(raw)
 	if err != nil {
 		return MachineRequest{}, err
 	}
@@ -50,15 +46,14 @@ func DecodeMachineRequestLine(raw string) (MachineRequest, error) {
 }
 
 func DecodeMachineResponseLine(raw string) (MachineResponse, error) {
-	record := strings.TrimSpace(raw)
-	if record == "" {
+	if raw == "" {
 		return MachineResponse{}, fmt.Errorf("empty input")
 	}
-	if len(record) > MachineMaxOutputLineBytes {
+	if len(raw) > MachineMaxOutputLineBytes {
 		return MachineResponse{}, fmt.Errorf("response exceeds %d bytes", MachineMaxOutputLineBytes)
 	}
 
-	envelope, err := decodeJSONEnvelope(record)
+	envelope, err := decodeJSONEnvelope(raw)
 	if err != nil {
 		return MachineResponse{}, err
 	}
@@ -80,11 +75,11 @@ func EncodeMachineRequestLine(request MachineRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(raw) > MachineMaxInputLineBytes {
-		return "", fmt.Errorf("request exceeds %d bytes", MachineMaxInputLineBytes)
-	}
 	if err := ensureSingleJSONValue(raw); err != nil {
 		return "", err
+	}
+	if len(raw) > MachineMaxInputLineBytes {
+		return "", fmt.Errorf("request exceeds %d bytes", MachineMaxInputLineBytes)
 	}
 	return string(raw), nil
 }
@@ -97,62 +92,13 @@ func EncodeMachineResponseLine(response MachineResponse) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(raw) > MachineMaxOutputLineBytes {
-		return "", fmt.Errorf("response exceeds %d bytes", MachineMaxOutputLineBytes)
-	}
 	if err := ensureSingleJSONValue(raw); err != nil {
 		return "", err
 	}
+	if len(raw) > MachineMaxOutputLineBytes {
+		return "", fmt.Errorf("response exceeds %d bytes", MachineMaxOutputLineBytes)
+	}
 	return string(raw), nil
-}
-
-func decodeJSONEnvelope(raw string) (map[string]json.RawMessage, error) {
-	var envelope map[string]json.RawMessage
-	dec := json.NewDecoder(strings.NewReader(raw))
-	if err := dec.Decode(&envelope); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
-	}
-	if err := ensureSingleJSONValueDecoder(dec); err != nil {
-		return nil, err
-	}
-	if envelope == nil {
-		return nil, fmt.Errorf("top-level must be an object")
-	}
-	return envelope, nil
-}
-
-func ensureSingleJSONValue(raw []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	var first struct{}
-	if err := dec.Decode(&first); err != nil {
-		return err
-	}
-	return ensureSingleJSONValueDecoder(dec)
-}
-
-func ensureSingleJSONValueDecoder(dec *json.Decoder) error {
-	var terminal struct{}
-	if err := dec.Decode(&terminal); err != nil {
-		if err == io.EOF {
-			return nil
-		}
-		return err
-	}
-	return fmt.Errorf("multiple JSON values")
-}
-
-func isNull(raw json.RawMessage) bool {
-	recorded := strings.TrimSpace(string(raw))
-	return recorded == "" || recorded == "null"
-}
-
-func requireField(envelope map[string]json.RawMessage, field string, raw *json.RawMessage) error {
-	value, ok := envelope[field]
-	if !ok || isNull(value) {
-		return fmt.Errorf("missing field %q", field)
-	}
-	*raw = value
-	return nil
 }
 
 func parseMachineRequestEnvelope(envelope map[string]json.RawMessage) (MachineRequest, error) {
@@ -239,6 +185,7 @@ func parseMachineRequestEnvelope(envelope map[string]json.RawMessage) (MachineRe
 
 func parseMachineResponseEnvelope(envelope map[string]json.RawMessage) (MachineResponse, error) {
 	response := MachineResponse{}
+	payloadKey := ""
 	payloadCount := 0
 
 	for key := range envelope {
@@ -249,6 +196,7 @@ func parseMachineResponseEnvelope(envelope map[string]json.RawMessage) (MachineR
 			return MachineResponse{}, fmt.Errorf("unknown field %q", key)
 		}
 		payloadCount++
+		payloadKey = key
 	}
 	if payloadCount != 1 {
 		return MachineResponse{}, fmt.Errorf("exactly one of result payload, event, or error is required")
@@ -275,9 +223,9 @@ func parseMachineResponseEnvelope(envelope map[string]json.RawMessage) (MachineR
 		return MachineResponse{}, fmt.Errorf("operation %w", err)
 	}
 
-	if rawError, ok := envelope["error"]; ok {
+	if payloadKey == "error" {
 		var errorPayload MachineError
-		if err := decodeStrictJSONValue(rawError, &errorPayload); err != nil {
+		if err := decodeStrictJSONValue(envelope["error"], &errorPayload); err != nil {
 			return MachineResponse{}, fmt.Errorf("error %w", err)
 		}
 		response.Error = &errorPayload
@@ -286,60 +234,55 @@ func parseMachineResponseEnvelope(envelope map[string]json.RawMessage) (MachineR
 
 	switch response.Operation {
 	case MachineOpSendNudge:
-		payload, ok := envelope[MachineOpSendNudge]
-		if !ok {
-			return MachineResponse{}, fmt.Errorf("send_nudge payload is required")
+		if payloadKey != MachineOpSendNudge {
+			return MachineResponse{}, fmt.Errorf("operation %q does not match payload %q", response.Operation, payloadKey)
 		}
 		var result MachineSendNudgeResult
-		if err := decodeStrictJSONValue(payload, &result); err != nil {
+		if err := decodeStrictJSONValue(envelope[MachineOpSendNudge], &result); err != nil {
 			return MachineResponse{}, fmt.Errorf("send_nudge %w", err)
 		}
 		response.SendNudge = &result
 	case MachineOpRead:
-		payload, ok := envelope[MachineOpRead]
-		if !ok {
-			return MachineResponse{}, fmt.Errorf("read payload is required")
+		if payloadKey != MachineOpRead {
+			return MachineResponse{}, fmt.Errorf("operation %q does not match payload %q", response.Operation, payloadKey)
 		}
 		var result MachineReadResult
-		if err := decodeStrictJSONValue(payload, &result); err != nil {
+		if err := decodeStrictJSONValue(envelope[MachineOpRead], &result); err != nil {
 			return MachineResponse{}, fmt.Errorf("read %w", err)
 		}
 		response.Read = &result
 	case MachineOpSubscribe:
-		if payload, ok := envelope["event"]; ok {
+		if payloadKey == "event" {
 			var event MachineSubscribeEvent
-			if err := decodeStrictJSONValue(payload, &event); err != nil {
+			if err := decodeStrictJSONValue(envelope["event"], &event); err != nil {
 				return MachineResponse{}, fmt.Errorf("event %w", err)
 			}
 			response.Event = &event
 			return response, nil
 		}
-		payload, ok := envelope[MachineOpSubscribe]
-		if !ok {
-			return MachineResponse{}, fmt.Errorf("subscribe payload is required")
+		if payloadKey != MachineOpSubscribe {
+			return MachineResponse{}, fmt.Errorf("operation %q does not match payload %q", response.Operation, payloadKey)
 		}
 		var result MachineSubscribeResult
-		if err := decodeStrictJSONValue(payload, &result); err != nil {
+		if err := decodeStrictJSONValue(envelope[MachineOpSubscribe], &result); err != nil {
 			return MachineResponse{}, fmt.Errorf("subscribe %w", err)
 		}
 		response.Subscribe = &result
 	case MachineOpExport:
-		payload, ok := envelope[MachineOpExport]
-		if !ok {
-			return MachineResponse{}, fmt.Errorf("export payload is required")
+		if payloadKey != MachineOpExport {
+			return MachineResponse{}, fmt.Errorf("operation %q does not match payload %q", response.Operation, payloadKey)
 		}
 		var result MachineExportResult
-		if err := decodeStrictJSONValue(payload, &result); err != nil {
+		if err := decodeStrictJSONValue(envelope[MachineOpExport], &result); err != nil {
 			return MachineResponse{}, fmt.Errorf("export %w", err)
 		}
 		response.Export = &result
 	case MachineOpCancel:
-		payload, ok := envelope[MachineOpCancel]
-		if !ok {
-			return MachineResponse{}, fmt.Errorf("cancel payload is required")
+		if payloadKey != MachineOpCancel {
+			return MachineResponse{}, fmt.Errorf("operation %q does not match payload %q", response.Operation, payloadKey)
 		}
 		var result MachineCancelResult
-		if err := decodeStrictJSONValue(payload, &result); err != nil {
+		if err := decodeStrictJSONValue(envelope[MachineOpCancel], &result); err != nil {
 			return MachineResponse{}, fmt.Errorf("cancel %w", err)
 		}
 		response.Cancel = &result
@@ -350,20 +293,11 @@ func parseMachineResponseEnvelope(envelope map[string]json.RawMessage) (MachineR
 	return response, nil
 }
 
-func decodeStrictJSONValue(raw json.RawMessage, target any) error {
-	if len(raw) == 0 || isNull(raw) {
-		return fmt.Errorf("missing payload")
+func requireField(envelope map[string]json.RawMessage, field string, raw *json.RawMessage) error {
+	value, ok := envelope[field]
+	if !ok || isNull(value) {
+		return fmt.Errorf("missing field %q", field)
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(target); err != nil {
-		return err
-	}
-	var terminal struct{}
-	if err := dec.Decode(&terminal); err == io.EOF {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	return fmt.Errorf("multiple JSON values")
+	*raw = value
+	return nil
 }
