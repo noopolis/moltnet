@@ -115,7 +115,7 @@ func TestHelperFunctions(t *testing.T) {
 			},
 			DMs: &bridgeconfig.DMConfig{Enabled: true, Wake: bridgeconfig.WakeAll},
 		},
-		&protocol.Message{Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "dm_1", ParticipantIDs: []string{"net_a:writer", "net_b:researcher"}}},
+		&protocol.Message{NetworkID: "net_b", Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "dm_1", ParticipantIDs: []string{"net_a:writer", "net_b:researcher"}}},
 	) {
 		t.Fatal("expected matching scoped participant dm to be handled")
 	}
@@ -127,7 +127,7 @@ func TestHelperFunctions(t *testing.T) {
 			},
 			DMs: &bridgeconfig.DMConfig{Enabled: true, Wake: bridgeconfig.WakeAll},
 		},
-		&protocol.Message{Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "dm_1", ParticipantIDs: []string{"net_a:writer", "net_c:orchestrator"}}},
+		&protocol.Message{NetworkID: "net_b", Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "dm_1", ParticipantIDs: []string{"net_a:writer", "net_c:orchestrator"}}},
 	) {
 		t.Fatal("expected non-participant dm to be ignored")
 	}
@@ -142,5 +142,40 @@ func TestHelperFunctions(t *testing.T) {
 	}
 	if mentions := bridgeutil.ParseMentions("no mentions here"); mentions != nil {
 		t.Fatalf("expected nil mentions, got %#v", mentions)
+	}
+}
+
+func TestShouldHandleCredentialBoundAllowedWakeSender(t *testing.T) {
+	t.Parallel()
+
+	config := bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "red"},
+		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "pitch"},
+		DMs: &bridgeconfig.DMConfig{
+			Enabled:            true,
+			Wake:               bridgeconfig.WakeAll,
+			AllowedWakeSenders: []string{"world"},
+		},
+	}
+	event := protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
+		Message: &protocol.Message{
+			NetworkID: "pitch",
+			From: protocol.Actor{
+				Type:            "service",
+				ID:              "world",
+				NetworkID:       "pitch",
+				FQID:            protocol.AgentFQID("pitch", "world"),
+				CredentialBound: true,
+			},
+			Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "world-red", ParticipantIDs: []string{"world", "red"}},
+		},
+	}
+	if !ShouldHandle(config, event) {
+		t.Fatal("expected credential-bound exact provider DM to be handled")
+	}
+	event.Message.From.CredentialBound = false
+	if ShouldHandle(config, event) {
+		t.Fatal("expected unbound provider identity to be ignored")
 	}
 }

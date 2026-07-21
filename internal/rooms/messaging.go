@@ -38,6 +38,10 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	}
 
 	from := protocol.NormalizeActor(s.networkID, request.From)
+	// CredentialBound is server authority, never caller testimony. The request
+	// uses the same Actor wire type as stored messages, so overwrite it after
+	// normalization even when a caller supplied true.
+	from.CredentialBound = s.senderCredentialBound(ctx, from)
 	if request.Target.Kind == protocol.TargetKindRoom || request.Target.Kind == protocol.TargetKindThread {
 		if err := s.enforceTargetWritePolicy(ctx, request.Target, from); err != nil {
 			// A canWriteRoom denial (non-member / write-policy rejection)
@@ -141,6 +145,31 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		ThreadCreated: lifecycle.Thread != nil,
 		DMCreated:     lifecycle.DM != nil,
 	}, nil
+}
+
+func (s *Service) senderCredentialBound(ctx context.Context, actor protocol.Actor) bool {
+	if strings.TrimSpace(actor.Type) == "human" || strings.TrimSpace(actor.NetworkID) != s.networkID {
+		return false
+	}
+	agentID, local := s.agentCollisionID(actor)
+	if !local || agentID == "" || strings.TrimSpace(actor.ID) != agentID ||
+		strings.TrimSpace(actor.FQID) != protocol.AgentFQID(s.networkID, agentID) {
+		return false
+	}
+	claims, ok := authn.ClaimsFromContext(ctx)
+	if !ok || !claims.Allows(authn.ScopeWrite) || claims.Allows(authn.ScopePair) {
+		return false
+	}
+	agentIDs := claims.AgentIDs()
+	if len(agentIDs) != 1 || strings.TrimSpace(agentIDs[0]) != agentID {
+		return false
+	}
+	registration, ok, err := s.registeredAgent(ctx, agentID)
+	if err != nil || !ok {
+		return false
+	}
+	credentialKey := strings.TrimSpace(claims.CredentialKey)
+	return credentialKey != "" && credentialKey == strings.TrimSpace(registration.CredentialKey)
 }
 
 func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Actor, origin protocol.MessageOrigin) error {

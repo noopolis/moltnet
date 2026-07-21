@@ -115,3 +115,29 @@ func TestAgentRegistrationAgentTokenJSON(t *testing.T) {
 		t.Fatalf("credential key leaked in JSON %s", text)
 	}
 }
+
+func TestActorCredentialBoundJSONIsAdditive(t *testing.T) {
+	t.Parallel()
+
+	legacy, err := json.Marshal(Actor{Type: "agent", ID: "world"})
+	if err != nil {
+		t.Fatalf("Marshal() legacy error = %v", err)
+	}
+	if strings.Contains(string(legacy), "credential_bound") {
+		t.Fatalf("zero-value provenance should stay omitted: %s", legacy)
+	}
+	stamped, err := json.Marshal(Actor{Type: "agent", ID: "world", CredentialBound: true})
+	if err != nil {
+		t.Fatalf("Marshal() stamped error = %v", err)
+	}
+	if !strings.Contains(string(stamped), `"credential_bound":true`) {
+		t.Fatalf("stamped provenance missing from JSON: %s", stamped)
+	}
+	var decoded Actor
+	if err := json.Unmarshal([]byte(`{"type":"agent","id":"world"}`), &decoded); err != nil {
+		t.Fatalf("Unmarshal() legacy error = %v", err)
+	}
+	if decoded.CredentialBound {
+		t.Fatalf("legacy actor unexpectedly bound: %#v", decoded)
+	}
+}

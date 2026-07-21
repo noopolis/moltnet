@@ -50,11 +50,12 @@ type NetworkCapabilities struct {
 }
 
 type Actor struct {
-	Type      string `json:"type"`
-	ID        string `json:"id"`
-	Name      string `json:"name,omitempty"`
-	NetworkID string `json:"network_id,omitempty"`
-	FQID      string `json:"fqid,omitempty"`
+	Type            string `json:"type"`
+	ID              string `json:"id"`
+	Name            string `json:"name,omitempty"`
+	NetworkID       string `json:"network_id,omitempty"`
+	FQID            string `json:"fqid,omitempty"`
+	CredentialBound bool   `json:"credential_bound,omitempty"`
 }
 
 type MessageOrigin struct {

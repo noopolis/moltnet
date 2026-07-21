@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 func validateWakeConfig(config Config) error {
@@ -18,8 +20,35 @@ func validateWakeConfig(config Config) error {
 		if err := validateWakeValue("bridge config dms.wake", config.DMs.Wake); err != nil {
 			return err
 		}
+		if err := validateAllowedWakeSenders(config.DMs.AllowedWakeSenders); err != nil {
+			return err
+		}
 	}
 
+	return nil
+}
+
+func validateAllowedWakeSenders(senders []string) error {
+	if len(senders) > protocol.MaxMembersPerRequest {
+		return fmt.Errorf("bridge config dms.allowed_wake_senders must contain %d IDs or fewer", protocol.MaxMembersPerRequest)
+	}
+	seen := make(map[string]struct{}, len(senders))
+	for index, sender := range senders {
+		sender = strings.TrimSpace(sender)
+		if _, _, ok := protocol.ParseScopedAgentID(sender); ok {
+			return fmt.Errorf("bridge config dms.allowed_wake_senders[%d] must be an unqualified local member ID", index)
+		}
+		if _, _, ok := protocol.ParseAgentFQID(sender); ok {
+			return fmt.Errorf("bridge config dms.allowed_wake_senders[%d] must be an unqualified local member ID", index)
+		}
+		if err := protocol.ValidateMemberID(sender); err != nil {
+			return fmt.Errorf("bridge config dms.allowed_wake_senders[%d] %w", index, err)
+		}
+		if _, ok := seen[sender]; ok {
+			return fmt.Errorf("bridge config dms.allowed_wake_senders[%d] duplicates %q", index, sender)
+		}
+		seen[sender] = struct{}{}
+	}
 	return nil
 }
 

@@ -39,9 +39,7 @@ func (b *bridge) shouldHandle(event protocol.Event) bool {
 
 		return bridgeutil.ShouldWakeForNetwork(binding.Wake, message.Target, message.Mentions, b.config.Moltnet.NetworkID, b.config.Agent)
 	case protocol.TargetKindDM:
-		return b.config.DMs != nil &&
-			b.config.DMs.Enabled &&
-			bridgeutil.ShouldWakeDirect(b.config.DMs.Wake)
+		return bridgeutil.ShouldWakeDirectMessage(b.config.DMs, b.config.Moltnet.NetworkID, b.config.Agent, message)
 	default:
 		return false
 	}

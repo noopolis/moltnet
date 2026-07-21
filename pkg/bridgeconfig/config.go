@@ -89,8 +89,9 @@ type RoomAccess struct {
 }
 
 type DMConfig struct {
-	Enabled bool       `json:"enabled" yaml:"enabled"`
-	Wake    WakeConfig `json:"wake,omitempty" yaml:"wake,omitempty"`
+	Enabled            bool       `json:"enabled" yaml:"enabled"`
+	Wake               WakeConfig `json:"wake,omitempty" yaml:"wake,omitempty"`
+	AllowedWakeSenders []string   `json:"allowed_wake_senders,omitempty" yaml:"allowed_wake_senders,omitempty"`
 }
 
 type WakeConfig string

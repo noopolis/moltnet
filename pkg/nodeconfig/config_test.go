@@ -212,6 +212,10 @@ func TestBridgeConfigs(t *testing.T) {
 				Runtime: bridgeconfig.RuntimeConfig{
 					Kind: bridgeconfig.RuntimeOpenClaw,
 				},
+				DMs: &bridgeconfig.DMConfig{
+					Enabled:            true,
+					AllowedWakeSenders: []string{"world"},
+				},
 			},
 		},
 	}
@@ -225,6 +229,9 @@ func TestBridgeConfigs(t *testing.T) {
 	}
 	if configs[0].Runtime.GatewayURL != bridgeconfig.DefaultOpenClawGatewayURL {
 		t.Fatalf("expected normalized runtime defaults, got %#v", configs[0].Runtime)
+	}
+	if configs[0].DMs == nil || len(configs[0].DMs.AllowedWakeSenders) != 1 || configs[0].DMs.AllowedWakeSenders[0] != "world" {
+		t.Fatalf("expected allowed wake sender policy to survive bridge lowering, got %#v", configs[0].DMs)
 	}
 }
 

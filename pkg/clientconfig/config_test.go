@@ -133,6 +133,32 @@ func TestResolveAttachment(t *testing.T) {
 	}
 }
 
+func TestLoadFilePreservesAllowedWakeSenders(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version": "moltnet.client.v1",
+  "attachments": [{
+    "auth": {"mode": "none"},
+    "base_url": "http://127.0.0.1:8787",
+    "member_id": "red",
+    "network_id": "pitch",
+    "dms": {"enabled": true, "allowed_wake_senders": ["world"]}
+  }]
+}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	config, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	dms := config.Attachments[0].DMs
+	if dms == nil || len(dms.AllowedWakeSenders) != 1 || dms.AllowedWakeSenders[0] != "world" {
+		t.Fatalf("allowed wake senders did not round-trip: %#v", dms)
+	}
+}
+
 func TestResolveAttachmentRequiresMemberForSameNetwork(t *testing.T) {
 	config := Config{
 		Attachments: []AttachmentConfig{

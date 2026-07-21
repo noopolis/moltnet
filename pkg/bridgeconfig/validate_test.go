@@ -10,8 +10,9 @@ func TestValidateWakeConfigHelpers(t *testing.T) {
 			{ID: "research", Wake: WakeMentions},
 		},
 		DMs: &DMConfig{
-			Enabled: true,
-			Wake:    WakeNever,
+			Enabled:            true,
+			Wake:               WakeNever,
+			AllowedWakeSenders: []string{"world"},
 		},
 	}
 	if err := validateWakeConfig(valid); err != nil {
@@ -20,6 +21,19 @@ func TestValidateWakeConfigHelpers(t *testing.T) {
 
 	if err := validateWakeConfig(Config{Rooms: []RoomBinding{{ID: "research", Wake: WakeConfig("weird")}}}); err == nil {
 		t.Fatal("expected invalid room wake config error")
+	}
+
+	invalidSenders := [][]string{
+		{"world", " world "},
+		{"pitch:world"},
+		{"molt://pitch/agents/world"},
+		{"bad sender"},
+		{""},
+	}
+	for _, senders := range invalidSenders {
+		if err := validateWakeConfig(Config{DMs: &DMConfig{Enabled: true, AllowedWakeSenders: senders}}); err == nil {
+			t.Fatalf("expected invalid allowed wake senders error for %#v", senders)
+		}
 	}
 }
 

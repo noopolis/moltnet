@@ -352,6 +352,41 @@ func TestShouldDeliverIgnoresWakeNeverAndThreads(t *testing.T) {
 	}
 }
 
+func TestShouldDeliverAllowedWakeSenderUsesSharedPolicy(t *testing.T) {
+	t.Parallel()
+
+	config := bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "red"},
+		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "pitch"},
+		DMs: &bridgeconfig.DMConfig{
+			Enabled:            true,
+			Wake:               bridgeconfig.WakeAll,
+			AllowedWakeSenders: []string{"world"},
+		},
+	}
+	event := protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
+		Message: &protocol.Message{
+			NetworkID: "pitch",
+			From: protocol.Actor{
+				Type:            "service",
+				ID:              "world",
+				NetworkID:       "pitch",
+				FQID:            protocol.AgentFQID("pitch", "world"),
+				CredentialBound: true,
+			},
+			Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "world-red", ParticipantIDs: []string{"world", "red"}},
+		},
+	}
+	if !shouldDeliver(config, event) {
+		t.Fatal("expected strict provider DM to pass OpenClaw admission")
+	}
+	event.Message.From.CredentialBound = false
+	if shouldDeliver(config, event) {
+		t.Fatal("expected unbound provider identity to fail OpenClaw admission")
+	}
+}
+
 func TestRunGatewayLoopSkipsBootstrapForThreadOnlyBindings(t *testing.T) {
 	t.Parallel()
 

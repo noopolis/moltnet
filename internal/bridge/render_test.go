@@ -187,3 +187,156 @@ func TestBridgeHelpers(t *testing.T) {
 		t.Fatal("expected unrelated data to be ignored")
 	}
 }
+
+func TestShouldWakeDirectMessageAllowedSenders(t *testing.T) {
+	t.Parallel()
+
+	base := protocol.Message{
+		NetworkID: "pitch",
+		From: protocol.Actor{
+			Type:            "service",
+			ID:              "world",
+			NetworkID:       "pitch",
+			FQID:            protocol.AgentFQID("pitch", "world"),
+			CredentialBound: true,
+		},
+		Target: protocol.Target{
+			Kind:           protocol.TargetKindDM,
+			DMID:           "world-red",
+			ParticipantIDs: []string{"world", "red"},
+		},
+	}
+	agent := bridgeconfig.AgentConfig{ID: "red", Name: "Red"}
+	strict := &bridgeconfig.DMConfig{
+		Enabled:            true,
+		Wake:               bridgeconfig.WakeAll,
+		AllowedWakeSenders: []string{"world"},
+	}
+	social := &bridgeconfig.DMConfig{Enabled: true, Wake: bridgeconfig.WakeAll}
+	withoutProvenance := base
+	withoutProvenance.From.CredentialBound = false
+	if !ShouldWakeDirectMessage(social, "pitch", agent, &withoutProvenance) {
+		t.Fatal("empty allowlist should preserve ordinary social DM wake behavior")
+	}
+
+	tests := []struct {
+		name    string
+		config  *bridgeconfig.DMConfig
+		agent   bridgeconfig.AgentConfig
+		message protocol.Message
+		want    bool
+	}{
+		{name: "exact pair", config: strict, agent: agent, message: base, want: true},
+		{
+			name:   "network-qualified exact pair",
+			config: strict,
+			agent:  agent,
+			message: func() protocol.Message {
+				message := base
+				message.Target.ParticipantIDs = []string{
+					protocol.ScopedAgentID("pitch", "world"),
+					protocol.AgentFQID("pitch", "red"),
+				}
+				return message
+			}(),
+			want: true,
+		},
+		{name: "unbound sender", config: strict, agent: agent, message: withoutProvenance},
+		{
+			name:   "other sender",
+			config: strict,
+			agent:  agent,
+			message: func() protocol.Message {
+				message := base
+				message.From.ID = "coach"
+				message.From.FQID = protocol.AgentFQID("pitch", "coach")
+				message.Target.ParticipantIDs = []string{"coach", "red"}
+				return message
+			}(),
+		},
+		{
+			name:   "third participant",
+			config: strict,
+			agent:  agent,
+			message: func() protocol.Message {
+				message := base
+				message.Target.ParticipantIDs = []string{"world", "red", "blue"}
+				return message
+			}(),
+		},
+		{
+			name:   "other direct conversation",
+			config: strict,
+			agent:  agent,
+			message: func() protocol.Message {
+				message := base
+				message.Target.ParticipantIDs = []string{"world", "blue"}
+				return message
+			}(),
+		},
+		{name: "opposite attachment", config: strict, agent: bridgeconfig.AgentConfig{ID: "world"}, message: base},
+		{
+			name:   "remote sender collision",
+			config: strict,
+			agent:  agent,
+			message: func() protocol.Message {
+				message := base
+				message.From.NetworkID = "remote"
+				message.From.FQID = protocol.AgentFQID("remote", "world")
+				return message
+			}(),
+		},
+		{
+			name:   "remote participant collision",
+			config: strict,
+			agent:  agent,
+			message: func() protocol.Message {
+				message := base
+				message.Target.ParticipantIDs = []string{"remote:world", "pitch:red"}
+				return message
+			}(),
+		},
+		{
+			name:   "duplicate identity aliases",
+			config: strict,
+			agent:  agent,
+			message: func() protocol.Message {
+				message := base
+				message.Target.ParticipantIDs = []string{"world", "pitch:world"}
+				return message
+			}(),
+		},
+		{
+			name:    "disabled",
+			config:  &bridgeconfig.DMConfig{AllowedWakeSenders: []string{"world"}},
+			agent:   agent,
+			message: base,
+		},
+		{
+			name:    "wake never",
+			config:  &bridgeconfig.DMConfig{Enabled: true, Wake: bridgeconfig.WakeNever, AllowedWakeSenders: []string{"world"}},
+			agent:   agent,
+			message: base,
+		},
+		{
+			name:   "shared room is not a direct wake",
+			config: strict,
+			agent:  agent,
+			message: func() protocol.Message {
+				message := base
+				message.Target = protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "shared"}
+				return message
+			}(),
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ShouldWakeDirectMessage(test.config, "pitch", test.agent, &test.message); got != test.want {
+				t.Fatalf("ShouldWakeDirectMessage() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
