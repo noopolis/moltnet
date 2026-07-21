@@ -2,9 +2,24 @@ package protocol
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
+
+const hostileMarshalSentinel = "credential_or_private_boundaries_7f92f9"
+
+type hostileStatefulPartData struct {
+	calls int
+}
+
+func (value *hostileStatefulPartData) MarshalJSON() ([]byte, error) {
+	if value.calls > 0 {
+		return nil, errors.New(hostileMarshalSentinel)
+	}
+	value.calls++
+	return []byte(`"ok"`), nil
+}
 
 func TestMachineSubscribeEventOutputEnvelopeBudgetProof(t *testing.T) {
 	t.Parallel()
@@ -150,6 +165,30 @@ func TestMachineReadPageValidationRespectsEncodedResponseLimit(t *testing.T) {
 		if err := overflow.Validate(); err == nil {
 			t.Fatal("expected aggregated read-page overflow rejection")
 		}
+	}
+
+	constructHostileMessage := func() MachineReadMessage {
+		message := baseMachineReadMessage()
+		message.Parts = []Part{
+			{
+				Kind: PartKindText,
+				Data: map[string]any{"hostile": &hostileStatefulPartData{}},
+			},
+		}
+		return message
+	}
+	if err := constructHostileMessage().Validate(); err != nil {
+		t.Fatalf("expected hostile read message to pass: %v", err)
+	}
+	if err := (MachineReadPage{Messages: []MachineReadMessage{constructHostileMessage()}, Page: MachineReadPageInfo{HasMore: boolPtr(false)}}).Validate(); err == nil {
+		t.Fatal("expected hostile read page rejection for second marshal")
+	} else if strings.Contains(err.Error(), hostileMarshalSentinel) {
+		t.Fatalf("expected hostile marshal sentinel not to leak: %v", err)
+	}
+	if err := (MachineReadResult{Target: MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"}, Page: MachineReadPage{Messages: []MachineReadMessage{constructHostileMessage()}, Page: MachineReadPageInfo{HasMore: boolPtr(false)}}}).Validate(); err == nil {
+		t.Fatal("expected hostile read result rejection for second marshal")
+	} else if strings.Contains(err.Error(), hostileMarshalSentinel) {
+		t.Fatalf("expected hostile marshal sentinel not to leak: %v", err)
 	}
 }
 

@@ -61,7 +61,7 @@ func validateMachineStringSlice(values []string, maxCount int, maxLen int, field
 func validateMachineResponseLineBytes(response MachineResponse) error {
 	raw, err := encodeMachineResponse(response)
 	if err != nil {
-		return err
+		return errors.New("invalid response")
 	}
 	if len(raw) > MachineMaxOutputLineBytes {
 		return fmt.Errorf("response exceeds %d bytes", MachineMaxOutputLineBytes)
