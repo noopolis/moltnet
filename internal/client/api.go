@@ -190,7 +190,9 @@ func (c *Client) doJSON(ctx context.Context, method string, requestPath string, 
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
 		return nil
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(out); err != nil {
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 1<<20))
+	decoder.UseNumber()
+	if err := decoder.Decode(out); err != nil {
 		return fmt.Errorf("decode Moltnet response: %w", err)
 	}
 

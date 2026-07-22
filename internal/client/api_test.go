@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -82,6 +83,31 @@ func TestListRoomMessages(t *testing.T) {
 	}
 	if len(page.Messages) != 1 || page.Messages[0].ID != "msg_1" {
 		t.Fatalf("unexpected page %#v", page)
+	}
+}
+
+func TestListRoomMessagesPreservesLargeJSONNumber(t *testing.T) {
+	t.Parallel()
+	const large = "900719925474099312345678901234567890"
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/rooms/general/messages" {
+			t.Fatalf("unexpected path %s", request.URL.Path)
+		}
+		_, _ = fmt.Fprintf(response, `{"messages":[{"id":"msg_1","network_id":"local","target":{"kind":"room","room_id":"general"},"from":{"type":"agent","id":"alpha"},"parts":[{"kind":"text","data":{"integer":%s}}],"created_at":"2026-07-22T10:00:00Z"}]}`, large)
+	}))
+	defer server.Close()
+
+	client, err := New(clientconfig.AttachmentConfig{Auth: clientconfig.AuthConfig{Mode: "none"}, BaseURL: server.URL, MemberID: "alpha", NetworkID: "local"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	page, err := client.ListRoomMessages(context.Background(), "general", protocol.PageRequest{})
+	if err != nil {
+		t.Fatalf("ListRoomMessages() error = %v", err)
+	}
+	got, ok := page.Messages[0].Parts[0].Data["integer"].(json.Number)
+	if !ok || got.String() != large {
+		t.Fatalf("large integer changed: %#v", page.Messages[0].Parts[0].Data)
 	}
 }
 
