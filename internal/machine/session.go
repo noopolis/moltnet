@@ -56,7 +56,6 @@ func NewSession(ctx context.Context, input io.ReadCloser, writer io.Writer, opts
 		writer:           newResponseWriter(writer),
 		executor:         noopExecutor{},
 		lifecycle:        newRequestLifecycleRegistry(protocol.MachineMaxActiveRequests, protocol.MachineMaxCorrelationRegistry),
-		deliveryRegistry: newMemoryDeliveryRegistry(protocol.MachineMaxDeliveryRegistry),
 		deliveryResolver: DeliveryIdentityFromSendNudge{},
 	}
 	session.ctx, session.cancel = context.WithCancel(ctx)
@@ -65,6 +64,9 @@ func NewSession(ctx context.Context, input io.ReadCloser, writer io.Writer, opts
 	}
 	for _, option := range opts {
 		option(session)
+	}
+	if session.deliveryRegistry == nil {
+		session.deliveryRegistry = newMemoryDeliveryRegistry(protocol.MachineMaxDeliveryRegistry)
 	}
 	if session.executor == nil {
 		session.executor = noopExecutor{}

@@ -67,6 +67,27 @@ func TestSessionParentCancelClosesInput(t *testing.T) {
 	}
 }
 
+func TestNewSessionKeepsInjectedDeliveryRegistryAndLazilyDefaults(t *testing.T) {
+	injected := NewDeliveryRegistry(1)
+	withInjected := NewSession(context.Background(), io.NopCloser(strings.NewReader("")), io.Discard, WithDeliveryRegistry(injected))
+	if withInjected.deliveryRegistry != injected {
+		t.Fatal("injected delivery registry was replaced")
+	}
+
+	for _, session := range []*Session{
+		NewSession(context.Background(), io.NopCloser(strings.NewReader("")), io.Discard),
+		NewSession(context.Background(), io.NopCloser(strings.NewReader("")), io.Discard, WithDeliveryRegistry(nil)),
+	} {
+		registry, ok := session.deliveryRegistry.(*memoryDeliveryRegistry)
+		if !ok || registry == nil {
+			t.Fatalf("default registry = %T", session.deliveryRegistry)
+		}
+		if registry.max != protocol.MachineMaxDeliveryRegistry {
+			t.Fatalf("default registry bound = %d", registry.max)
+		}
+	}
+}
+
 func TestSessionFailingWriterOnAdmissionTerminal(t *testing.T) {
 	writer := &bufferedFailWriter{err: io.ErrClosedPipe}
 	exec := &simpleExecutor{handler: successResponse}
