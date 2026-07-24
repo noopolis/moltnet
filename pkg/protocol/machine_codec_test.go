@@ -288,6 +288,25 @@ func TestMachineCodecReadHostileNestedPageValidation(t *testing.T) {
 	}
 }
 
+func TestMachineCodecAcceptsNilReadMessagesAsDeclared(t *testing.T) {
+	t.Parallel()
+	hasMore := false
+	response := MachineResponse{
+		Version: MachineProtocolV1, CorrelationID: "corr_nil_messages", Operation: MachineOpRead,
+		Read: &MachineReadResult{Target: MachineTarget{Kind: MachineTargetKindRoom, ID: "room_1"}, Page: MachineReadPage{
+			Page: MachineReadPageInfo{HasMore: &hasMore},
+		}},
+	}
+	line, err := EncodeMachineResponseLine(response)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	decoded, err := DecodeMachineResponseLine(line)
+	if err != nil || decoded.Read == nil {
+		t.Fatalf("round trip: %#v / %v", decoded, err)
+	}
+}
+
 func TestMachineCodecEventPayloadAndSubscribeResultBounds(t *testing.T) {
 	t.Parallel()
 

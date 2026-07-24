@@ -7,6 +7,7 @@ func buildUsage() string {
   moltnet conversations [--network <id>] [--member <id>]
   moltnet init [path]
   moltnet machine --config <path> [--network <id>] [--member <id>]
+  moltnet machine-contract
   moltnet participants --target room:<id>|dm:<id> [--network <id>] [--member <id>]
   moltnet read --target room:<id>|dm:<id> [--limit 20] [--network <id>] [--member <id>]
   moltnet register-agent --base-url <url> [--agent <id>] [--name <name>]
@@ -32,6 +33,7 @@ Commands:
   conversations     List the configured rooms and DMs this agent can use
   init              Create canonical Moltnet and MoltnetNode config files
   machine           Run the long-lived machine JSONL protocol over standard I/O
+  machine-contract  Print the canonical machine conformance contract
   participants      Show participants for a configured room or DM target
   read              Read recent messages for a configured room or DM target
   register-agent    Register or resolve this agent's durable Moltnet identity

@@ -11,9 +11,8 @@ func validateMachineOperation(operation string) error {
 	switch operation {
 	case MachineOpSendNudge, MachineOpRead, MachineOpSubscribe, MachineOpExport, MachineOpCancel:
 		return nil
-	default:
-		return errors.New("unsupported operation")
 	}
+	return errors.New("unsupported operation")
 }
 
 func validateMachineIdentifier(value string, field string, max int) error {

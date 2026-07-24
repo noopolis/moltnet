@@ -271,9 +271,8 @@ func (result MachineSubscribeResult) Validate() error {
 	switch result.Reason {
 	case MachineSubscribeReasonDone, MachineSubscribeReasonLimit, MachineSubscribeReasonEOF:
 		return nil
-	default:
-		return fmt.Errorf("reason must be one of done, limit, or eof")
 	}
+	return fmt.Errorf("reason must be one of done, limit, or eof")
 }
 
 func (event MachineSubscribeEvent) Validate() error {
@@ -348,9 +347,8 @@ func (result MachineCancelResult) Validate() error {
 	switch result.State {
 	case MachineCancelStateCanceled, MachineCancelStateAlreadyFinal, MachineCancelStateNotFound:
 		return nil
-	default:
-		return fmt.Errorf("state must be canceled, already_final, or not_found")
 	}
+	return fmt.Errorf("state must be canceled, already_final, or not_found")
 }
 
 func (target MachineTarget) Validate() error {
@@ -373,7 +371,6 @@ func (errorResponse MachineError) Validate() error {
 	case MachineErrorInvalidRequest, MachineErrorDuplicateRequest, MachineErrorUnsupported, MachineErrorNotFound,
 		MachineErrorConflict, MachineErrorCapacity, MachineErrorTransport, MachineErrorCanceled:
 		return nil
-	default:
-		return fmt.Errorf("unsupported error code")
 	}
+	return fmt.Errorf("unsupported error code")
 }

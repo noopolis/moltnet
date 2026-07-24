@@ -7,24 +7,6 @@ import (
 	"strings"
 )
 
-var machineRequestPayloadKeys = map[string]struct{}{
-	MachineOpSendNudge: {},
-	MachineOpRead:      {},
-	MachineOpSubscribe: {},
-	MachineOpExport:    {},
-	MachineOpCancel:    {},
-}
-
-var machineResponsePayloadKeys = map[string]struct{}{
-	MachineOpSendNudge: {},
-	MachineOpRead:      {},
-	MachineOpSubscribe: {},
-	MachineOpExport:    {},
-	MachineOpCancel:    {},
-	"event":            {},
-	"error":            {},
-}
-
 func DecodeMachineRequestLine(raw string) (MachineRequest, error) {
 	if raw == "" {
 		return MachineRequest{}, errors.New("empty request")
@@ -35,6 +17,9 @@ func DecodeMachineRequestLine(raw string) (MachineRequest, error) {
 
 	envelope, err := decodeJSONEnvelope(raw)
 	if err != nil {
+		return MachineRequest{}, errors.New("invalid request")
+	}
+	if err := validateMachineContractShape(json.RawMessage(raw), "request"); err != nil {
 		return MachineRequest{}, errors.New("invalid request")
 	}
 	request, err := parseMachineRequestEnvelope(envelope)
@@ -57,6 +42,9 @@ func DecodeMachineResponseLine(raw string) (MachineResponse, error) {
 
 	envelope, err := decodeJSONEnvelope(raw)
 	if err != nil {
+		return MachineResponse{}, errors.New("invalid response")
+	}
+	if err := validateMachineContractShape(json.RawMessage(raw), "response"); err != nil {
 		return MachineResponse{}, errors.New("invalid response")
 	}
 	response, err := parseMachineResponseEnvelope(envelope)
@@ -105,31 +93,19 @@ func EncodeMachineResponseLine(response MachineResponse) (string, error) {
 
 func parseMachineRequestEnvelope(envelope map[string]json.RawMessage) (MachineRequest, error) {
 	request := MachineRequest{}
-	payloadKey := ""
-	payloadCount := 0
-
-	for key := range envelope {
-		if key == "version" || key == "correlation_id" || key == "operation" {
-			continue
-		}
-		if _, ok := machineRequestPayloadKeys[key]; !ok {
-			return MachineRequest{}, errors.New("invalid request")
-		}
-		payloadCount++
-		payloadKey = key
-	}
-	if payloadCount != 1 {
+	payloadKey, fields, err := machineContractEnvelopePayload(envelope, "request")
+	if err != nil {
 		return MachineRequest{}, fmt.Errorf("exactly one payload is required")
 	}
 
 	var rawVersion, rawCorrelation, rawOperation json.RawMessage
-	if err := requireField(envelope, "version", &rawVersion); err != nil {
+	if err := requireMachineContractField(envelope, fields, "version", &rawVersion); err != nil {
 		return MachineRequest{}, errors.New("invalid request")
 	}
-	if err := requireField(envelope, "correlation_id", &rawCorrelation); err != nil {
+	if err := requireMachineContractField(envelope, fields, "correlation_id", &rawCorrelation); err != nil {
 		return MachineRequest{}, errors.New("invalid request")
 	}
-	if err := requireField(envelope, "operation", &rawOperation); err != nil {
+	if err := requireMachineContractField(envelope, fields, "operation", &rawOperation); err != nil {
 		return MachineRequest{}, errors.New("invalid request")
 	}
 
@@ -160,31 +136,19 @@ func parseMachineRequestEnvelope(envelope map[string]json.RawMessage) (MachineRe
 
 func parseMachineResponseEnvelope(envelope map[string]json.RawMessage) (MachineResponse, error) {
 	response := MachineResponse{}
-	payloadKey := ""
-	payloadCount := 0
-
-	for key := range envelope {
-		if key == "version" || key == "correlation_id" || key == "operation" {
-			continue
-		}
-		if _, ok := machineResponsePayloadKeys[key]; !ok {
-			return MachineResponse{}, errors.New("invalid response")
-		}
-		payloadCount++
-		payloadKey = key
-	}
-	if payloadCount != 1 {
+	payloadKey, fields, err := machineContractEnvelopePayload(envelope, "response")
+	if err != nil {
 		return MachineResponse{}, fmt.Errorf("exactly one of result payload, event, or error is required")
 	}
 
 	var rawVersion, rawCorrelation, rawOperation json.RawMessage
-	if err := requireField(envelope, "version", &rawVersion); err != nil {
+	if err := requireMachineContractField(envelope, fields, "version", &rawVersion); err != nil {
 		return MachineResponse{}, errors.New("invalid response")
 	}
-	if err := requireField(envelope, "correlation_id", &rawCorrelation); err != nil {
+	if err := requireMachineContractField(envelope, fields, "correlation_id", &rawCorrelation); err != nil {
 		return MachineResponse{}, errors.New("invalid response")
 	}
-	if err := requireField(envelope, "operation", &rawOperation); err != nil {
+	if err := requireMachineContractField(envelope, fields, "operation", &rawOperation); err != nil {
 		return MachineResponse{}, errors.New("invalid response")
 	}
 
@@ -315,7 +279,36 @@ func decodeMachineSubscribeEvent(raw json.RawMessage) (MachineSubscribeEvent, er
 	return decoded, nil
 }
 
-func requireField(envelope map[string]json.RawMessage, field string, raw *json.RawMessage) error {
+func machineContractEnvelopePayload(envelope map[string]json.RawMessage, shapeName string) (string, map[string]MachineContractField, error) {
+	fields, err := machineContractEnvelopeFields(shapeName)
+	if err != nil {
+		return "", nil, err
+	}
+	payload := ""
+	for key := range envelope {
+		field, ok := fields[key]
+		if !ok {
+			return "", nil, errors.New("unknown field")
+		}
+		if field.Required {
+			continue
+		}
+		if payload != "" {
+			return "", nil, errors.New("multiple payloads")
+		}
+		payload = key
+	}
+	if payload == "" {
+		return "", nil, errors.New("missing payload")
+	}
+	return payload, fields, nil
+}
+
+func requireMachineContractField(envelope map[string]json.RawMessage, fields map[string]MachineContractField, field string, raw *json.RawMessage) error {
+	declaration, ok := fields[field]
+	if !ok || !declaration.Required {
+		return errors.New("invalid required field declaration")
+	}
 	value, ok := envelope[field]
 	if !ok || isNull(value) {
 		return errors.New("invalid request")
