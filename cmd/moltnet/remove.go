@@ -107,6 +107,8 @@ func runAdminCommand(args []string) error {
 	switch args[0] {
 	case "agent":
 		return runAdminAgentCommand(args[1:])
+	case "dm":
+		return runAdminDMCommand(args[1:])
 	case "room":
 		return runAdminRoomCommand(args[1:])
 	default:

@@ -12,6 +12,7 @@ func buildUsage() string {
   moltnet read --target room:<id>|dm:<id> [--limit 20] [--network <id>] [--member <id>]
   moltnet register-agent --base-url <url> [--agent <id>] [--name <name>]
   moltnet admin agent remove --agent <id> --base-url <url> --token-env <env>
+  moltnet admin dm ensure --sender <id> --member <id> --member <id> --base-url <url> --token-env <env>
   moltnet admin room remove --room <id> --base-url <url> --token-env <env>
   moltnet admin room members add --room <id> --member <id> --base-url <url> --token-env <env>
   moltnet admin room members remove --room <id> --member <id> --base-url <url> --token-env <env>
@@ -62,12 +63,14 @@ Run the machine JSONL protocol over standard input and standard output.
 func buildAdminUsage() string {
 	return `Usage:
   moltnet admin agent remove --agent <id> --base-url <url> --token-env <env>
+  moltnet admin dm ensure --sender <id> --member <id> --member <id> --base-url <url> --token-env <env>
   moltnet admin room remove --room <id> --base-url <url> --token-env <env>
   moltnet admin room members add --room <id> --member <id> [--member <id>] --base-url <url> --token-env <env>
   moltnet admin room members remove --room <id> --member <id> [--member <id>] --base-url <url> --token-env <env>
 
 Admin commands require a bearer token with the admin scope.
 Use moltnet apply for declarative room, membership, and static agent credential reconciliation.
+The dm ensure command installs an idempotent control-only direct-message topology before participants attach.
 `
 }
 
