@@ -190,6 +190,9 @@ func TestRunControlLoop(t *testing.T) {
 			if !strings.Contains(body, "\"event_id\":\"moltnet:msg_1\"") {
 				t.Fatalf("expected inbound control request to carry the real moltnet event id, got %#v", body)
 			}
+			if !strings.Contains(body, "\"transport_text\":\"hello @reviewer\"") {
+				t.Fatalf("expected inbound control request to preserve the exact message body, got %#v", body)
+			}
 		}
 	}
 	if !sawBootstrap || !sawInbound {

@@ -31,7 +31,10 @@ type controlRequest struct {
 	EventID string `json:"event_id,omitempty"`
 	From    string `json:"from"`
 	Message string `json:"message"`
-	To      string `json:"to"`
+	// TransportText preserves the normalized message body separately from
+	// Message, which includes Moltnet's runtime-facing sender/target prefix.
+	TransportText string `json:"transport_text,omitempty"`
+	To            string `json:"to"`
 }
 
 type controlResponse struct {
@@ -144,6 +147,7 @@ func sendBootstrapControlMessages(
 			"", // bootstrap sends have no inbound moltnet message to derive an event id from
 			"Moltnet Bootstrap",
 			target.message,
+			"",
 		)
 		if err != nil {
 			return err
@@ -196,6 +200,7 @@ func sendControlMessage(
 		protocol.MessageEventID(event.Message.ID),
 		bridgeutil.SenderName(event.Message.From),
 		bridgeutil.RenderInboundText(event.Message),
+		bridgeutil.RenderMessageBody(event.Message),
 	)
 }
 
@@ -207,15 +212,17 @@ func sendControlText(
 	eventID string,
 	from string,
 	message string,
+	transportText string,
 ) (controlResponse, error) {
 	contextID := conversationContextIDForTarget(config.Moltnet.NetworkID, target)
 
 	body, err := json.Marshal(controlRequest{
-		ContextID: contextID,
-		EventID:   eventID,
-		From:      from,
-		Message:   message,
-		To:        config.Agent.ID,
+		ContextID:     contextID,
+		EventID:       eventID,
+		From:          from,
+		Message:       message,
+		TransportText: transportText,
+		To:            config.Agent.ID,
 	})
 	if err != nil {
 		return controlResponse{}, fmt.Errorf("encode control request: %w", err)
