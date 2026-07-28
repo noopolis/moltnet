@@ -15,6 +15,50 @@ func privateVisibilityContext(agent string, scopes ...authn.Scope) context.Conte
 	return authn.WithMode(authn.WithClaims(context.Background(), claims), authn.ModeBearer)
 }
 
+func TestRestrictedStaticMemberRoomAccessReportsWriteAuthority(t *testing.T) {
+	service := newTestService()
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          "team",
+		Members:     []string{"world"},
+		Visibility:  protocol.RoomVisibilityPrivate,
+		WritePolicy: protocol.RoomWritePolicyMembers,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, test := range map[string]struct {
+		ctx  context.Context
+		want bool
+	}{
+		"single member with write scope": {
+			ctx:  privateVisibilityContext("world", authn.ScopeObserve, authn.ScopeWrite),
+			want: true,
+		},
+		"single member without write scope": {
+			ctx:  privateVisibilityContext("world", authn.ScopeObserve),
+			want: false,
+		},
+		"ambiguous multi-agent token": {
+			ctx: authn.WithMode(authn.WithClaims(context.Background(), authn.NewStaticClaims(authn.TokenConfig{
+				ID:     "shared",
+				Scopes: []authn.Scope{authn.ScopeObserve, authn.ScopeWrite},
+				Agents: []string{"world", "other"},
+			})), authn.ModeBearer),
+			want: false,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			room, err := service.GetRoomContext(test.ctx, "team")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if room.Access == nil || room.Access.CanWrite != test.want {
+				t.Fatalf("room access = %#v, want can_write=%v", room.Access, test.want)
+			}
+		})
+	}
+}
+
 func TestRestrictedVisibilityCoversRoomsMessagesThreadsAndDMs(t *testing.T) {
 	service := newTestService()
 	for _, room := range []protocol.CreateRoomRequest{

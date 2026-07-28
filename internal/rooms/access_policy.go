@@ -187,13 +187,14 @@ func normalizedAgentIdentity(defaultNetworkID, value string) (string, string) {
 
 func actorFromClaims(ctx context.Context) protocol.Actor {
 	claims, ok := authn.ClaimsFromContext(ctx)
-	if !ok || !claims.AgentToken() {
+	if !ok || !claims.Allows(authn.ScopeWrite) {
 		return protocol.Actor{}
 	}
-	for _, agentID := range claims.AgentIDs() {
-		return protocol.Actor{Type: "agent", ID: agentID}
+	agentIDs := claims.AgentIDs()
+	if len(agentIDs) != 1 {
+		return protocol.Actor{}
 	}
-	return protocol.Actor{}
+	return protocol.Actor{Type: "agent", ID: agentIDs[0]}
 }
 
 func roomAccessReason(ctx context.Context, room protocol.Room) string {
