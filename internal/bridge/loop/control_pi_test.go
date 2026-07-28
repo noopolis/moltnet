@@ -17,6 +17,7 @@ func TestRunControlLoopPublishesPiControlResponse(t *testing.T) {
 	t.Parallel()
 
 	var published protocol.SendMessageRequest
+	var delivered controlRequest
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	event := protocol.Event{
 		ID:        "evt_1",
@@ -77,6 +78,9 @@ func TestRunControlLoopPublishesPiControlResponse(t *testing.T) {
 	defer moltnetServer.Close()
 
 	controlServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if err := json.NewDecoder(request.Body).Decode(&delivered); err != nil {
+			t.Fatalf("decode control request: %v", err)
+		}
 		response.Header().Set("Content-Type", "application/json")
 		_, _ = response.Write([]byte(`{"from":"researcher","message":"@writer received"}`))
 	}))
@@ -108,6 +112,12 @@ func TestRunControlLoopPublishesPiControlResponse(t *testing.T) {
 	// chain back to the wake that produced it.
 	if len(published.CauseEventIDs) != 1 || published.CauseEventIDs[0] != protocol.MessageEventID("msg_1") {
 		t.Fatalf("expected cause_event_ids [%q], got %#v", protocol.MessageEventID("msg_1"), published.CauseEventIDs)
+	}
+	if delivered.Message != "[room research] Writer\n@researcher ping" {
+		t.Fatalf("expected human-facing rendered delivery, got %q", delivered.Message)
+	}
+	if delivered.TransportText != "@researcher ping" {
+		t.Fatalf("expected exact message body as transport_text, got %q", delivered.TransportText)
 	}
 }
 

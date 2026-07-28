@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -399,18 +400,17 @@ func TestSendControlMessageErrors(t *testing.T) {
 func TestSendControlMessageUsesStableDMContextID(t *testing.T) {
 	t.Parallel()
 
-	var requestBody string
+	var requestBody controlRequest
 	controlServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		defer request.Body.Close()
-		body, err := io.ReadAll(request.Body)
-		if err != nil {
-			t.Fatalf("read control body: %v", err)
+		if err := json.NewDecoder(request.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode control body: %v", err)
 		}
-		requestBody = string(body)
 		response.Header().Set("Content-Type", "application/json")
 		_, _ = response.Write([]byte(`{"from":"researcher","message":"ok"}`))
 	}))
 	defer controlServer.Close()
+	const envelope = `{"decision_token":"opaque","run_id":"run-1","tick":7,"version":"simfile.world-nudge.v1"}`
 
 	_, err := sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{
 		Agent: bridgeconfig.AgentConfig{ID: "researcher"},
@@ -429,7 +429,7 @@ func TestSendControlMessageUsesStableDMContextID(t *testing.T) {
 				ParticipantIDs: []string{"orchestrator", "researcher"},
 			},
 			From:      protocol.Actor{Type: "agent", ID: "writer"},
-			Parts:     []protocol.Part{{Kind: "text", Text: "hello"}},
+			Parts:     []protocol.Part{{Kind: "text", Text: envelope}},
 			CreatedAt: time.Now().UTC(),
 		},
 	})
@@ -437,8 +437,14 @@ func TestSendControlMessageUsesStableDMContextID(t *testing.T) {
 		t.Fatalf("sendControlMessage() error = %v", err)
 	}
 
-	if !strings.Contains(requestBody, "\"context_id\":\"moltnet:local:dm:dm-orchestrator-researcher\"") {
-		t.Fatalf("expected stable dm context id, got %q", requestBody)
+	if requestBody.ContextID != "moltnet:local:dm:dm-orchestrator-researcher" {
+		t.Fatalf("expected stable dm context id, got %q", requestBody.ContextID)
+	}
+	if requestBody.Message != "[dm] writer\n"+envelope {
+		t.Fatalf("expected human-facing rendered DM, got %q", requestBody.Message)
+	}
+	if requestBody.TransportText != envelope {
+		t.Fatalf("expected machine envelope without display prefix, got %q", requestBody.TransportText)
 	}
 }
 
