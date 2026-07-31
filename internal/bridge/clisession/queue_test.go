@@ -5,16 +5,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
-	"time"
 
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 type pacedStreamer struct {
-	events     []protocol.Event
-	afterFirst func()
+	events      []protocol.Event
+	afterFirst  func()
+	afterEvents func()
 }
 
 func (s pacedStreamer) StreamEventsReady(
@@ -34,6 +35,9 @@ func (s pacedStreamer) StreamEventsReady(
 			s.afterFirst()
 		}
 	}
+	if s.afterEvents != nil {
+		s.afterEvents()
+	}
 	return nil
 }
 
@@ -47,7 +51,26 @@ func TestRunnerQueuesMessagesWhileRuntimeIsActive(t *testing.T) {
 	}
 
 	logPath := filepath.Join(tempDir, "runtime.log")
-	scriptPath := writeSlowPromptRuntimeScript(t, logPath)
+	runtimeStartedPath := filepath.Join(tempDir, "runtime-started")
+	runtimeReleasePath := filepath.Join(tempDir, "runtime-release")
+
+	// Use a two-way named-pipe handshake instead of polling runtime.log.
+	// Child-process startup can exceed a short wall-clock deadline under
+	// parallel package load. The start signal proves the first command is
+	// executing, and the release signal keeps it active until both later
+	// events have been queued.
+	// If the runtime command fails to start, the blocking pipe operations hang
+	// until the go test timeout; the resulting goroutine dump is the intended
+	// diagnostic. This is a deliberate trade for determinism.
+	makeNamedPipe(t, runtimeStartedPath)
+	makeNamedPipe(t, runtimeReleasePath)
+
+	scriptPath := writeBlockedPromptRuntimeScript(
+		t,
+		logPath,
+		runtimeStartedPath,
+		runtimeReleasePath,
+	)
 	config := bridgeconfig.Config{
 		Agent:   bridgeconfig.AgentConfig{ID: "claude_bot", Name: "Claude Bot"},
 		Moltnet: bridgeconfig.MoltnetConfig{BaseURL: "http://moltnet", NetworkID: "local_lab"},
@@ -70,7 +93,12 @@ func TestRunnerQueuesMessagesWhileRuntimeIsActive(t *testing.T) {
 	streamer := pacedStreamer{
 		events: events,
 		afterFirst: func() {
-			waitForFileContains(t, logPath, "START")
+			if got := readNamedPipe(t, runtimeStartedPath); got != "START\n" {
+				t.Fatalf("runtime start signal = %q, want %q", got, "START\n")
+			}
+		},
+		afterEvents: func() {
+			writeNamedPipe(t, runtimeReleasePath, "release\n")
 		},
 	}
 
@@ -118,33 +146,28 @@ func messageEvent(eventID string, messageID string, text string) protocol.Event 
 	}
 }
 
-func writeSlowPromptRuntimeScript(t *testing.T, logPath string) string {
+func writeBlockedPromptRuntimeScript(
+	t *testing.T,
+	logPath string,
+	runtimeStartedPath string,
+	runtimeReleasePath string,
+) string {
 	t.Helper()
 
 	scriptPath := filepath.Join(t.TempDir(), "runtime")
 	script := "#!/bin/sh\n" +
 		"printf 'START %s %s\\n' \"$2\" \"$3\" >>" + shellEscapeForTest(logPath) + "\n" +
+		"if [ \"$3\" = \"false\" ]; then\n" +
+		"  printf 'START\\n' >" + shellEscapeForTest(runtimeStartedPath) + "\n" +
+		"  read -r _ <" + shellEscapeForTest(runtimeReleasePath) + "\n" +
+		"fi\n" +
 		"cat >>" + shellEscapeForTest(logPath) + "\n" +
 		"printf '\\nEND %s\\n' \"$2\" >>" + shellEscapeForTest(logPath) + "\n" +
-		"sleep 0.15\n" +
 		"printf 'session_id=%s\\n' \"$2\"\n"
 	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
 	return scriptPath
-}
-
-func waitForFileContains(t *testing.T, path string, text string) {
-	t.Helper()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if strings.Contains(readFileIfExists(path), text) {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %q in %s:\n%s", text, path, readFileIfExists(path))
 }
 
 func readFile(t *testing.T, path string) string {
@@ -157,10 +180,36 @@ func readFile(t *testing.T, path string) string {
 	return string(bytes)
 }
 
-func readFileIfExists(path string) string {
+func makeNamedPipe(t *testing.T, path string) {
+	t.Helper()
+
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Fatalf("make named pipe %s: %v", path, err)
+	}
+}
+
+func readNamedPipe(t *testing.T, path string) string {
+	t.Helper()
+
 	bytes, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		t.Fatalf("read named pipe %s: %v", path, err)
 	}
 	return string(bytes)
+}
+
+func writeNamedPipe(t *testing.T, path string, text string) {
+	t.Helper()
+
+	file, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open named pipe %s for writing: %v", path, err)
+	}
+	if _, err := file.WriteString(text); err != nil {
+		_ = file.Close()
+		t.Fatalf("write named pipe %s: %v", path, err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close named pipe %s: %v", path, err)
+	}
 }
