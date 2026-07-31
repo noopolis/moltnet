@@ -23,8 +23,11 @@ func newTestCausalEvent(runID, streamID string, cause []string) protocol.CausalE
 			System:   protocol.CausalSystemMoltnet,
 			StreamID: streamID,
 		},
-		Type:          protocol.EventTypeMessageAccepted,
-		PrincipalID:   "token:writer",
+		Type: protocol.EventTypeMessageAccepted,
+		// PrincipalID must satisfy specs/CAUSAL.md §3: agent:, operator:, or system:.
+		// This grammar is a cross-repo contract owned by burnlist item B169 and
+		// MUST NOT be widened to make a test pass.
+		PrincipalID:   "agent:writer",
 		RecordedAt:    time.Now().UTC(),
 		CauseEventIDs: cause,
 		Payload:       json.RawMessage(`{"message_id":"msg_1"}`),
