@@ -125,11 +125,7 @@ func (e CausalEvent) Validate() error {
 		if strings.TrimSpace(causeID) == "" {
 			return fmt.Errorf("causal event: cause_event_ids[%d] must not be empty", index)
 		}
-		causeSystem, _, ok := splitCausalEventID(causeID)
-		if !ok {
-			return fmt.Errorf("causal event: cause_event_ids[%d] invalid event_id", index)
-		}
-		if !causalSystemRecognized(causeSystem) {
+		if _, _, ok := parseCausalCauseID(causeID); !ok {
 			return fmt.Errorf("causal event: cause_event_ids[%d] invalid event_id", index)
 		}
 		if _, seen := seenCauses[causeID]; seen {

@@ -143,6 +143,30 @@ func TestCausalEventValidateRejectsBlankCauseEventID(t *testing.T) {
 	}
 }
 
+func TestCausalEventValidateAcceptsForeignCauseNamespace(t *testing.T) {
+	event := validCausalEvent(t)
+	event.CauseEventIDs = []string{"driver:turn:7"}
+	if err := event.Validate(); err != nil {
+		t.Fatalf("expected foreign cause namespace acceptance, got %v", err)
+	}
+}
+
+func TestCausalEventValidateRejectsBareCauseEventID(t *testing.T) {
+	event := validCausalEvent(t)
+	event.CauseEventIDs = []string{"fixture-turn-1"}
+	if err := event.Validate(); err == nil {
+		t.Fatal("expected error for bare cause_event_ids entry")
+	}
+}
+
+func TestCausalEventValidateRejectsDuplicateCauseEventIDs(t *testing.T) {
+	event := validCausalEvent(t)
+	event.CauseEventIDs = []string{"driver:turn:7", "driver:turn:7"}
+	if err := event.Validate(); err == nil {
+		t.Fatal("expected error for duplicate cause_event_ids entries")
+	}
+}
+
 func TestCausalEventValidateRejectsEmptyPayload(t *testing.T) {
 	event := validCausalEvent(t)
 	event.Payload = nil

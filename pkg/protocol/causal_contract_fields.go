@@ -18,6 +18,18 @@ func parseCausalEventID(raw string) (system string, local string, ok bool) {
 	return system, raw[index+1:], true
 }
 
+// parseCausalCauseID splits a cause id at the first colon. Per B169 D4 a
+// cause id is RECONCILIATION content with an OPEN namespace: foreign
+// namespaces are legal and must not be checked against
+// causalSystemRecognized.
+func parseCausalCauseID(raw string) (namespace string, local string, ok bool) {
+	index := strings.Index(raw, ":")
+	if index <= 0 || index == len(raw)-1 {
+		return "", "", false
+	}
+	return raw[:index], raw[index+1:], true
+}
+
 func asObject(value any) (map[string]any, error) {
 	record, ok := value.(map[string]any)
 	if !ok {

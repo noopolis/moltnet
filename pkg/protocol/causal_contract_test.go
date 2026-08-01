@@ -24,6 +24,37 @@ func TestParseCausalEventValidatesCanonicalEnvelopeFields(t *testing.T) {
 	}
 }
 
+func TestParseCausalEventCauseIDsUseOpenNamespaces(t *testing.T) {
+	raw := map[string]any{
+		"version":         CausalEventVersion,
+		"run_id":          "run_1",
+		"event_id":        "moltnet:e1",
+		"emitter":         map[string]any{"system": "moltnet", "stream_id": "network:room-1", "seq": 1},
+		"type":            "message.accepted",
+		"principal_id":    "agent:writer",
+		"recorded_at":     "2026-07-09T00:00:00.000Z",
+		"cause_event_ids": []any{"driver:turn:7"},
+		"payload":         map[string]any{"message_id": "m1"},
+	}
+	parsed, err := ParseCausalEvent(raw)
+	if err != nil {
+		t.Fatalf("expected foreign cause namespace acceptance, got %v", err)
+	}
+	if len(parsed.CauseEventIDs) != 1 || parsed.CauseEventIDs[0] != "driver:turn:7" {
+		t.Fatalf("foreign cause did not survive parsing: %#v", parsed.CauseEventIDs)
+	}
+
+	raw["cause_event_ids"] = []any{"fixture-turn-1"}
+	if _, err := ParseCausalEvent(raw); err == nil {
+		t.Fatal("expected bare cause id rejection")
+	}
+
+	raw["cause_event_ids"] = []any{"driver:turn:7", "driver:turn:7"}
+	if _, err := ParseCausalEvent(raw); err == nil {
+		t.Fatal("expected duplicate cause id rejection")
+	}
+}
+
 func TestParseCausalStreamFinalValidatesSequence(t *testing.T) {
 	raw := map[string]any{
 		"version":   CausalStreamFinalVersion,
