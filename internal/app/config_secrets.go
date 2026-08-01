@@ -15,12 +15,40 @@ func validatePairings(pairings []protocol.Pairing) error {
 		if strings.TrimSpace(pairing.ID) == "" {
 			return fmt.Errorf("%s.id is required", name)
 		}
-		if strings.TrimSpace(pairing.RemoteBaseURL) == "" {
-			return fmt.Errorf("%s.remote_base_url is required", name)
+		hasRemoteBaseURL := strings.TrimSpace(pairing.RemoteBaseURL) != ""
+		hasRelayURL := pairing.Relay != nil && strings.TrimSpace(pairing.Relay.URL) != ""
+		if hasRemoteBaseURL && hasRelayURL {
+			return fmt.Errorf("%s has conflicting remote_base_url and relay.url; exactly one is allowed", name)
 		}
-		if err := validateRemoteURL(name+".remote_base_url", pairing.RemoteBaseURL); err != nil {
+		if !hasRemoteBaseURL && !hasRelayURL {
+			return fmt.Errorf("%s requires exactly one of remote_base_url or relay.url", name)
+		}
+		if hasRemoteBaseURL {
+			if err := validateRemoteURL(name+".remote_base_url", pairing.RemoteBaseURL); err != nil {
+				return err
+			}
+		} else if err := validateRelayURL(name+".relay.url", pairing.Relay.URL); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func validateRelayURL(name string, value string) error {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("%s is invalid: %w", name, err)
+	}
+
+	switch parsed.Scheme {
+	case "ws", "wss":
+	default:
+		return fmt.Errorf("%s scheme %q is unsupported", name, parsed.Scheme)
+	}
+
+	if parsed.Host == "" {
+		return fmt.Errorf("%s host is required", name)
 	}
 
 	return nil

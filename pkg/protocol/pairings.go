@@ -10,6 +10,11 @@ const (
 	PairingStatusUnknown      = "unknown"
 )
 
+type PairingRelay struct {
+	URL  string `json:"url" yaml:"url"`
+	Room string `json:"room,omitempty" yaml:"room,omitempty"`
+}
+
 type PairingDiagnostics struct {
 	CheckedAt       time.Time        `json:"checked_at,omitempty" yaml:"checked_at,omitempty"`
 	RemoteVersion   string           `json:"remote_version,omitempty" yaml:"remote_version,omitempty"`

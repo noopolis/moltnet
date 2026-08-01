@@ -4,7 +4,38 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
+
+func TestPairingRelayJSONAndYAMLRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	want := Pairing{ID: "pair", Relay: &PairingRelay{URL: "wss://relay.example.com", Room: "lobby"}}
+	jsonBytes, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var gotJSON Pairing
+	if err := json.Unmarshal(jsonBytes, &gotJSON); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if gotJSON.Relay == nil || *gotJSON.Relay != *want.Relay {
+		t.Fatalf("JSON relay = %#v, want %#v", gotJSON.Relay, want.Relay)
+	}
+
+	yamlBytes, err := yaml.Marshal(want)
+	if err != nil {
+		t.Fatalf("yaml.Marshal() error = %v", err)
+	}
+	var gotYAML Pairing
+	if err := yaml.Unmarshal(yamlBytes, &gotYAML); err != nil {
+		t.Fatalf("yaml.Unmarshal() error = %v", err)
+	}
+	if gotYAML.Relay == nil || *gotYAML.Relay != *want.Relay {
+		t.Fatalf("YAML relay = %#v, want %#v", gotYAML.Relay, want.Relay)
+	}
+}
 
 func TestValidateTarget(t *testing.T) {
 	t.Parallel()

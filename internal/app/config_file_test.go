@@ -113,6 +113,46 @@ storage:
 	}
 }
 
+func TestDecodeStrictConfigWithPairingRelay(t *testing.T) {
+	t.Parallel()
+
+	fixtures := []struct {
+		name string
+		path string
+		data []byte
+	}{
+		{
+			name: "yaml",
+			path: "moltnet.yaml",
+			data: []byte("version: moltnet.v1\npairings:\n  - id: pair_relay\n    relay:\n      url: wss://relay.example.com\n      room: lobby\n"),
+		},
+		{
+			name: "json",
+			path: "moltnet.json",
+			data: []byte(`{"version":"moltnet.v1","pairings":[{"id":"pair_relay","relay":{"url":"wss://relay.example.com","room":"lobby"}}]}`),
+		},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			var config rawConfigFile
+			if err := decodeConfigBytes(fixture.path, fixture.data, &config); err != nil {
+				t.Fatalf("decodeConfigBytes() error = %v", err)
+			}
+			if err := validateConfigFile(config); err != nil {
+				t.Fatalf("validateConfigFile() error = %v", err)
+			}
+			if config.Pairings[0].Relay == nil || config.Pairings[0].Relay.Room != "lobby" {
+				t.Fatalf("unexpected relay %#v", config.Pairings[0].Relay)
+			}
+		})
+	}
+
+	var strictJSON rawConfigFile
+	if err := decodeJSONConfig([]byte(`{"pairings":[{"id":"pair","relay":{"url":"wss://relay.example.com","unknown":true}}]}`), &strictJSON); err == nil {
+		t.Fatal("decodeJSONConfig accepted unknown relay field")
+	}
+}
+
 func TestValidateAuthConfig(t *testing.T) {
 	t.Parallel()
 

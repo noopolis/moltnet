@@ -165,6 +165,7 @@ type Pairing struct {
 	RemoteNetworkID   string              `json:"remote_network_id" yaml:"remote_network_id"`
 	RemoteNetworkName string              `json:"remote_network_name,omitempty" yaml:"remote_network_name,omitempty"`
 	RemoteBaseURL     string              `json:"remote_base_url,omitempty" yaml:"remote_base_url,omitempty"`
+	Relay             *PairingRelay       `json:"relay,omitempty" yaml:"relay,omitempty"`
 	Status            string              `json:"status,omitempty" yaml:"status,omitempty"`
 	Diagnostics       *PairingDiagnostics `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
 	Token             string              `json:"token,omitempty" yaml:"token,omitempty"`
