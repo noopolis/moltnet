@@ -15,6 +15,8 @@ type RelayEnvelope = {
 
 const POLICY_VIOLATION = 1008;
 const ROOM_FULL = 1013;
+// Routing headers are deliberately small; this bounds newline searches on text frames.
+const MAX_ROUTING_HEADER_BYTES = 8192;
 
 /**
  * An intentionally opaque, two-party transport relay. The only decoded fields
@@ -23,7 +25,8 @@ const ROOM_FULL = 1013;
 export class RelayRoom extends Server<RelayEnv> {
   static options = { hibernate: false };
 
-  private readonly networks = new Map<string, string>();
+  private readonly admittedPeers = new Set<Connection>();
+  private readonly networks = new Map<Connection, string>();
 
   onConnect(connection: Connection, context: ConnectionContext) {
     if (!hasBearerToken(context.request, this.env.RELAY_TOKEN)) {
@@ -31,14 +34,20 @@ export class RelayRoom extends Server<RelayEnv> {
       return;
     }
 
-    if (this.otherConnectionCount(connection) >= 2) {
-      // PartyServer awaits this hook before returning the upgrade response.
-      // Defer the frame until the client socket has been established.
+    if (this.admittedPeers.size >= 2) {
+      // Defer until upgrade completes; safe because refused connections are never admitted peers.
       setTimeout(() => connection.close(ROOM_FULL, "relay room already has two peers"), 0);
+      return;
     }
+
+    this.admittedPeers.add(connection);
   }
 
   onMessage(connection: Connection, message: WSMessage) {
+    if (!this.admittedPeers.has(connection)) {
+      return;
+    }
+
     const envelope = decodeEnvelope(message);
     if (envelope === undefined) {
       return;
@@ -47,7 +56,7 @@ export class RelayRoom extends Server<RelayEnv> {
     if (envelope.t === "hello") {
       const network = claimedNetwork(envelope);
       if (network !== undefined) {
-        this.networks.set(connection.id, network);
+        this.networks.set(connection, network);
       }
       return;
     }
@@ -56,29 +65,26 @@ export class RelayRoom extends Server<RelayEnv> {
       return;
     }
 
-    this.peerFor(connection, routingNetwork(envelope))?.send(message);
+    const peer = this.peerFor(connection, routingNetwork(envelope));
+    if (peer !== undefined && this.admittedPeers.has(peer)) {
+      peer.send(message);
+    }
   }
 
   onClose(connection: Connection) {
-    this.networks.delete(connection.id);
-  }
-
-  private otherConnectionCount(connection: Connection) {
-    let count = 0;
-    for (const candidate of this.getConnections()) {
-      if (candidate.id !== connection.id) {
-        count += 1;
-      }
-    }
-    return count;
+    this.admittedPeers.delete(connection);
+    this.networks.delete(connection);
   }
 
   private peerFor(connection: Connection, targetNetwork: string | undefined) {
-    for (const candidate of this.getConnections()) {
-      if (candidate.id === connection.id) {
+    for (const candidate of this.admittedPeers) {
+      if (candidate === connection) {
         continue;
       }
-      if (targetNetwork === undefined || this.networks.get(candidate.id) === targetNetwork) {
+      if (
+        this.admittedPeers.has(candidate) &&
+        (targetNetwork === undefined || this.networks.get(candidate) === targetNetwork)
+      ) {
         return candidate;
       }
     }
@@ -109,12 +115,45 @@ function decodeEnvelope(message: WSMessage): RelayEnvelope | undefined {
   if (typeof message !== "string") {
     return undefined;
   }
+
+  const headerEnd = routingHeaderEnd(message);
+  if (headerEnd === undefined) {
+    return undefined;
+  }
+
   try {
-    const parsed: unknown = JSON.parse(message);
+    const parsed: unknown = JSON.parse(message.slice(0, headerEnd));
     return isRecord(parsed) ? parsed : undefined;
   } catch {
     return undefined;
   }
+}
+
+function routingHeaderEnd(message: string) {
+  let bytes = 0;
+  for (let index = 0; index < message.length; ) {
+    if (message.charCodeAt(index) === 10) {
+      return index;
+    }
+
+    const codePoint = message.codePointAt(index);
+    if (codePoint === undefined) {
+      return undefined;
+    }
+    bytes += utf8ByteLength(codePoint);
+    if (bytes > MAX_ROUTING_HEADER_BYTES) {
+      return undefined;
+    }
+    index += codePoint > 0xffff ? 2 : 1;
+  }
+  return message.length;
+}
+
+function utf8ByteLength(codePoint: number) {
+  if (codePoint <= 0x7f) return 1;
+  if (codePoint <= 0x7ff) return 2;
+  if (codePoint <= 0xffff) return 3;
+  return 4;
 }
 
 function claimedNetwork(envelope: RelayEnvelope) {

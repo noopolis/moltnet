@@ -31,7 +31,7 @@ test.after(async () => {
   await once(worker, "exit");
 });
 
-test("relays opaque req and res frames between exactly two authenticated peers", async (t) => {
+test("relays opaque header-and-payload req and res frames byte-for-byte", async (t) => {
   const first = await RawWebSocket.connect({ token });
   const second = await RawWebSocket.connect({ token });
   t.after(() => first.close());
@@ -41,40 +41,99 @@ test("relays opaque req and res frames between exactly two authenticated peers",
   second.send(JSON.stringify({ t: "hello", network: "network-b" }));
   await new Promise((resolve) => setTimeout(resolve, 20));
 
-  // This is deliberately invalid JSON. It is valid only as an opaque body
-  // string, so a relay that attempts to decode the body cannot round-trip it.
-  const request = JSON.stringify({
-    t: "req",
-    id: "opaque-request",
-    to: "network-b",
-    body: '{"unclosed":'
-  });
+  // Only the header before the newline is JSON. This payload must remain opaque.
+  const request =
+    '{ "to" : "network-b", "id" : "opaque-request", "t" : "req" }\n{"unclosed": <<< \u0000';
   first.send(request);
   assert.equal(await second.nextText(), request);
 
-  const response = JSON.stringify({
-    t: "res",
-    id: "opaque-request",
-    to: "network-a",
-    body: "not a protocol payload: >>>"
-  });
+  const response =
+    '{"t":"res","id":"opaque-request","to":"network-a"}\nnot a protocol payload: >>>';
   second.send(response);
   assert.equal(await first.nextText(), response);
 });
 
-test("refuses invalid bearer tokens and a third peer", async (t) => {
-  await assert.rejects(RawWebSocket.connect({ token: "wrong-token" }), /401 Unauthorized/);
-
-  const first = await RawWebSocket.connect({ token, room: "capacity" });
-  const second = await RawWebSocket.connect({ token, room: "capacity" });
-  const third = await RawWebSocket.connect({ token, room: "capacity" });
+test("a third peer can never relay a frame to either admitted peer", async (t) => {
+  const first = await RawWebSocket.connect({ token, room: "strict-capacity" });
+  const second = await RawWebSocket.connect({ token, room: "strict-capacity" });
   t.after(() => first.close());
   t.after(() => second.close());
-  t.after(() => third.close());
 
-  const closed = await third.nextClose();
-  assert.equal(closed.code, 1013);
+  first.send(JSON.stringify({ t: "hello", network: "network-a" }));
+  second.send(JSON.stringify({ t: "hello", network: "network-b" }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const third = await RawWebSocket.connect({ token, room: "strict-capacity" });
+  t.after(() => third.close());
+  // Header-only frames are valid in both wire formats, so old vulnerable relays
+  // would route this rather than rejecting it merely because parsing failed.
+  const forbidden = JSON.stringify({ t: "req", id: "third-peer", to: "network-a" });
+  third.send(forbidden);
+
+  await Promise.all([assertNoText(first), assertNoText(second)]);
+  assert.equal((await third.nextClose()).code, 1013);
 });
+
+test("drops a routing header larger than 8192 bytes", async (t) => {
+  const first = await RawWebSocket.connect({ token, room: "oversized-routing-header" });
+  const second = await RawWebSocket.connect({ token, room: "oversized-routing-header" });
+  t.after(() => first.close());
+  t.after(() => second.close());
+
+  first.send(JSON.stringify({ t: "hello", network: "network-a" }));
+  second.send(JSON.stringify({ t: "hello", network: "network-b" }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  // This complete JSON header deliberately has no newline and is over the
+  // 8192-byte routing-header limit; it must be dropped before unbounded scanning.
+  const oversized = JSON.stringify({
+    t: "req",
+    id: "oversized-header",
+    to: "network-b",
+    padding: "x".repeat(8_192)
+  });
+  first.send(oversized);
+
+  await assertNoText(second);
+});
+
+test("a colliding _pk cannot join, displace peers, or relay", async (t) => {
+  const first = await RawWebSocket.connect({
+    token,
+    room: "pk-collision",
+    connectionId: "first-admitted-peer"
+  });
+  const second = await RawWebSocket.connect({ token, room: "pk-collision" });
+  t.after(() => first.close());
+  t.after(() => second.close());
+
+  const colliding = await RawWebSocket.connect({
+    token,
+    room: "pk-collision",
+    connectionId: "first-admitted-peer"
+  });
+  t.after(() => colliding.close());
+  colliding.send('{"t":"req","id":"collision-attempt"}\nignored');
+
+  await Promise.all([assertNoText(first), assertNoText(second)]);
+  assert.equal((await colliding.nextClose()).code, 1013);
+
+  const request = '{"t":"req","id":"original-peers-still-connected"}\nping';
+  first.send(request);
+  assert.equal(await second.nextText(), request);
+
+  const response = '{"t":"res","id":"original-peers-still-connected"}\npong';
+  second.send(response);
+  assert.equal(await first.nextText(), response);
+});
+
+test("refuses invalid bearer tokens", async () => {
+  await assert.rejects(RawWebSocket.connect({ token: "wrong-token" }), /401 Unauthorized/);
+});
+
+async function assertNoText(socket) {
+  await assert.rejects(socket.nextText(300), /timed out waiting for text frame/);
+}
 
 async function waitForWorker() {
   const deadline = Date.now() + 30_000;
@@ -115,13 +174,13 @@ class RawWebSocket {
   #events = [];
   #waiters = [];
 
-  static async connect({ token: bearerToken, room = "opaque" }) {
+  static async connect({ token: bearerToken, room = "opaque", connectionId }) {
     const socket = net.connect(port, host);
     await once(socket, "connect");
 
     const key = randomBytes(16).toString("base64");
     const request = [
-      `GET /parties/relay-room/${room} HTTP/1.1`,
+      `GET /parties/relay-room/${room}${connectionId ? `?_pk=${encodeURIComponent(connectionId)}` : ""} HTTP/1.1`,
       `Host: ${host}:${port}`,
       "Upgrade: websocket",
       "Connection: Upgrade",
@@ -161,28 +220,40 @@ class RawWebSocket {
     this.#socket.write(Buffer.concat([header, mask, body]));
   }
 
-  async nextText() {
-    const event = await this.#next("text");
+  async nextText(timeoutMs = 3000) {
+    const event = await this.#next("text", timeoutMs);
     return event.text;
   }
 
-  async nextClose() {
-    return this.#next("close");
+  async nextClose(timeoutMs = 3000) {
+    return this.#next("close", timeoutMs);
   }
 
   close() {
     if (!this.#socket.destroyed) this.#socket.end(Buffer.from([0x88, 0x80, 0, 0, 0, 0]));
   }
 
-  #next(type) {
+  #next(type, timeoutMs) {
     const existing = this.#events.findIndex((event) => event.type === type);
     if (existing >= 0) return Promise.resolve(this.#events.splice(existing, 1)[0]);
-    return new Promise((resolve, reject) => this.#waiters.push({ type, resolve, reject }));
+    return new Promise((resolve, reject) => {
+      const waiter = { type, resolve, reject, timeout: undefined };
+      waiter.timeout = setTimeout(() => {
+        const index = this.#waiters.indexOf(waiter);
+        if (index >= 0) this.#waiters.splice(index, 1);
+        reject(new Error(`timed out waiting for ${type} frame after ${timeoutMs}ms`));
+      }, timeoutMs);
+      this.#waiters.push(waiter);
+    });
   }
 
   #emit(event) {
     const waiter = this.#waiters.findIndex((candidate) => candidate.type === event.type);
-    if (waiter >= 0) this.#waiters.splice(waiter, 1)[0].resolve(event);
+    if (waiter >= 0) {
+      const next = this.#waiters.splice(waiter, 1)[0];
+      clearTimeout(next.timeout);
+      next.resolve(event);
+    }
     else this.#events.push(event);
   }
 
