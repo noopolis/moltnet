@@ -108,7 +108,7 @@ func ParseCausalEvent(value any) (CausalEvent, error) {
 			return CausalEvent{}, fmt.Errorf("invalid causal event: duplicate cause_event_ids entry %q", causeID)
 		}
 		seenCause[causeID] = struct{}{}
-		if _, _, ok := parseCausalEventID(causeID); !ok {
+		if _, _, ok := parseCausalCauseID(causeID); !ok {
 			return CausalEvent{}, fmt.Errorf("invalid causal event: cause_event_ids[%d]: %q", index, causeID)
 		}
 	}
