@@ -30,7 +30,7 @@ func (s *Service) ListRoomsContext(ctx context.Context, page protocol.PageReques
 
 	items := make([]roomItem, 0, len(rooms))
 	for _, room := range rooms {
-		if readable, ok := s.readableRoom(ctx, room); ok {
+		if readable, ok := s.readableRoom(ctx, room); ok && s.roomVisibleToPairScopedContext(ctx, readable) {
 			items = append(items, roomItem{Room: readable})
 		}
 	}

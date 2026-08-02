@@ -193,6 +193,20 @@ func (s *Service) findPairing(pairingID string) (protocol.Pairing, error) {
 	return protocol.Pairing{}, unknownPairingError(pairingID)
 }
 
+// findPairingByRemoteNetwork resolves an inbound pairing credential without
+// depending on a configured transport client.
+func (s *Service) findPairingByRemoteNetwork(remoteNetworkID string) (protocol.Pairing, error) {
+	remoteNetworkID = strings.TrimSpace(remoteNetworkID)
+	s.pairingsMu.RLock()
+	defer s.pairingsMu.RUnlock()
+	for _, pairing := range s.pairings {
+		if strings.TrimSpace(pairing.RemoteNetworkID) == remoteNetworkID {
+			return pairing, nil
+		}
+	}
+	return protocol.Pairing{}, unknownPairingError(remoteNetworkID)
+}
+
 func (s *Service) snapshotPairings() []protocol.Pairing {
 	return s.snapshotPairingsWithTokenPolicy(false)
 }

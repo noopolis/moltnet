@@ -201,6 +201,24 @@ func TestValidateRoomPolicyConfig(t *testing.T) {
 	}
 }
 
+func TestPairedConfigurationsRequireAnExplicitRoomFederationStance(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "Moltnet")
+	writeConfigFile(t, path, `
+version: moltnet.v1
+pairings:
+  - id: pair_remote
+    remote_network_id: remote
+    remote_base_url: https://remote.example
+rooms:
+  - id: private
+`)
+	if _, err := LoadFile(path, "test"); err == nil {
+		t.Fatal("LoadFile accepted paired room without an explicit federation stance")
+	}
+}
+
 func TestValidateConsoleConfig(t *testing.T) {
 	t.Parallel()
 

@@ -14,7 +14,7 @@ func TestPairTokenCannotImpersonateAnotherPairingsNetwork(t *testing.T) {
 	t.Parallel()
 
 	service := newPairingCredentialBindingTestService()
-	mustCreatePolicyRoom(t, service, "floor", []string{"network-c:member"}, protocol.RoomWritePolicyMembers)
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"network-c:member"})
 	claims := authn.NewStaticClaims(authn.TokenConfig{
 		ID:      "pair-b",
 		Value:   "pair-b-secret",
@@ -40,7 +40,7 @@ func TestPairTokenAcceptsBoundPairingNetwork(t *testing.T) {
 	t.Parallel()
 
 	service := newPairingCredentialBindingTestService()
-	mustCreatePolicyRoom(t, service, "floor", []string{"remote-b:member"}, protocol.RoomWritePolicyMembers)
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"remote-b:member"})
 	claims := authn.NewStaticClaims(authn.TokenConfig{
 		ID:      "pair-b",
 		Value:   "pair-b-secret",
@@ -64,7 +64,7 @@ func TestPairTokenCannotImpersonateAnotherPairingsNetworkAsHuman(t *testing.T) {
 	t.Parallel()
 
 	service := newPairingCredentialBindingTestService()
-	mustCreatePolicyRoom(t, service, "floor", []string{"network-c:member"}, protocol.RoomWritePolicyMembers)
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"network-c:member"})
 	claims := authn.NewStaticClaims(authn.TokenConfig{
 		ID:      "pair-b",
 		Value:   "pair-b-secret",
@@ -89,7 +89,7 @@ func TestPairTokenAcceptsBoundPairingNetworkAsHuman(t *testing.T) {
 	t.Parallel()
 
 	service := newPairingCredentialBindingTestService()
-	mustCreatePolicyRoom(t, service, "floor", []string{"remote-b:member"}, protocol.RoomWritePolicyMembers)
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"remote-b:member"})
 	claims := authn.NewStaticClaims(authn.TokenConfig{
 		ID:      "pair-b",
 		Value:   "pair-b-secret",
@@ -125,6 +125,20 @@ func newPairingCredentialBindingTestService() *Service {
 		Messages: memory,
 		Broker:   events.NewBroker(),
 	})
+}
+
+func mustCreateFederatedPolicyRoom(t *testing.T, service *Service, id string, members []string) {
+	t.Helper()
+
+	_, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          id,
+		Members:     members,
+		WritePolicy: protocol.RoomWritePolicyMembers,
+		Federation:  &protocol.RoomFederation{Mode: protocol.RoomFederationAll},
+	})
+	if err != nil {
+		t.Fatalf("CreateRoom(%s) error = %v", id, err)
+	}
 }
 
 func roomMessageCount(t *testing.T, service *Service, roomID string) int {

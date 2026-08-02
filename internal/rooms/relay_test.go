@@ -38,7 +38,7 @@ func TestServiceRelaysRoomMessagesAcrossPairings(t *testing.T) {
 	}}
 
 	for _, service := range []*Service{serviceA, serviceB} {
-		if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research", Members: []string{"alpha", "beta"}}); err != nil {
+		if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research", Members: []string{"alpha", "beta"}, Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll}}); err != nil {
 			t.Fatalf("CreateRoom() error = %v", err)
 		}
 	}
@@ -108,7 +108,7 @@ func TestServiceRelaysRoomMessagesWithPairingToken(t *testing.T) {
 	}}
 
 	for _, service := range []*Service{serviceA, serviceB} {
-		if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research", Members: []string{"alpha", "beta"}}); err != nil {
+		if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research", Members: []string{"alpha", "beta"}, Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll}}); err != nil {
 			t.Fatalf("CreateRoom() error = %v", err)
 		}
 	}

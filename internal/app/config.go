@@ -55,11 +55,12 @@ type ConsoleAnalyticsConfig struct {
 }
 
 type RoomConfig struct {
-	ID          string   `json:"id" yaml:"id"`
-	Name        string   `json:"name,omitempty" yaml:"name,omitempty"`
-	Members     []string `json:"members,omitempty" yaml:"members,omitempty"`
-	Visibility  string   `json:"visibility,omitempty" yaml:"visibility,omitempty"`
-	WritePolicy string   `json:"write_policy,omitempty" yaml:"write_policy,omitempty"`
+	ID          string                   `json:"id" yaml:"id"`
+	Name        string                   `json:"name,omitempty" yaml:"name,omitempty"`
+	Members     []string                 `json:"members,omitempty" yaml:"members,omitempty"`
+	Visibility  string                   `json:"visibility,omitempty" yaml:"visibility,omitempty"`
+	WritePolicy string                   `json:"write_policy,omitempty" yaml:"write_policy,omitempty"`
+	Federation  *protocol.RoomFederation `json:"federation,omitempty" yaml:"federation,omitempty"`
 }
 
 type StorageConfig struct {

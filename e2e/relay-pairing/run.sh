@@ -152,6 +152,7 @@ auth:
 rooms:
   - id: $room_id
     name: Federated Room
+    federation: all
     members:
       - $member_id
       - $remote_network_id:$remote_member_id

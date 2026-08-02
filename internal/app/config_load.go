@@ -34,7 +34,14 @@ func LoadConfig(version string) (Config, error) {
 		config = mergeFileConfig(config, fileConfig)
 	}
 
-	return mergeEnvConfig(config)
+	config, err = mergeEnvConfig(config)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
+		return Config{}, err
+	}
+	return config, nil
 }
 
 func LoadFile(path string, version string) (Config, error) {
@@ -43,7 +50,11 @@ func LoadFile(path string, version string) (Config, error) {
 		return Config{}, err
 	}
 
-	return mergeFileConfig(defaultConfig(version), fileConfig), nil
+	config := mergeFileConfig(defaultConfig(version), fileConfig)
+	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
+		return Config{}, err
+	}
+	return config, nil
 }
 
 func defaultConfig(version string) Config {

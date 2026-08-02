@@ -133,6 +133,9 @@ func (s *Service) shouldRelayToPairing(pairing protocol.Pairing, message protoco
 	if !s.pairingRelayAllowed(pairing, message) {
 		return false
 	}
+	if !s.pairingMatchesRelayTarget(pairing, message) {
+		return false
+	}
 
 	if message.Target.Kind != protocol.TargetKindDM {
 		return true
@@ -228,8 +231,13 @@ func (s *Service) setPairingRelaySuccess(pairingID string) {
 }
 
 func (s *Service) pairingMatchesRelayTarget(pairing protocol.Pairing, message protocol.Message) bool {
-	if message.Target.Kind != protocol.TargetKindDM {
-		return true
+	if message.Target.Kind == protocol.TargetKindRoom || message.Target.Kind == protocol.TargetKindThread {
+		room, err := s.roomForWrite(context.Background(), message.Target)
+		// SendMessageContext has already verified persisted room and thread
+		// targets before a real relay reaches this point. Preserve the transport
+		// eligibility helper's behavior for synthetic messages while enforcing
+		// federation whenever there is a stored room to inspect.
+		return err != nil || protocol.RoomFederationAllows(room.Federation, pairing.ID)
 	}
 
 	for _, participantID := range message.Target.ParticipantIDs {

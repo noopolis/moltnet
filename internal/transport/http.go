@@ -61,11 +61,9 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 	attachDiscoveryRoutes(mux, policy, service)
 	sseLimiter := newStreamLimiter(defaultMaxSSESubscribers)
 	attachments := newAttachmentRegistry()
-
 	mux.Handle("GET /metrics", authorizedWithVerifier(policy, service, authn.ScopeAdmin, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		observability.DefaultMetrics.ServeHTTP(response, request)
 	})))
-
 	mux.HandleFunc("GET /healthz", anonymousAllowedInOpen(policy, service, func(response http.ResponseWriter, request *http.Request) {
 		if err := service.Health(request.Context()); err != nil {
 			observability.DefaultMetrics.RecordStoreHealth(false)
@@ -88,7 +86,6 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 			"status": "ready",
 		})
 	}))
-
 	mux.HandleFunc("GET /v1/network", publicInOpen(policy, service, networkScopes, func(response http.ResponseWriter, request *http.Request) {
 		writeJSON(response, http.StatusOK, networkForRequest(policy, request, service.Network()))
 	}))
@@ -100,6 +97,11 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 			return
 		}
 		page, err := service.ListRoomsContext(request.Context(), pageRequest)
+		if err != nil {
+			writeError(response, statusForError(err), err)
+			return
+		}
+		page, err = filterPairScopedRoomDiscovery(request.Context(), service, page)
 		if err != nil {
 			writeError(response, statusForError(err), err)
 			return
@@ -392,8 +394,6 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 	mux.HandleFunc("GET /v1/attach", authorizedAttach(policy, service, func(response http.ResponseWriter, request *http.Request) {
 		handleAttachment(response, request, service, policy, attachments)
 	}))
-
 	mux.HandleFunc("GET /v1/events/stream", authorizedEventStream(policy, service, service, sseLimiter))
-
 	return withObservability(mux)
 }

@@ -107,15 +107,16 @@ type Event struct {
 }
 
 type Room struct {
-	ID          string      `json:"id"`
-	NetworkID   string      `json:"network_id,omitempty"`
-	FQID        string      `json:"fqid,omitempty"`
-	Name        string      `json:"name"`
-	Members     []string    `json:"members,omitempty"`
-	Visibility  string      `json:"visibility,omitempty"`
-	WritePolicy string      `json:"write_policy,omitempty"`
-	Access      *RoomAccess `json:"access,omitempty"`
-	CreatedAt   time.Time   `json:"created_at"`
+	ID          string          `json:"id"`
+	NetworkID   string          `json:"network_id,omitempty"`
+	FQID        string          `json:"fqid,omitempty"`
+	Name        string          `json:"name"`
+	Members     []string        `json:"members,omitempty"`
+	Visibility  string          `json:"visibility,omitempty"`
+	WritePolicy string          `json:"write_policy,omitempty"`
+	Federation  *RoomFederation `json:"federation,omitempty" yaml:"federation,omitempty"`
+	Access      *RoomAccess     `json:"access,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
 }
 
 type RoomAccess struct {
@@ -172,11 +173,12 @@ type Pairing struct {
 }
 
 type CreateRoomRequest struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name,omitempty"`
-	Members     []string `json:"members,omitempty"`
-	Visibility  string   `json:"visibility,omitempty"`
-	WritePolicy string   `json:"write_policy,omitempty"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name,omitempty"`
+	Members     []string        `json:"members,omitempty"`
+	Visibility  string          `json:"visibility,omitempty"`
+	WritePolicy string          `json:"write_policy,omitempty"`
+	Federation  *RoomFederation `json:"federation,omitempty" yaml:"federation,omitempty"`
 }
 
 type UpdateRoomMembersRequest struct {

@@ -157,6 +157,9 @@ func validateConfigFile(config rawConfigFile) error {
 	if err := validateRooms(config.Rooms); err != nil {
 		return err
 	}
+	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -234,6 +237,21 @@ func validateRooms(rooms []RoomConfig) error {
 		}
 		if err := protocol.ValidateRoomWritePolicy(room.WritePolicy); err != nil {
 			return fmt.Errorf("rooms[%d].write_policy: %w", index, err)
+		}
+		if err := protocol.ValidateRoomFederation(room.Federation); err != nil {
+			return fmt.Errorf("rooms[%d].federation: %w", index, err)
+		}
+	}
+	return nil
+}
+
+func validateRoomFederationStances(rooms []RoomConfig, pairings []protocol.Pairing) error {
+	if len(pairings) == 0 {
+		return nil
+	}
+	for index, room := range rooms {
+		if room.Federation == nil {
+			return fmt.Errorf("rooms[%d] %q must declare federation when pairings are configured", index, room.ID)
 		}
 	}
 	return nil

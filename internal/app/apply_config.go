@@ -77,6 +77,9 @@ func validateApplyConfigFile(config rawConfigFile) error {
 	if err := validateRooms(config.Rooms); err != nil {
 		return err
 	}
+	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
+		return err
+	}
 	return validateApplyAuth(config.Auth)
 }
 
@@ -161,6 +164,7 @@ func createRoomRequests(rooms []RoomConfig) []protocol.CreateRoomRequest {
 			Members:     append([]string(nil), room.Members...),
 			Visibility:  room.Visibility,
 			WritePolicy: room.WritePolicy,
+			Federation:  room.Federation,
 		})
 	}
 	return requests

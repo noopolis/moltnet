@@ -17,6 +17,9 @@ func (s *Service) enforceTargetWritePolicy(ctx context.Context, target protocol.
 	if room.ID == "" {
 		return nil
 	}
+	if !s.pairScopedWriteAllowed(ctx, room) {
+		return writeForbiddenError(room.ID)
+	}
 	if s.canWriteRoom(ctx, room, actor) {
 		return nil
 	}
@@ -120,6 +123,12 @@ func (s *Service) canReadRoom(ctx context.Context, room protocol.Room) bool {
 	mode := authn.ModeFromContext(ctx)
 	claims, hasClaims := authn.ClaimsFromContext(ctx)
 	if mode == authn.ModeNone && !authn.PublicReadFromContext(ctx) {
+		return true
+	}
+	// Pair-scoped credentials discover rooms only through the federation
+	// filter applied by ListRoomsContext. Treat the pairing as a reader here
+	// so private federated rooms are available to that subsequent filter.
+	if _, paired := s.pairingForPairScopedContext(ctx); paired {
 		return true
 	}
 	if hasClaims && claims.HasAgentRestriction() {

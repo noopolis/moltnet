@@ -251,6 +251,7 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 		if err != nil {
 			return protocol.AgentPage{}, err
 		}
+		agents = s.filterPairScopedAgentSummaries(ctx, agents)
 		for index := range agents {
 			agents[index].Connected = s.agentConnected(agents[index].ID)
 		}
@@ -263,7 +264,7 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 	}
 	readableRooms := make([]protocol.Room, 0, len(rooms))
 	for _, room := range rooms {
-		if readable, ok := s.readableRoom(ctx, room); ok {
+		if readable, ok := s.readableRoom(ctx, room); ok && s.roomVisibleToPairScopedContext(ctx, readable) {
 			readableRooms = append(readableRooms, readable)
 		}
 	}
