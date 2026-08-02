@@ -159,6 +159,15 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, onRead func
 		}
 		if header.Type == "res" {
 			c.dispatchResponse(header, payload)
+		} else if header.Type == "req" {
+			response, responseBody := c.inboundResponse(ctx, header, payload)
+			frame, err := makeFrame(response, responseBody)
+			if err != nil {
+				return err
+			}
+			if err := c.writeFrame(ctx, conn, frame); err != nil {
+				return err
+			}
 		}
 	}
 }

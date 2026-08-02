@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,6 +40,17 @@ type callResult struct {
 	err    error
 }
 
+// ClientOption configures a relay Client.
+type ClientOption func(*Client)
+
+// WithInboundHandler serves requests sent by the relay peer through handler.
+// The client pairing token is attached to each synthetic HTTP request.
+func WithInboundHandler(handler http.Handler) ClientOption {
+	return func(client *Client) {
+		client.inbound = NewInboundHandler(handler, client.token)
+	}
+}
+
 // Client maintains an outbound connection to one relay room.
 type Client struct {
 	relayURL string
@@ -57,17 +69,24 @@ type Client struct {
 	stop      chan struct{}
 	closeOnce sync.Once
 	closed    atomic.Bool
+	inbound   *InboundHandler
 }
 
 // NewClient creates a relay client. Run must be started before calls can use it.
-func NewClient(relayURL, bearerToken, network string) *Client {
-	return &Client{
+func NewClient(relayURL, bearerToken, network string, options ...ClientOption) *Client {
+	client := &Client{
 		relayURL: relayURL,
 		token:    bearerToken,
 		network:  network,
 		pending:  make(map[string]chan callResult),
 		stop:     make(chan struct{}),
 	}
+	for _, option := range options {
+		if option != nil {
+			option(client)
+		}
+	}
+	return client
 }
 
 // Call sends a request through the current relay connection and waits for its response.
