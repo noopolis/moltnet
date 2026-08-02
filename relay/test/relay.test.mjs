@@ -74,6 +74,30 @@ test("a third peer can never relay a frame to either admitted peer", async (t) =
   assert.equal((await third.nextClose()).code, 1013);
 });
 
+test("releases a peer slot after a protocol-error teardown", async (t) => {
+  const surviving = await RawWebSocket.connect({ token, room: "protocol-error-teardown" });
+  const errored = await RawWebSocket.connect({ token, room: "protocol-error-teardown" });
+  t.after(() => surviving.close());
+  t.after(() => errored.close());
+
+  surviving.send(JSON.stringify({ t: "hello", network: "surviving-network" }));
+  errored.send(JSON.stringify({ t: "hello", network: "errored-network" }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  errored.sendProtocolViolation();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const replacement = await RawWebSocket.connect({ token, room: "protocol-error-teardown" });
+  t.after(() => replacement.close());
+  replacement.send(JSON.stringify({ t: "hello", network: "replacement-network" }));
+  await assertNoClose(replacement);
+
+  const request =
+    '{"t":"req","id":"replacement-request","to":"replacement-network"}\nopaque replacement payload';
+  surviving.send(request);
+  assert.equal(await replacement.nextText(), request);
+});
+
 test("drops a routing header larger than 8192 bytes", async (t) => {
   const first = await RawWebSocket.connect({ token, room: "oversized-routing-header" });
   const second = await RawWebSocket.connect({ token, room: "oversized-routing-header" });
@@ -133,6 +157,10 @@ test("refuses invalid bearer tokens", async () => {
 
 async function assertNoText(socket) {
   await assert.rejects(socket.nextText(300), /timed out waiting for text frame/);
+}
+
+async function assertNoClose(socket) {
+  await assert.rejects(socket.nextClose(300), /timed out waiting for close frame/);
 }
 
 async function waitForWorker() {
@@ -231,6 +259,14 @@ class RawWebSocket {
 
   close() {
     if (!this.#socket.destroyed) this.#socket.end(Buffer.from([0x88, 0x80, 0, 0, 0, 0]));
+  }
+
+  sendProtocolViolation() {
+    const body = Buffer.from([0]);
+    const mask = randomBytes(4);
+    const header = frameHeader(0x83, body.length, true);
+    for (let index = 0; index < body.length; index += 1) body[index] ^= mask[index % 4];
+    this.#socket.write(Buffer.concat([header, mask, body]));
   }
 
   #next(type, timeoutMs) {

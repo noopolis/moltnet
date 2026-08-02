@@ -72,6 +72,14 @@ export class RelayRoom extends Server<RelayEnv> {
   }
 
   onClose(connection: Connection) {
+    this.releasePeer(connection);
+  }
+
+  onError(connection: Connection, _error: unknown) {
+    this.releasePeer(connection);
+  }
+
+  private releasePeer(connection: Connection) {
     this.admittedPeers.delete(connection);
     this.networks.delete(connection);
   }
