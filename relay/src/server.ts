@@ -15,7 +15,7 @@ type RelayEnvelope = {
 
 const POLICY_VIOLATION = 1008;
 const ROOM_FULL = 1013;
-// Routing headers are deliberately small; this bounds newline searches on text frames.
+// Routing headers are deliberately small; this bounds newline searches on every frame.
 const MAX_ROUTING_HEADER_BYTES = 8192;
 
 /**
@@ -120,21 +120,41 @@ function hasBearerToken(request: Request, expectedToken: string) {
 }
 
 function decodeEnvelope(message: WSMessage): RelayEnvelope | undefined {
-  if (typeof message !== "string") {
-    return undefined;
+  if (typeof message === "string") {
+    const headerEnd = routingHeaderEnd(message);
+    return headerEnd === undefined ? undefined : parseRoutingHeader(message.slice(0, headerEnd));
   }
 
-  const headerEnd = routingHeaderEnd(message);
-  if (headerEnd === undefined) {
-    return undefined;
-  }
+  const bytes = binaryMessageBytes(message);
+  const headerEnd = binaryRoutingHeaderEnd(bytes);
+  return headerEnd === undefined
+    ? undefined
+    : parseRoutingHeader(new TextDecoder().decode(bytes.subarray(0, headerEnd)));
+}
 
+function parseRoutingHeader(header: string): RelayEnvelope | undefined {
   try {
-    const parsed: unknown = JSON.parse(message.slice(0, headerEnd));
+    const parsed: unknown = JSON.parse(header);
     return isRecord(parsed) ? parsed : undefined;
   } catch {
     return undefined;
   }
+}
+
+function binaryMessageBytes(message: Exclude<WSMessage, string>) {
+  return message instanceof ArrayBuffer
+    ? new Uint8Array(message)
+    : new Uint8Array(message.buffer, message.byteOffset, message.byteLength);
+}
+
+function binaryRoutingHeaderEnd(bytes: Uint8Array) {
+  const searchEnd = Math.min(bytes.length, MAX_ROUTING_HEADER_BYTES + 1);
+  for (let index = 0; index < searchEnd; index += 1) {
+    if (bytes[index] === 10) {
+      return index;
+    }
+  }
+  return bytes.length <= MAX_ROUTING_HEADER_BYTES ? bytes.length : undefined;
 }
 
 function routingHeaderEnd(message: string) {

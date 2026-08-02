@@ -53,6 +53,25 @@ test("relays opaque header-and-payload req and res frames byte-for-byte", async 
   assert.equal(await first.nextText(), response);
 });
 
+test("relays binary frames with non-UTF-8 opaque payload bytes byte-for-byte", async (t) => {
+  const first = await RawWebSocket.connect({ token, room: "binary-opaque" });
+  const second = await RawWebSocket.connect({ token, room: "binary-opaque" });
+  t.after(() => first.close());
+  t.after(() => second.close());
+
+  first.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "network-a" })));
+  second.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "network-b" })));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const frame = Buffer.concat([
+    Buffer.from('{"t":"req","id":"binary-opaque","to":"network-b"}\n'),
+    Buffer.from([0x00, 0xff, 0x80, 0x41])
+  ]);
+  first.sendBinary(frame);
+
+  assert.deepEqual(await second.nextBinary(), frame);
+});
+
 test("a third peer can never relay a frame to either admitted peer", async (t) => {
   const first = await RawWebSocket.connect({ token, room: "strict-capacity" });
   const second = await RawWebSocket.connect({ token, room: "strict-capacity" });
@@ -248,9 +267,22 @@ class RawWebSocket {
     this.#socket.write(Buffer.concat([header, mask, body]));
   }
 
+  sendBinary(data) {
+    const body = Buffer.from(data);
+    const mask = randomBytes(4);
+    const header = frameHeader(0x82, body.length, true);
+    for (let index = 0; index < body.length; index += 1) body[index] ^= mask[index % 4];
+    this.#socket.write(Buffer.concat([header, mask, body]));
+  }
+
   async nextText(timeoutMs = 3000) {
     const event = await this.#next("text", timeoutMs);
     return event.text;
+  }
+
+  async nextBinary(timeoutMs = 3000) {
+    const event = await this.#next("binary", timeoutMs);
+    return event.data;
   }
 
   async nextClose(timeoutMs = 3000) {
@@ -308,6 +340,7 @@ class RawWebSocket {
       const payload = this.#buffer.subarray(offset, offset + length);
       this.#buffer = this.#buffer.subarray(offset + length);
       if ((first & 0x0f) === 0x1) this.#emit({ type: "text", text: payload.toString() });
+      if ((first & 0x0f) === 0x2) this.#emit({ type: "binary", data: Buffer.from(payload) });
       if ((first & 0x0f) === 0x8) this.#emit({ type: "close", code: payload.readUInt16BE() });
     }
   }
