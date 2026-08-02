@@ -21,10 +21,13 @@ func NewInboundHandler(handler http.Handler, pairingToken string) *InboundHandle
 }
 
 func (c *Client) inboundResponse(ctx context.Context, header frameHeader, payload []byte) (frameHeader, []byte) {
-	if c.inbound == nil {
+	c.inboundMu.RLock()
+	inbound := c.inbound
+	c.inboundMu.RUnlock()
+	if inbound == nil {
 		return unavailableInboundResponse(header)
 	}
-	return c.inbound.serve(ctx, header, payload)
+	return inbound.serve(ctx, header, payload)
 }
 
 func (h *InboundHandler) serve(ctx context.Context, header frameHeader, payload []byte) (response frameHeader, responseBody []byte) {

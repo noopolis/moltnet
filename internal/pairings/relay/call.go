@@ -44,10 +44,13 @@ type callResult struct {
 type ClientOption func(*Client)
 
 // WithInboundHandler serves requests sent by the relay peer through handler.
-// The client pairing token is attached to each synthetic HTTP request.
+// The client pairing token is attached to each synthetic HTTP request. The
+// handler must never call Call, RelayMessage, FetchNetwork, or another method
+// that sends a request through this same Client: inbound handlers run on the
+// Client read-loop goroutine, so waiting for that request's response deadlocks.
 func WithInboundHandler(handler http.Handler) ClientOption {
 	return func(client *Client) {
-		client.inbound = NewInboundHandler(handler, client.token)
+		client.SetHandler(handler)
 	}
 }
 
@@ -69,6 +72,7 @@ type Client struct {
 	stop      chan struct{}
 	closeOnce sync.Once
 	closed    atomic.Bool
+	inboundMu sync.RWMutex
 	inbound   *InboundHandler
 }
 
@@ -89,9 +93,21 @@ func NewClient(relayURL, bearerToken, network string, options ...ClientOption) *
 	return client
 }
 
+// SetHandler serves requests received from the relay peer through handler.
+// It may be called after NewClient to resolve startup ordering with the
+// application's HTTP handler.
+func (c *Client) SetHandler(handler http.Handler) {
+	c.inboundMu.Lock()
+	c.inbound = NewInboundHandler(handler, c.token)
+	c.inboundMu.Unlock()
+}
+
 // Call sends a request through the current relay connection and waits for its response.
-// Calls made while the client is reconnecting return ErrNotConnected rather than waiting
-// for a future connection.
+// It must not be called by this Client's injected inbound handler, directly or through
+// RelayMessage, FetchNetwork, or similar helpers: that handler runs on the read-loop
+// goroutine which must receive the response Call is waiting for. Calls made while the
+// client is reconnecting return ErrNotConnected rather than waiting for a future
+// connection.
 func (c *Client) Call(
 	ctx context.Context,
 	method string,

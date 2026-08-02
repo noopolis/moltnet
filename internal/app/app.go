@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/internal/events"
 	"github.com/noopolis/moltnet/internal/observability"
 	"github.com/noopolis/moltnet/internal/pairings"
+	"github.com/noopolis/moltnet/internal/pairings/relay"
 	"github.com/noopolis/moltnet/internal/rooms"
 	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/internal/transport"
@@ -25,9 +28,11 @@ const (
 )
 
 type App struct {
-	config  Config
-	server  *http.Server
-	closers []io.Closer
+	config       Config
+	server       *http.Server
+	relayClients []*relay.Client
+	relayWG      sync.WaitGroup
+	closers      []io.Closer
 }
 
 type serviceStore interface {
@@ -50,6 +55,8 @@ func New(config Config) (*App, error) {
 		}
 	}
 
+	pairingClient := pairings.NewClient()
+	relayClients := newRelayClients(config, pairingClient)
 	service := rooms.NewService(rooms.ServiceConfig{
 		AllowHumanIngress:     config.AllowHumanIngress,
 		CausalWriter:          causalWriter,
@@ -62,7 +69,7 @@ func New(config Config) (*App, error) {
 		Store:                 roomStore,
 		Messages:              roomStore,
 		Broker:                broker,
-		PairingClient:         pairings.NewClient(),
+		PairingClient:         pairingClient,
 	})
 
 	policy, err := authn.NewPolicy(config.Auth)
@@ -78,6 +85,9 @@ func New(config Config) (*App, error) {
 			},
 		},
 	})
+	for _, relayClient := range relayClients {
+		relayClient.SetHandler(handler)
+	}
 
 	server := &http.Server{
 		Addr:              config.ListenAddr,
@@ -89,8 +99,9 @@ func New(config Config) (*App, error) {
 	}
 
 	instance := &App{
-		config: config,
-		server: server,
+		config:       config,
+		server:       server,
+		relayClients: relayClients,
 	}
 	if closer, ok := roomStore.(io.Closer); ok {
 		instance.closers = append(instance.closers, closer)
@@ -111,6 +122,24 @@ func New(config Config) (*App, error) {
 	}
 
 	return instance, nil
+}
+
+func newRelayClients(config Config, pairingClient *pairings.Client) []*relay.Client {
+	clients := make([]*relay.Client, 0, len(config.Pairings))
+	for _, pairing := range config.Pairings {
+		if pairing.Relay == nil || strings.TrimSpace(pairing.Relay.URL) == "" {
+			continue
+		}
+		client := relay.NewClient(relayEndpoint(pairing.Relay.URL, pairing.Relay.Room), pairing.Token, config.NetworkID)
+		pairingClient.RegisterRelay(pairing.ID, client)
+		clients = append(clients, client)
+	}
+	return clients
+}
+
+func relayEndpoint(baseURL string, room string) string {
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/") +
+		"/parties/relay-room/" + url.PathEscape(strings.TrimSpace(room))
 }
 
 func (a *App) Handler() http.Handler {
@@ -139,6 +168,18 @@ func buildStore(config Config) (serviceStore, error) {
 
 func (a *App) Run(ctx context.Context) error {
 	defer a.close()
+	for _, relayClient := range a.relayClients {
+		if relayClient == nil {
+			continue
+		}
+		a.relayWG.Add(1)
+		go func(client *relay.Client) {
+			defer a.relayWG.Done()
+			if err := client.Run(ctx); err != nil && ctx.Err() == nil {
+				observability.Logger(ctx, "app", "error", err).Error("run relay client")
+			}
+		}(relayClient)
+	}
 
 	errorCh := make(chan error, 1)
 
@@ -168,6 +209,12 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) close() {
+	for _, relayClient := range a.relayClients {
+		if relayClient != nil {
+			relayClient.Close()
+		}
+	}
+	a.relayWG.Wait()
 	if len(a.closers) == 0 {
 		return
 	}

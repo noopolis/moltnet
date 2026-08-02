@@ -127,7 +127,7 @@ func (s *Service) shouldRelayMessage(message protocol.Message) bool {
 }
 
 func (s *Service) shouldRelayToPairing(pairing protocol.Pairing, message protocol.Message) bool {
-	if strings.TrimSpace(pairing.RemoteBaseURL) == "" {
+	if !pairingHasTransport(pairing) {
 		return false
 	}
 	if !s.pairingRelayAllowed(pairing, message) {
@@ -153,13 +153,18 @@ func (s *Service) shouldRelayToPairing(pairing protocol.Pairing, message protoco
 }
 
 func (s *Service) shouldAttemptRelayToPairing(pairing protocol.Pairing, message protocol.Message) bool {
-	if strings.TrimSpace(pairing.RemoteBaseURL) == "" {
+	if !pairingHasTransport(pairing) {
 		return false
 	}
 	if !s.pairingRelayAttemptReady(pairing, message) {
 		return false
 	}
 	return s.pairingMatchesRelayTarget(pairing, message)
+}
+
+func pairingHasTransport(pairing protocol.Pairing) bool {
+	return strings.TrimSpace(pairing.RemoteBaseURL) != "" ||
+		(pairing.Relay != nil && strings.TrimSpace(pairing.Relay.URL) != "")
 }
 
 func (s *Service) currentPairingStatus(pairing protocol.Pairing) pairingStatus {

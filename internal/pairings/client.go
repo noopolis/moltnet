@@ -3,6 +3,7 @@ package pairings
 import (
 	"context"
 
+	"github.com/noopolis/moltnet/internal/pairings/relay"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -21,8 +22,14 @@ type Client struct {
 func NewClient() *Client {
 	return &Client{
 		http:  newHTTPTransport(),
-		relay: &relayTransport{},
+		relay: newRelayTransport(),
 	}
+}
+
+// RegisterRelay associates a relay client with a configured pairing.
+// Relay pairings require this registration before requests can be sent.
+func (c *Client) RegisterRelay(pairingID string, relayClient *relay.Client) {
+	c.relay.register(pairingID, relayClient)
 }
 
 func (c *Client) transportFor(pairing protocol.Pairing) pairingTransport {

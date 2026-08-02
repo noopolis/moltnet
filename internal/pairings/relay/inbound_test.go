@@ -114,6 +114,24 @@ func TestInboundRelayedHandlerPanicReturnsInternalServerError(t *testing.T) {
 	}
 }
 
+func TestClientSetHandlerServesInboundRequests(t *testing.T) {
+	client := NewClient("", "correct-pair-token", "local")
+	client.SetHandler(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if got := request.Header.Get("Authorization"); got != "Bearer correct-pair-token" {
+			http.Error(writer, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+
+	response, _ := client.inboundResponse(context.Background(), frameHeader{
+		Type: "req", ID: "late-handler", Method: http.MethodPost, Path: "/v1/messages",
+	}, nil)
+	if response.Status != http.StatusNoContent {
+		t.Fatalf("response status = %d, want %d", response.Status, http.StatusNoContent)
+	}
+}
+
 func newInboundHandlerFixture(t *testing.T) (http.Handler, *rooms.Service) {
 	t.Helper()
 	memory := store.NewMemoryStore()
