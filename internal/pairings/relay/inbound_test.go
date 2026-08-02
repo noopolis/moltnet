@@ -114,6 +114,76 @@ func TestInboundRelayedHandlerPanicReturnsInternalServerError(t *testing.T) {
 	}
 }
 
+func TestInboundHandlerRejectsOversizedResponseBody(t *testing.T) {
+	handler := NewInboundHandler(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write(bytes.Repeat([]byte("x"), maxInboundResponseBodyBytes+1))
+	}), "correct-pair-token")
+
+	response, body := handler.serve(context.Background(), frameHeader{
+		Type: "req", ID: "oversized-response", Method: http.MethodGet, Path: "/oversized",
+	}, nil)
+	if response.Status != http.StatusInternalServerError {
+		t.Fatalf("response status = %d, want %d", response.Status, http.StatusInternalServerError)
+	}
+	if got, want := string(body), "relay response too large\n"; got != want {
+		t.Fatalf("response body = %q, want %q", got, want)
+	}
+}
+
+func TestInboundHandlerRejectsCumulativeOversizedResponseBody(t *testing.T) {
+	chunk := bytes.Repeat([]byte("x"), 1024)
+	handler := NewInboundHandler(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		for written := 0; written <= maxInboundResponseBodyBytes; written += len(chunk) {
+			_, _ = writer.Write(chunk)
+		}
+	}), "correct-pair-token")
+
+	response, body := handler.serve(context.Background(), frameHeader{
+		Type: "req", ID: "cumulative-oversized-response", Method: http.MethodGet, Path: "/oversized",
+	}, nil)
+	if response.Status != http.StatusInternalServerError {
+		t.Fatalf("response status = %d, want %d", response.Status, http.StatusInternalServerError)
+	}
+	if got, want := string(body), "relay response too large\n"; got != want {
+		t.Fatalf("response body = %q, want %q", got, want)
+	}
+}
+
+func TestInboundHandlerOversizedResponseOverridesHandlerStatus(t *testing.T) {
+	handler := NewInboundHandler(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusCreated)
+		_, _ = writer.Write(bytes.Repeat([]byte("x"), maxInboundResponseBodyBytes+1))
+	}), "correct-pair-token")
+
+	response, body := handler.serve(context.Background(), frameHeader{
+		Type: "req", ID: "oversized-created-response", Method: http.MethodGet, Path: "/oversized",
+	}, nil)
+	if response.Status != http.StatusInternalServerError {
+		t.Fatalf("response status = %d, want %d", response.Status, http.StatusInternalServerError)
+	}
+	if got, want := string(body), "relay response too large\n"; got != want {
+		t.Fatalf("response body = %q, want %q", got, want)
+	}
+}
+
+func TestInboundHandlerServesNormalResponseBody(t *testing.T) {
+	expected := []byte(`{"parts":[{"kind":"text","text":"relay response"}],"artifacts":[{"id":"artifact-1"}]}`)
+	handler := NewInboundHandler(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusCreated)
+		_, _ = writer.Write(expected)
+	}), "correct-pair-token")
+
+	response, body := handler.serve(context.Background(), frameHeader{
+		Type: "req", ID: "normal-response", Method: http.MethodPost, Path: "/v1/messages",
+	}, nil)
+	if response.Status != http.StatusCreated {
+		t.Fatalf("response status = %d, want %d", response.Status, http.StatusCreated)
+	}
+	if !bytes.Equal(body, expected) {
+		t.Fatalf("response body = %q, want %q", body, expected)
+	}
+}
+
 func TestClientSetHandlerServesInboundRequests(t *testing.T) {
 	client := NewClient("", "correct-pair-token", "local")
 	client.SetHandler(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

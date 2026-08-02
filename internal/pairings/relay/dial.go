@@ -95,6 +95,7 @@ func (c *Client) dial(ctx context.Context) (*websocket.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dial relay %s: %w", c.relayURL, err)
 	}
+	conn.SetReadLimit(maxRelayFrameBytes)
 	return conn, nil
 }
 

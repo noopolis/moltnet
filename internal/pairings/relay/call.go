@@ -14,8 +14,11 @@ import (
 )
 
 const (
-	maxHeaderSize      = 8192
-	defaultCallTimeout = 15 * time.Second
+	maxHeaderSize               = 8192
+	maxRelayPayloadBytes        = 1 << 20                                  // One MiB matches the service's normal JSON and attachment frame allowance.
+	maxRelayFrameBytes          = maxHeaderSize + 1 + maxRelayPayloadBytes // Includes the largest JSON header and its newline delimiter.
+	maxInboundResponseBodyBytes = 1 << 20                                  // Bound relayed handler buffering to a normal Moltnet response size.
+	defaultCallTimeout          = 15 * time.Second
 )
 
 var (

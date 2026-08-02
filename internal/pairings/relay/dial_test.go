@@ -1,11 +1,14 @@
 package relay
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,6 +69,100 @@ func TestClientRoundTrip(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("server did not receive request")
+	}
+}
+
+func TestClientRoundTripsNormalMessagePayload(t *testing.T) {
+	hello := make(chan frameHeader, 1)
+	server := newRelayTestServer(t, func(conn *websocket.Conn) {
+		readHello(t, conn, hello)
+		request := readRequest(t, conn)
+		frame, err := makeFrame(frameHeader{Type: "res", ID: request.header.ID, Status: http.StatusOK}, request.body)
+		if err != nil {
+			t.Errorf("make response frame: %v", err)
+			return
+		}
+		if err := conn.WriteMessage(websocket.BinaryMessage, frame); err != nil {
+			t.Errorf("write response frame: %v", err)
+		}
+	})
+	defer server.Close()
+
+	client, stop := startRelayClient(t, server.URL)
+	defer stop()
+	select {
+	case <-hello:
+	case <-time.After(time.Second):
+		t.Fatal("did not receive hello frame")
+	}
+
+	body := []byte(`{"parts":[{"kind":"text","text":"relay message"}],"artifacts":[{"id":"artifact-1","name":"brief.md"}]}`)
+	if len(body) >= maxRelayPayloadBytes {
+		t.Fatal("test payload must be under the relay payload limit")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	status, got, err := client.Call(ctx, http.MethodPost, "/v1/messages", body)
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if status != http.StatusOK || string(got) != string(body) {
+		t.Fatalf("Call() = (%d, %q), want (200, %q)", status, got, body)
+	}
+}
+
+func TestClientRejectsOversizedRelayFrame(t *testing.T) {
+	hello := make(chan frameHeader, 1)
+	releaseServer := make(chan struct{})
+	firstHandlerDone := make(chan struct{})
+	var firstConnection sync.Once
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(releaseServer) })
+	}
+	server := newRelayTestServer(t, func(conn *websocket.Conn) {
+		isFirst := false
+		firstConnection.Do(func() { isFirst = true })
+		if !isFirst {
+			<-releaseServer
+			return
+		}
+		defer close(firstHandlerDone)
+		readHello(t, conn, hello)
+		request := readRequest(t, conn)
+		frame, err := makeFrame(frameHeader{Type: "res", ID: request.header.ID, Status: http.StatusOK}, bytes.Repeat([]byte("x"), maxRelayFrameBytes+1024))
+		if err != nil {
+			t.Errorf("make oversized response frame: %v", err)
+			return
+		}
+		// The client is expected to close this connection after reaching its read
+		// limit, so a write error here is an expected write-after-close outcome.
+		_ = conn.WriteMessage(websocket.BinaryMessage, frame)
+		<-releaseServer
+	})
+	defer server.Close()
+	defer func() {
+		release()
+		select {
+		case <-firstHandlerDone:
+		case <-time.After(2 * time.Second):
+			t.Error("first oversized-frame server handler did not finish")
+		}
+	}()
+
+	client, stop := startRelayClient(t, server.URL)
+	defer stop()
+	select {
+	case <-hello:
+	case <-time.After(time.Second):
+		t.Fatal("did not receive hello frame")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _, err := client.Call(ctx, http.MethodGet, "/v1/oversized", nil)
+	if !errors.Is(err, ErrConnectionLost) {
+		t.Fatalf("Call() error = %v, want ErrConnectionLost after oversized relay frame", err)
 	}
 }
 
