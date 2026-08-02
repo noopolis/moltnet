@@ -54,6 +54,11 @@ func TestValidatePairingsRelayModes(t *testing.T) {
 			pairing:   protocol.Pairing{ID: "pair", Relay: &protocol.PairingRelay{URL: "http://relay.example.com"}},
 			wantError: `pairings[0].relay.url scheme "http" is unsupported`,
 		},
+		{
+			name:      "relay room required",
+			pairing:   protocol.Pairing{ID: "pair", Relay: &protocol.PairingRelay{URL: "wss://relay.example.com", Room: "   "}},
+			wantError: "pairings[0] must specify relay.room as a non-empty rendezvous name",
+		},
 	}
 	for _, test := range tests {
 		test := test
@@ -67,7 +72,7 @@ func TestValidatePairingsRelayModes(t *testing.T) {
 
 	for _, pairing := range []protocol.Pairing{
 		{ID: "relay", Relay: &protocol.PairingRelay{URL: "wss://relay.example.com", Room: "lobby"}},
-		{ID: "relay_ws", Relay: &protocol.PairingRelay{URL: "ws://relay.example.com"}},
+		{ID: "relay_ws", Relay: &protocol.PairingRelay{URL: "ws://relay.example.com", Room: "lobby"}},
 		{ID: "remote", RemoteBaseURL: "http://remote.example.com"},
 	} {
 		if err := validatePairings([]protocol.Pairing{pairing}); err != nil {

@@ -27,8 +27,13 @@ func validatePairings(pairings []protocol.Pairing) error {
 			if err := validateRemoteURL(name+".remote_base_url", pairing.RemoteBaseURL); err != nil {
 				return err
 			}
-		} else if err := validateRelayURL(name+".relay.url", pairing.Relay.URL); err != nil {
-			return err
+		} else {
+			if err := validateRelayURL(name+".relay.url", pairing.Relay.URL); err != nil {
+				return err
+			}
+			if strings.TrimSpace(pairing.Relay.Room) == "" {
+				return fmt.Errorf("%s must specify relay.room as a non-empty rendezvous name", name)
+			}
 		}
 	}
 
