@@ -38,6 +38,15 @@ func TestNewPolicyAndAuthenticateRequest(t *testing.T) {
 	}
 }
 
+func TestNewStaticClaimsPreservesTokenNetwork(t *testing.T) {
+	t.Parallel()
+
+	claims := NewStaticClaims(TokenConfig{Network: " remote-b "})
+	if got := claims.Network(); got != "remote-b" {
+		t.Fatalf("Claims.Network() = %q, want %q", got, "remote-b")
+	}
+}
+
 func TestNewPolicyPublicReadAndRegistrationDefaults(t *testing.T) {
 	t.Parallel()
 

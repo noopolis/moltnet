@@ -34,10 +34,11 @@ const (
 )
 
 type TokenConfig struct {
-	ID     string
-	Value  string
-	Scopes []Scope
-	Agents []string
+	ID      string
+	Value   string
+	Network string
+	Scopes  []Scope
+	Agents  []string
 }
 
 type Config struct {
@@ -67,6 +68,7 @@ type tokenRecord struct {
 type Claims struct {
 	TokenID       string
 	CredentialKey string
+	network       string
 	scopes        map[Scope]struct{}
 	agents        map[string]struct{}
 }
@@ -288,6 +290,10 @@ func (c Claims) AgentToken() bool {
 	return strings.HasPrefix(strings.TrimSpace(c.CredentialKey), "agent-token:")
 }
 
+func (c Claims) Network() string {
+	return c.network
+}
+
 func (c Claims) AgentIDs() []string {
 	agents := make([]string, 0, len(c.agents))
 	for agentID := range c.agents {
@@ -318,6 +324,7 @@ func TokenConfigCredentialKey(token TokenConfig) string {
 func NewStaticClaims(config TokenConfig) Claims {
 	claims := Claims{
 		TokenID: strings.TrimSpace(config.ID),
+		network: strings.TrimSpace(config.Network),
 		scopes:  make(map[Scope]struct{}),
 		agents:  make(map[string]struct{}),
 	}

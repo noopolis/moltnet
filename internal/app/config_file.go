@@ -55,10 +55,11 @@ type rawAuthConfig struct {
 }
 
 type rawAuthTokenConfig struct {
-	ID     string   `json:"id" yaml:"id"`
-	Value  string   `json:"value" yaml:"value"`
-	Scopes []string `json:"scopes" yaml:"scopes"`
-	Agents []string `json:"agents,omitempty" yaml:"agents,omitempty"`
+	ID      string   `json:"id" yaml:"id"`
+	Value   string   `json:"value" yaml:"value"`
+	Network string   `json:"network,omitempty" yaml:"network,omitempty"`
+	Scopes  []string `json:"scopes" yaml:"scopes"`
+	Agents  []string `json:"agents,omitempty" yaml:"agents,omitempty"`
 }
 
 type rawStorageConfig struct {
@@ -246,10 +247,11 @@ func authTokenConfigs(tokens []rawAuthTokenConfig) []authn.TokenConfig {
 			scopes = append(scopes, authn.Scope(strings.TrimSpace(scope)))
 		}
 		configs = append(configs, authn.TokenConfig{
-			ID:     token.ID,
-			Value:  token.Value,
-			Scopes: scopes,
-			Agents: append([]string(nil), token.Agents...),
+			ID:      token.ID,
+			Value:   token.Value,
+			Network: strings.TrimSpace(token.Network),
+			Scopes:  scopes,
+			Agents:  append([]string(nil), token.Agents...),
 		})
 	}
 	return configs

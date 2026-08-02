@@ -72,6 +72,7 @@ func New(config Config) (*App, error) {
 		PairingClient:         pairingClient,
 	})
 
+	config.Auth.Tokens = bindPairingNetworks(config.Auth.Tokens, config.Pairings)
 	policy, err := authn.NewPolicy(config.Auth)
 	if err != nil {
 		return nil, fmt.Errorf("build auth policy: %w", err)

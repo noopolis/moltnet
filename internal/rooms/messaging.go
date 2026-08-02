@@ -313,6 +313,9 @@ func (s *Service) validateHumanSender(ctx context.Context, origin protocol.Messa
 		if !ok || !claims.Allows(authn.ScopePair) {
 			return agentForbiddenError("remote-origin human sender requires pair scope")
 		}
+		if !pairCredentialMatchesOrigin(ctx, claims, originNetworkID) {
+			return agentForbiddenError("remote-origin human sender requires a pair credential bound to this network")
+		}
 	}
 	if authn.ModeFromContext(ctx) == authn.ModeNone {
 		return nil
@@ -343,7 +346,10 @@ func (s *Service) isPairedRemoteOriginActor(ctx context.Context, actor protocol.
 	if !ok || !claims.Allows(authn.ScopePair) {
 		return false
 	}
-	return actorHasExplicitConsistentNetworkID(actor, originNetworkID)
+	if !actorHasExplicitConsistentNetworkID(actor, originNetworkID) {
+		return false
+	}
+	return pairCredentialMatchesOrigin(ctx, claims, originNetworkID)
 }
 
 func (s *Service) agentCollisionID(actor protocol.Actor) (string, bool) {
