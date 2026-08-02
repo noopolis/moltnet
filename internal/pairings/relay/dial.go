@@ -45,19 +45,26 @@ func (c *Client) Run(ctx context.Context) error {
 
 		conn, err := c.dial(runCtx)
 		if err == nil {
-			err = c.setConnection(runCtx, conn)
-		}
-		if err == nil {
 			err = c.sendHello(runCtx, conn)
 		}
+		if err == nil {
+			err = c.setConnection(runCtx, conn)
+		}
+		live := err == nil
 		if err == nil {
 			attempt = 0
 			err = c.readLoop(runCtx, conn, func() { attempt = 0 })
 		}
 		c.clearConnection(conn)
+		if !live && conn != nil {
+			_ = conn.Close()
+		}
 
 		if runCtx.Err() != nil {
 			return nil
+		}
+		if live {
+			c.failPending(ErrConnectionLost)
 		}
 		attempt++
 		select {

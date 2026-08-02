@@ -19,8 +19,9 @@ const (
 
 var (
 	// ErrNotConnected is returned when Call is made while the relay is reconnecting.
-	ErrNotConnected = errors.New("relay is not connected")
-	ErrClosed       = errors.New("relay client is closed")
+	ErrNotConnected   = errors.New("relay is not connected")
+	ErrConnectionLost = errors.New("relay connection lost")
+	ErrClosed         = errors.New("relay client is closed")
 )
 
 type frameHeader struct {
