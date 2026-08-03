@@ -192,7 +192,7 @@ func TestCloseCancelsAndWaitsForInboundHandler(t *testing.T) {
 
 func startInboundTestClient(t *testing.T, relayURL string, handler http.Handler) (*Client, <-chan error) {
 	t.Helper()
-	client := NewClient(relayURL, "relay-token", "juan-berlin", WithInboundHandler(handler))
+	client := NewClient(relayURL, "relay-token", "pairing-token", "juan-berlin", WithInboundHandler(handler))
 	runDone := make(chan error, 1)
 	go func() { runDone <- client.Run(context.Background()) }()
 	return client, runDone

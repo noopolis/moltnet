@@ -23,7 +23,7 @@ func TestInboundRelayedMessageWithValidPairTokenIsPersisted(t *testing.T) {
 	handler, service := newInboundHandlerFixture(t)
 	defer service.Close()
 
-	response := relayInboundRoundTrip(t, handler, "correct-pair-token", messageFrame(t))
+	response := relayInboundRoundTrip(t, handler, "correct-pair-token", "correct-pair-token", messageFrame(t))
 	if response.header.Status != http.StatusAccepted {
 		t.Fatalf("response status = %d, want %d", response.header.Status, http.StatusAccepted)
 	}
@@ -36,7 +36,7 @@ func TestInboundRelayedMessageWithWrongTokenIsRejected(t *testing.T) {
 	handler, service := newInboundHandlerFixture(t)
 	defer service.Close()
 
-	response := relayInboundRoundTrip(t, handler, "wrong-token", messageFrame(t))
+	response := relayInboundRoundTrip(t, handler, "correct-pair-token", "wrong-token", messageFrame(t))
 	if response.header.Status != http.StatusUnauthorized && response.header.Status != http.StatusForbidden {
 		t.Fatalf("response status = %d, want 401 or 403", response.header.Status)
 	}
@@ -50,7 +50,9 @@ func TestInboundRelayedMessageWithNoTokenIsRejected(t *testing.T) {
 	defer service.Close()
 	frame := messageFrame(t)
 
-	response := relayInboundRoundTrip(t, handler, " ", frame)
+	// Before B20, the receiver's configured pairing token authenticated this
+	// forged frame even though the frame itself carried no origin credential.
+	response := relayInboundRoundTrip(t, handler, "correct-pair-token", "", frame)
 	if response.header.Status != http.StatusUnauthorized {
 		t.Fatalf("response status = %d, want %d", response.header.Status, http.StatusUnauthorized)
 	}
@@ -76,7 +78,7 @@ func TestInboundRelayedRequestForUnknownPathIsForbidden(t *testing.T) {
 	request := receivedRequest{
 		header: frameHeader{Type: "req", ID: "unknown-path", Method: http.MethodGet, Path: "/v1/does-not-exist?source=relay"},
 	}
-	response := relayInboundRoundTrip(t, handler, "correct-pair-token", request)
+	response := relayInboundRoundTrip(t, handler, "correct-pair-token", "correct-pair-token", request)
 	if response.header.Type != "res" || response.header.ID != "unknown-path" {
 		t.Fatalf("response header = %#v, want res for unknown-path", response.header)
 	}
@@ -90,7 +92,7 @@ func TestInboundRelayedRequestForUnknownPathIsForbidden(t *testing.T) {
 
 func TestInboundHandlerRejectsNonAllowlistedPathWithoutInvokingHandler(t *testing.T) {
 	invocations := 0
-	handler := NewInboundHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { invocations++ }), "")
+	handler := NewInboundHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { invocations++ }))
 	response, body := handler.serve(context.Background(), frameHeader{Method: http.MethodGet, Path: "/install.md"}, nil)
 	if response.Status != http.StatusForbidden || string(body) != "relay inbound request forbidden\n" {
 		t.Fatalf("response = (%d, %q), want forbidden response", response.Status, body)
@@ -107,7 +109,7 @@ func TestInboundHandlerForwardsAllowlistedRequests(t *testing.T) {
 		invocations++
 		gotMethod, gotPath = request.Method, request.URL.Path
 		writer.WriteHeader(http.StatusNoContent)
-	}), "")
+	}))
 	for _, request := range []frameHeader{
 		{Method: http.MethodGet, Path: "/v1/network"}, {Method: http.MethodGet, Path: "/v1/rooms"},
 		{Method: http.MethodGet, Path: "/v1/agents"}, {Method: http.MethodPost, Path: "/v1/messages"},
@@ -124,7 +126,7 @@ func TestInboundHandlerForwardsAllowlistedRequests(t *testing.T) {
 
 func TestInboundHandlerRejectsWrongMethodWithoutInvokingHandler(t *testing.T) {
 	invocations := 0
-	handler := NewInboundHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { invocations++ }), "")
+	handler := NewInboundHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { invocations++ }))
 	for _, method := range []string{http.MethodDelete, http.MethodPost} {
 		response, _ := handler.serve(context.Background(), frameHeader{Method: method, Path: "/v1/rooms"}, nil)
 		if response.Status != http.StatusForbidden {
@@ -138,7 +140,7 @@ func TestInboundHandlerRejectsWrongMethodWithoutInvokingHandler(t *testing.T) {
 
 func TestInboundHandlerRejectsPathEvasion(t *testing.T) {
 	invocations := 0
-	handler := NewInboundHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { invocations++ }), "")
+	handler := NewInboundHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { invocations++ }))
 	response, _ := handler.serve(context.Background(), frameHeader{Method: http.MethodGet, Path: "/v1/rooms?x=1"}, nil)
 	if response.Status != http.StatusOK || invocations != 1 {
 		t.Fatalf("query request = (%d, %d invocations), want forwarded", response.Status, invocations)
@@ -162,7 +164,7 @@ func TestInboundRelayedHandlerPanicReturnsInternalServerError(t *testing.T) {
 		header: frameHeader{Type: "req", ID: "panic-handler", Method: http.MethodGet, Path: "/v1/network"},
 	}
 
-	response := relayInboundRoundTrip(t, handler, "correct-pair-token", request)
+	response := relayInboundRoundTrip(t, handler, "correct-pair-token", "correct-pair-token", request)
 	if response.header.Type != "res" || response.header.ID != "panic-handler" {
 		t.Fatalf("response header = %#v, want res for panic-handler", response.header)
 	}
@@ -177,7 +179,7 @@ func TestInboundRelayedHandlerPanicReturnsInternalServerError(t *testing.T) {
 func TestInboundHandlerRejectsOversizedResponseBody(t *testing.T) {
 	handler := NewInboundHandler(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = writer.Write(bytes.Repeat([]byte("x"), maxInboundResponseBodyBytes+1))
-	}), "correct-pair-token")
+	}))
 
 	response, body := handler.serve(context.Background(), frameHeader{
 		Type: "req", ID: "oversized-response", Method: http.MethodGet, Path: "/v1/network",
@@ -196,7 +198,7 @@ func TestInboundHandlerRejectsCumulativeOversizedResponseBody(t *testing.T) {
 		for written := 0; written <= maxInboundResponseBodyBytes; written += len(chunk) {
 			_, _ = writer.Write(chunk)
 		}
-	}), "correct-pair-token")
+	}))
 
 	response, body := handler.serve(context.Background(), frameHeader{
 		Type: "req", ID: "cumulative-oversized-response", Method: http.MethodGet, Path: "/v1/network",
@@ -213,7 +215,7 @@ func TestInboundHandlerOversizedResponseOverridesHandlerStatus(t *testing.T) {
 	handler := NewInboundHandler(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusCreated)
 		_, _ = writer.Write(bytes.Repeat([]byte("x"), maxInboundResponseBodyBytes+1))
-	}), "correct-pair-token")
+	}))
 
 	response, body := handler.serve(context.Background(), frameHeader{
 		Type: "req", ID: "oversized-created-response", Method: http.MethodGet, Path: "/v1/network",
@@ -231,7 +233,7 @@ func TestInboundHandlerServesNormalResponseBody(t *testing.T) {
 	handler := NewInboundHandler(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusCreated)
 		_, _ = writer.Write(expected)
-	}), "correct-pair-token")
+	}))
 
 	response, body := handler.serve(context.Background(), frameHeader{
 		Type: "req", ID: "normal-response", Method: http.MethodPost, Path: "/v1/messages",
@@ -245,7 +247,7 @@ func TestInboundHandlerServesNormalResponseBody(t *testing.T) {
 }
 
 func TestClientSetHandlerServesInboundRequests(t *testing.T) {
-	client := NewClient("", "correct-pair-token", "local")
+	client := NewClient("", "relay-connect-token", "correct-pair-token", "local")
 	client.SetHandler(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if got := request.Header.Get("Authorization"); got != "Bearer correct-pair-token" {
 			http.Error(writer, "unauthorized", http.StatusUnauthorized)
@@ -255,7 +257,7 @@ func TestClientSetHandlerServesInboundRequests(t *testing.T) {
 	}))
 
 	response, _ := client.inboundResponse(context.Background(), frameHeader{
-		Type: "req", ID: "late-handler", Method: http.MethodPost, Path: "/v1/messages",
+		Type: "req", ID: "late-handler", Auth: "correct-pair-token", Method: http.MethodPost, Path: "/v1/messages",
 	}, nil)
 	if response.Status != http.StatusNoContent {
 		t.Fatalf("response status = %d, want %d", response.Status, http.StatusNoContent)
@@ -309,8 +311,9 @@ func inboundMessageCount(t *testing.T, service *rooms.Service) int {
 	return len(page.Messages)
 }
 
-func relayInboundRoundTrip(t *testing.T, handler http.Handler, token string, request receivedRequest) receivedRequest {
+func relayInboundRoundTrip(t *testing.T, handler http.Handler, receiverPairingToken, originatorCredential string, request receivedRequest) receivedRequest {
 	t.Helper()
+	request.header.Auth = originatorCredential
 	responses := make(chan receivedRequest, 1)
 	server := newInboundRelayTestServer(t, func(conn *websocket.Conn) {
 		hello := make(chan frameHeader, 1)
@@ -339,7 +342,7 @@ func relayInboundRoundTrip(t *testing.T, handler http.Handler, token string, req
 	})
 	defer server.Close()
 
-	client := NewClient(server.URL, token, "local", WithInboundHandler(handler))
+	client := NewClient(server.URL, "relay-connect-token", receiverPairingToken, "local", WithInboundHandler(handler))
 	runDone := make(chan error, 1)
 	go func() { runDone <- client.Run(context.Background()) }()
 	defer func() {

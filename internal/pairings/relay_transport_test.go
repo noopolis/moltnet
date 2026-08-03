@@ -110,7 +110,7 @@ func TestRelayTransportReturnsErrorsForUnavailableClients(t *testing.T) {
 	}
 
 	client := NewClient()
-	client.RegisterRelay(pairing.ID, relay.NewClient("", "", "local"))
+	client.RegisterRelay(pairing.ID, relay.NewClient("", "", "", "local"))
 	if _, err := client.FetchNetwork(context.Background(), pairing); !errors.Is(err, relay.ErrNotConnected) {
 		t.Fatalf("FetchNetwork() error = %v, want ErrNotConnected", err)
 	}
@@ -177,7 +177,7 @@ func newRelayTransportServer(t *testing.T, respond func(relayTransportRequest) (
 
 func startRelayTransportClient(t *testing.T, relayURL string) (*relay.Client, func()) {
 	t.Helper()
-	client := relay.NewClient(relayURL, "relay-token", "local")
+	client := relay.NewClient(relayURL, "relay-token", "pairing-token", "local")
 	runDone := make(chan error, 1)
 	go func() { runDone <- client.Run(context.Background()) }()
 

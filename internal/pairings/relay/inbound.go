@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strings"
 )
 
 var errRelayResponseTooLarge = errors.New("relay response too large")
@@ -26,13 +25,12 @@ var inboundAllowedRequests = map[string]map[string]struct{}{
 // InboundHandler serves relay requests through an injected HTTP handler.
 type InboundHandler struct {
 	handler http.Handler
-	token   string
 }
 
-// NewInboundHandler creates an inbound relay request handler. pairingToken is
-// attached to each synthetic request as a bearer Authorization header.
-func NewInboundHandler(handler http.Handler, pairingToken string) *InboundHandler {
-	return &InboundHandler{handler: handler, token: pairingToken}
+// NewInboundHandler creates an inbound relay request handler. Each synthetic
+// request receives the originator credential carried by its relay frame.
+func NewInboundHandler(handler http.Handler) *InboundHandler {
+	return &InboundHandler{handler: handler}
 }
 
 func (c *Client) inboundResponse(ctx context.Context, header frameHeader, payload []byte) (frameHeader, []byte) {
@@ -60,8 +58,8 @@ func (h *InboundHandler) serve(ctx context.Context, header frameHeader, payload 
 		http.Error(writer, "invalid relay request", http.StatusBadRequest)
 		return responseFrame(header, writer.statusCode()), writer.body
 	}
-	if token := strings.TrimSpace(h.token); token != "" {
-		request.Header.Set("Authorization", "Bearer "+token)
+	if header.Auth != "" {
+		request.Header.Set("Authorization", "Bearer "+header.Auth)
 	}
 	defer func() {
 		if recover() != nil {

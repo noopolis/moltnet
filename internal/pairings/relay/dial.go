@@ -136,7 +136,7 @@ func (c *Client) activeRun() *clientRun {
 
 func (c *Client) dial(ctx context.Context) (*websocket.Conn, error) {
 	headers := make(http.Header)
-	if token := strings.TrimSpace(c.token); token != "" {
+	if token := strings.TrimSpace(c.relayToken); token != "" {
 		headers.Set("Authorization", "Bearer "+token)
 	}
 

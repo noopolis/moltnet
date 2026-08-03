@@ -83,6 +83,9 @@ func hasPlaintextPairingTokens(pairings []protocol.Pairing) bool {
 		if strings.TrimSpace(pairing.Token) != "" {
 			return true
 		}
+		if pairing.Relay != nil && strings.TrimSpace(pairing.Relay.Token) != "" {
+			return true
+		}
 	}
 
 	return false

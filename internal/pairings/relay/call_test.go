@@ -238,7 +238,7 @@ func TestClientSendsHelloBeforeConcurrentCall(t *testing.T) {
 	defer server.Close()
 	defer close(serverStop)
 
-	client := NewClient(server.URL, "relay-token", "juan-berlin")
+	client := NewClient(server.URL, "relay-token", "pairing-token", "juan-berlin")
 	runDone := make(chan error, 1)
 	stop := make(chan struct{})
 	var hammers sync.WaitGroup

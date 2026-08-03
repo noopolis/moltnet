@@ -39,6 +39,7 @@ var (
 type frameHeader struct {
 	Type    string `json:"t"`
 	ID      string `json:"id,omitempty"`
+	Auth    string `json:"auth,omitempty"`
 	Method  string `json:"method,omitempty"`
 	Path    string `json:"path,omitempty"`
 	Status  int    `json:"status,omitempty"`
@@ -69,8 +70,9 @@ func withKeepaliveDurations(ping, readIdle time.Duration) ClientOption {
 }
 
 // WithInboundHandler serves requests sent by the relay peer through handler.
-// The client pairing token is attached to each synthetic HTTP request. Handlers run
-// on bounded per-request goroutines and may call Call and its helpers through this Client.
+// Each synthetic HTTP request carries the originator pairing credential from its
+// relay frame, not either of this client's credentials. Handlers run on bounded
+// per-request goroutines and may call Call and its helpers through this Client.
 // A handler must not synchronously call this Client's Close: Close waits for in-flight
 // handlers, including the caller, to return.
 func WithInboundHandler(handler http.Handler) ClientOption {
@@ -81,9 +83,10 @@ func WithInboundHandler(handler http.Handler) ClientOption {
 
 // Client maintains an outbound connection to one relay room.
 type Client struct {
-	relayURL string
-	token    string
-	network  string
+	relayURL     string
+	relayToken   string
+	pairingToken string
+	network      string
 
 	pingInterval    time.Duration
 	readIdleTimeout time.Duration
@@ -106,11 +109,14 @@ type Client struct {
 	inbound   *InboundHandler
 }
 
-// NewClient creates a relay client. Run must be started before calls can use it.
-func NewClient(relayURL, bearerToken, network string, options ...ClientOption) *Client {
+// NewClient creates a relay client. relayToken is used only to open the relay
+// WebSocket; pairingToken is carried on outgoing request frames as this
+// network's pairing credential. Run must be started before calls can use it.
+func NewClient(relayURL, relayToken, pairingToken, network string, options ...ClientOption) *Client {
 	client := &Client{
 		relayURL:        relayURL,
-		token:           bearerToken,
+		relayToken:      relayToken,
+		pairingToken:    pairingToken,
 		network:         network,
 		pingInterval:    defaultPingInterval,
 		readIdleTimeout: defaultReadIdleTimeout,
@@ -126,11 +132,12 @@ func NewClient(relayURL, bearerToken, network string, options ...ClientOption) *
 }
 
 // SetHandler serves requests received from the relay peer through handler.
-// It may be called after NewClient to resolve startup ordering with the
-// application's HTTP handler.
+// The originator pairing credential is taken from each inbound frame. It may
+// be called after NewClient to resolve startup ordering with the application's
+// HTTP handler.
 func (c *Client) SetHandler(handler http.Handler) {
 	c.inboundMu.Lock()
-	c.inbound = NewInboundHandler(handler, c.token)
+	c.inbound = NewInboundHandler(handler)
 	c.inboundMu.Unlock()
 }
 
@@ -168,6 +175,7 @@ func (c *Client) Call(
 	frame, err := makeFrame(frameHeader{
 		Type:   "req",
 		ID:     id,
+		Auth:   c.pairingToken,
 		Method: method,
 		Path:   path,
 	}, body)

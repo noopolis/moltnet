@@ -41,10 +41,11 @@ relay_room="relay-pairing-e2e-$run_id"
 message_text="RELAY_E2E_$run_id"
 operator_token_a="operator-a-$run_id"
 operator_token_b="operator-b-$run_id"
-# Pairing.Token is both the relay WebSocket bearer token and the token used by
-# the relay client's synthetic inbound HTTP request. It must therefore match
-# RELAY_TOKEN and a pair-scoped token on both servers.
-shared_pairing_and_relay_token="relay-pair-$run_id"
+# RELAY_TOKEN admits WebSocket connections, while Pairing.Token authenticates
+# relayed request content. They deliberately differ so this e2e verifies that
+# the relay never needs the pairing credential.
+relay_connect_token="relay-connect-$run_id"
+pairing_token="pairing-credential-$run_id"
 
 relay_pid=""
 server_a_pid=""
@@ -146,7 +147,7 @@ auth:
       value: $operator_token
       scopes: [observe, write, admin]
     - id: pairing
-      value: $shared_pairing_and_relay_token
+      value: $pairing_token
       scopes: [pair]
 
 rooms:
@@ -163,7 +164,8 @@ pairings:
     relay:
       url: $relay_url
       room: $relay_room
-    token: $shared_pairing_and_relay_token
+      token: $relay_connect_token
+    token: $pairing_token
 EOF
 	chmod 600 "$config_path"
 }
@@ -223,7 +225,7 @@ fi
 log "starting relay Worker"
 (
 	cd "$root/relay"
-	exec npx wrangler dev --local --port "$relay_port" --var "RELAY_TOKEN:$shared_pairing_and_relay_token"
+	exec npx wrangler dev --local --port "$relay_port" --var "RELAY_TOKEN:$relay_connect_token"
 ) >"$run_dir/relay.log" 2>&1 &
 relay_pid=$!
 wait_for_relay "http://127.0.0.1:$relay_port/"

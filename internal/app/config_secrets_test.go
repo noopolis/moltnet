@@ -93,6 +93,9 @@ func TestPlaintextTokenDetection(t *testing.T) {
 	if !hasPlaintextPairingTokens([]protocol.Pairing{{ID: "pair", Token: "secret"}}) {
 		t.Fatal("expected plaintext pairing token detection")
 	}
+	if !hasPlaintextPairingTokens([]protocol.Pairing{{ID: "pair", Relay: &protocol.PairingRelay{Token: "relay-connect-secret"}}}) {
+		t.Fatal("expected plaintext relay token detection")
+	}
 	if hasPlaintextAuthTokens(rawAuthConfig{}) {
 		t.Fatal("expected empty auth config to report no tokens")
 	}

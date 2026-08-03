@@ -64,6 +64,9 @@ func TestClientRoundTrip(t *testing.T) {
 		if got.header.Method != http.MethodGet || got.header.Path != "/v1/rooms" {
 			t.Fatalf("request header = %#v", got.header)
 		}
+		if got.header.Auth != "pairing-token" {
+			t.Fatalf("request auth = %q, want pairing-token", got.header.Auth)
+		}
 		if string(got.body) != "request body" {
 			t.Fatalf("request body = %q, want request body", got.body)
 		}
@@ -239,7 +242,7 @@ func newRelayTestServer(t *testing.T, serve func(*websocket.Conn)) *httptest.Ser
 
 func startRelayClient(t *testing.T, relayURL string) (*Client, func()) {
 	t.Helper()
-	client := NewClient(relayURL, "relay-token", "juan-berlin")
+	client := NewClient(relayURL, "relay-token", "pairing-token", "juan-berlin")
 	runDone := make(chan error, 1)
 	go func() {
 		runDone <- client.Run(context.Background())

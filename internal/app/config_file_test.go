@@ -124,12 +124,12 @@ func TestDecodeStrictConfigWithPairingRelay(t *testing.T) {
 		{
 			name: "yaml",
 			path: "moltnet.yaml",
-			data: []byte("version: moltnet.v1\npairings:\n  - id: pair_relay\n    relay:\n      url: wss://relay.example.com\n      room: lobby\n"),
+			data: []byte("version: moltnet.v1\npairings:\n  - id: pair_relay\n    relay:\n      url: wss://relay.example.com\n      room: lobby\n      token: relay-connect-token\n"),
 		},
 		{
 			name: "json",
 			path: "moltnet.json",
-			data: []byte(`{"version":"moltnet.v1","pairings":[{"id":"pair_relay","relay":{"url":"wss://relay.example.com","room":"lobby"}}]}`),
+			data: []byte(`{"version":"moltnet.v1","pairings":[{"id":"pair_relay","relay":{"url":"wss://relay.example.com","room":"lobby","token":"relay-connect-token"}}]}`),
 		},
 	}
 	for _, fixture := range fixtures {
@@ -141,7 +141,7 @@ func TestDecodeStrictConfigWithPairingRelay(t *testing.T) {
 			if err := validateConfigFile(config); err != nil {
 				t.Fatalf("validateConfigFile() error = %v", err)
 			}
-			if config.Pairings[0].Relay == nil || config.Pairings[0].Relay.Room != "lobby" {
+			if config.Pairings[0].Relay == nil || config.Pairings[0].Relay.Room != "lobby" || config.Pairings[0].Relay.Token != "relay-connect-token" {
 				t.Fatalf("unexpected relay %#v", config.Pairings[0].Relay)
 			}
 		})

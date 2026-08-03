@@ -11,7 +11,7 @@ import (
 func TestPairingRelayJSONAndYAMLRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	want := Pairing{ID: "pair", Relay: &PairingRelay{URL: "wss://relay.example.com", Room: "lobby"}}
+	want := Pairing{ID: "pair", Relay: &PairingRelay{URL: "wss://relay.example.com", Room: "lobby", Token: "relay-connect-token"}}
 	jsonBytes, err := json.Marshal(want)
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)

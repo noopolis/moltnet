@@ -51,17 +51,17 @@ func TestAppCloseWaitsForRelayRunners(t *testing.T) {
 	}
 }
 
-func TestAppRelayInboundUsesTopLevelHandlerAuthorization(t *testing.T) {
+func TestAppRelayInboundUsesFrameAuthorization(t *testing.T) {
 	for _, test := range []struct {
-		name  string
-		token string
-		want  int
+		name      string
+		frameAuth string
+		want      int
 	}{
-		{name: "missing pairing token", want: http.StatusUnauthorized},
-		{name: "valid pairing token", token: "pairing-token", want: http.StatusOK},
+		{name: "missing originator credential", want: http.StatusUnauthorized},
+		{name: "valid originator credential", frameAuth: "originator-pairing-token", want: http.StatusOK},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			relayServer, responses, serverErrors := newAppRelayTestServer(t, test.token)
+			relayServer, responses, serverErrors := newAppRelayTestServer(t, "relay-connect-token", test.frameAuth)
 			defer relayServer.Close()
 
 			instance, err := New(Config{
@@ -69,7 +69,7 @@ func TestAppRelayInboundUsesTopLevelHandlerAuthorization(t *testing.T) {
 					Mode: authn.ModeBearer,
 					Tokens: []authn.TokenConfig{{
 						ID:     "pairing",
-						Value:  "pairing-token",
+						Value:  "originator-pairing-token",
 						Scopes: []authn.Scope{authn.ScopePair},
 					}},
 				},
@@ -79,8 +79,8 @@ func TestAppRelayInboundUsesTopLevelHandlerAuthorization(t *testing.T) {
 				Version:     "test",
 				Pairings: []protocol.Pairing{{
 					ID:    "relay-remote",
-					Token: test.token,
-					Relay: &protocol.PairingRelay{URL: relayServer.URL, Room: "test"},
+					Token: "receiver-pairing-token",
+					Relay: &protocol.PairingRelay{URL: relayServer.URL, Room: "test", Token: "relay-connect-token"},
 				}},
 			})
 			if err != nil {
@@ -88,8 +88,8 @@ func TestAppRelayInboundUsesTopLevelHandlerAuthorization(t *testing.T) {
 			}
 
 			directRequest := httptest.NewRequest(http.MethodGet, "/v1/network", nil)
-			if test.token != "" {
-				directRequest.Header.Set("Authorization", "Bearer "+test.token)
+			if test.frameAuth != "" {
+				directRequest.Header.Set("Authorization", "Bearer "+test.frameAuth)
 			}
 			directResponse := httptest.NewRecorder()
 			instance.Handler().ServeHTTP(directResponse, directRequest)
@@ -174,6 +174,7 @@ func (c *relayRunnerCloseNotifier) Close() error {
 type appRelayFrame struct {
 	Type   string `json:"t"`
 	ID     string `json:"id,omitempty"`
+	Auth   string `json:"auth,omitempty"`
 	Method string `json:"method,omitempty"`
 	Path   string `json:"path,omitempty"`
 	Status int    `json:"status,omitempty"`
@@ -182,7 +183,8 @@ type appRelayFrame struct {
 
 func newAppRelayTestServer(
 	t *testing.T,
-	token string,
+	relayToken string,
+	frameAuth string,
 ) (*httptest.Server, <-chan appRelayFrame, <-chan error) {
 	t.Helper()
 	responses := make(chan appRelayFrame, 1)
@@ -190,8 +192,8 @@ func newAppRelayTestServer(
 	upgrader := websocket.Upgrader{}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		wantAuthorization := ""
-		if token != "" {
-			wantAuthorization = "Bearer " + token
+		if relayToken != "" {
+			wantAuthorization = "Bearer " + relayToken
 		}
 		if got := request.Header.Get("Authorization"); got != wantAuthorization {
 			sendAppRelayServerError(errors, fmt.Errorf("relay authorization = %q, want %q", got, wantAuthorization))
@@ -211,7 +213,7 @@ func newAppRelayTestServer(
 			return
 		}
 		requestFrame, err := marshalAppRelayFrame(appRelayFrame{
-			Type: "req", ID: "network", Method: http.MethodGet, Path: "/v1/network",
+			Type: "req", ID: "network", Auth: frameAuth, Method: http.MethodGet, Path: "/v1/network",
 		})
 		if err != nil {
 			sendAppRelayServerError(errors, err)

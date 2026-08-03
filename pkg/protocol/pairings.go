@@ -13,6 +13,11 @@ const (
 type PairingRelay struct {
 	URL  string `json:"url" yaml:"url"`
 	Room string `json:"room,omitempty" yaml:"room,omitempty"`
+	// Token is used solely to open the relay WebSocket connection and matches
+	// the relay's RELAY_TOKEN. When unset, internal/app falls back to
+	// Pairing.Token for that connection; this transport-neutral type makes no
+	// fallback policy decision itself.
+	Token string `json:"token,omitempty" yaml:"token,omitempty"`
 }
 
 type PairingDiagnostics struct {

@@ -144,7 +144,7 @@ func TestClientKeepsHealthyIdleConnectionAlive(t *testing.T) {
 
 func startKeepaliveRelayClient(t *testing.T, relayURL string) (*Client, func()) {
 	t.Helper()
-	client := NewClient(relayURL, "relay-token", "juan-berlin", withKeepaliveDurations(testPingInterval, testReadIdleTimeout))
+	client := NewClient(relayURL, "relay-token", "pairing-token", "juan-berlin", withKeepaliveDurations(testPingInterval, testReadIdleTimeout))
 	runDone := make(chan error, 1)
 	go func() {
 		runDone <- client.Run(context.Background())
