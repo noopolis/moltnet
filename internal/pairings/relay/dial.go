@@ -190,16 +190,57 @@ func (c *Client) sendHello(ctx context.Context, conn *websocket.Conn) error {
 }
 
 func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, inbound *inboundDispatcher, onRead func()) error {
-	for {
-		if deadline, ok := ctx.Deadline(); ok {
-			if err := conn.SetReadDeadline(deadline); err != nil {
-				return fmt.Errorf("set relay read deadline: %w", err)
+	refreshReadDeadline := func() error {
+		if err := conn.SetReadDeadline(time.Now().Add(c.readIdleTimeout)); err != nil {
+			return fmt.Errorf("set relay read deadline: %w", err)
+		}
+		return nil
+	}
+	if err := refreshReadDeadline(); err != nil {
+		return err
+	}
+	conn.SetPongHandler(func(string) error {
+		return refreshReadDeadline()
+	})
+
+	done := make(chan struct{})
+	pingStopped := make(chan struct{})
+	ticker := time.NewTicker(c.pingInterval)
+	defer ticker.Stop()
+	go func() {
+		defer close(pingStopped)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-done:
+				return
+			case <-ticker.C:
+				if err := c.writePing(conn); err != nil && !c.closed.Load() {
+					// Closing unblocks ReadMessage so Run can use its normal
+					// reconnect and pending-call failure path.
+					c.clearConnection(conn)
+					return
+				}
 			}
+		}
+	}()
+	defer func() {
+		close(done)
+		<-pingStopped
+	}()
+
+	for {
+		if err := refreshReadDeadline(); err != nil {
+			return err
 		}
 
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
 			return fmt.Errorf("read relay frame: %w", err)
+		}
+		if err := refreshReadDeadline(); err != nil {
+			return err
 		}
 		onRead()
 
@@ -217,6 +258,22 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, inbound *in
 			}
 		}
 	}
+}
+
+func (c *Client) writePing(conn *websocket.Conn) error {
+	if conn == nil {
+		return ErrNotConnected
+	}
+
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if c.closed.Load() {
+		return ErrClosed
+	}
+	if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(pingWriteTimeout)); err != nil {
+		return fmt.Errorf("write relay ping: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) serveInboundRequest(ctx context.Context, conn *websocket.Conn, header frameHeader, payload []byte) {

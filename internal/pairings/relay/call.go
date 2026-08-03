@@ -19,6 +19,13 @@ const (
 	maxRelayFrameBytes          = maxHeaderSize + 1 + maxRelayPayloadBytes // Includes the largest JSON header and its newline delimiter.
 	maxInboundResponseBodyBytes = maxRelayPayloadBytes                     // Bound relayed handler buffering to a normal Moltnet response size.
 	defaultCallTimeout          = 15 * time.Second
+
+	// Ping every 25 seconds and declare a connection idle after 90 seconds:
+	// this leaves room for scheduling jitter and several missed pings while
+	// remaining below common 100-second-plus proxy and NAT idle windows.
+	defaultPingInterval    = 25 * time.Second
+	defaultReadIdleTimeout = 90 * time.Second
+	pingWriteTimeout       = 5 * time.Second
 )
 
 var (
@@ -47,6 +54,20 @@ type callResult struct {
 // ClientOption configures a relay Client.
 type ClientOption func(*Client)
 
+// withKeepaliveDurations overrides the connection liveness timings for one
+// client. It is intentionally unexported so production callers retain the
+// stable Client API while package tests can use short, deterministic timings.
+func withKeepaliveDurations(ping, readIdle time.Duration) ClientOption {
+	return func(client *Client) {
+		if ping > 0 {
+			client.pingInterval = ping
+		}
+		if readIdle > 0 {
+			client.readIdleTimeout = readIdle
+		}
+	}
+}
+
 // WithInboundHandler serves requests sent by the relay peer through handler.
 // The client pairing token is attached to each synthetic HTTP request. Handlers run
 // on bounded per-request goroutines and may call Call and its helpers through this Client.
@@ -63,6 +84,9 @@ type Client struct {
 	relayURL string
 	token    string
 	network  string
+
+	pingInterval    time.Duration
+	readIdleTimeout time.Duration
 
 	connMu sync.RWMutex
 	conn   *websocket.Conn
@@ -85,11 +109,13 @@ type Client struct {
 // NewClient creates a relay client. Run must be started before calls can use it.
 func NewClient(relayURL, bearerToken, network string, options ...ClientOption) *Client {
 	client := &Client{
-		relayURL: relayURL,
-		token:    bearerToken,
-		network:  network,
-		pending:  make(map[string]chan callResult),
-		stop:     make(chan struct{}),
+		relayURL:        relayURL,
+		token:           bearerToken,
+		network:         network,
+		pingInterval:    defaultPingInterval,
+		readIdleTimeout: defaultReadIdleTimeout,
+		pending:         make(map[string]chan callResult),
+		stop:            make(chan struct{}),
 	}
 	for _, option := range options {
 		if option != nil {
