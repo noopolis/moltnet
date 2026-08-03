@@ -47,10 +47,10 @@ type callResult struct {
 type ClientOption func(*Client)
 
 // WithInboundHandler serves requests sent by the relay peer through handler.
-// The client pairing token is attached to each synthetic HTTP request. The
-// handler must never call Call, RelayMessage, FetchNetwork, or another method
-// that sends a request through this same Client: inbound handlers run on the
-// Client read-loop goroutine, so waiting for that request's response deadlocks.
+// The client pairing token is attached to each synthetic HTTP request. Handlers run
+// on bounded per-request goroutines and may call Call and its helpers through this Client.
+// A handler must not synchronously call this Client's Close: Close waits for in-flight
+// handlers, including the caller, to return.
 func WithInboundHandler(handler http.Handler) ClientOption {
 	return func(client *Client) {
 		client.SetHandler(handler)
@@ -75,6 +75,8 @@ type Client struct {
 	stop      chan struct{}
 	closeOnce sync.Once
 	closed    atomic.Bool
+	runMu     sync.Mutex
+	run       *clientRun
 	inboundMu sync.RWMutex
 	inbound   *InboundHandler
 }
@@ -106,11 +108,8 @@ func (c *Client) SetHandler(handler http.Handler) {
 }
 
 // Call sends a request through the current relay connection and waits for its response.
-// It must not be called by this Client's injected inbound handler, directly or through
-// RelayMessage, FetchNetwork, or similar helpers: that handler runs on the read-loop
-// goroutine which must receive the response Call is waiting for. Calls made while the
-// client is reconnecting return ErrNotConnected rather than waiting for a future
-// connection.
+// Calls made while the client is reconnecting return ErrNotConnected rather than waiting
+// for a future connection.
 func (c *Client) Call(
 	ctx context.Context,
 	method string,
@@ -198,8 +197,18 @@ func (c *Client) failPending(err error) {
 }
 
 func (c *Client) writeFrame(ctx context.Context, conn *websocket.Conn, frame []byte) error {
+	if conn == nil {
+		return ErrNotConnected
+	}
+
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.closed.Load() {
+		return ErrClosed
+	}
 
 	if err := conn.SetWriteDeadline(resolveDeadline(ctx)); err != nil {
 		return fmt.Errorf("set relay write deadline: %w", err)

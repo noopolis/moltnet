@@ -17,9 +17,22 @@ import (
 // Run keeps a connection to the relay open until ctx is canceled or Close is called.
 func (c *Client) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	state := &clientRun{
+		cancel:  cancel,
+		inbound: newInboundDispatcher(8),
+	}
+	if !c.startRun(state) {
+		cancel()
+		return nil
+	}
 	finished := make(chan struct{})
-	defer close(finished)
+	defer func() {
+		cancel()
+		c.clearConnection(nil)
+		state.inbound.stopAndWait()
+		c.finishRun(state)
+		close(finished)
+	}()
 
 	go func() {
 		select {
@@ -53,7 +66,7 @@ func (c *Client) Run(ctx context.Context) error {
 		live := err == nil
 		if err == nil {
 			attempt = 0
-			err = c.readLoop(runCtx, conn, func() { attempt = 0 })
+			err = c.readLoop(runCtx, conn, state.inbound, func() { attempt = 0 })
 		}
 		c.clearConnection(conn)
 		if !live && conn != nil {
@@ -80,9 +93,45 @@ func (c *Client) Close() {
 	c.closeOnce.Do(func() {
 		c.closed.Store(true)
 		close(c.stop)
+		state := c.activeRun()
+		if state != nil {
+			state.cancel()
+		}
 		c.clearConnection(nil)
 		c.failPending(ErrClosed)
+		if state != nil {
+			state.inbound.stopAndWait()
+		}
 	})
+}
+
+type clientRun struct {
+	cancel  context.CancelFunc
+	inbound *inboundDispatcher
+}
+
+func (c *Client) startRun(state *clientRun) bool {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	if c.closed.Load() {
+		return false
+	}
+	c.run = state
+	return true
+}
+
+func (c *Client) finishRun(state *clientRun) {
+	c.runMu.Lock()
+	if c.run == state {
+		c.run = nil
+	}
+	c.runMu.Unlock()
+}
+
+func (c *Client) activeRun() *clientRun {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	return c.run
 }
 
 func (c *Client) dial(ctx context.Context) (*websocket.Conn, error) {
@@ -140,7 +189,7 @@ func (c *Client) sendHello(ctx context.Context, conn *websocket.Conn) error {
 	return c.writeFrame(ctx, conn, frame)
 }
 
-func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, onRead func()) error {
+func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, inbound *inboundDispatcher, onRead func()) error {
 	for {
 		if deadline, ok := ctx.Deadline(); ok {
 			if err := conn.SetReadDeadline(deadline); err != nil {
@@ -161,16 +210,30 @@ func (c *Client) readLoop(ctx context.Context, conn *websocket.Conn, onRead func
 		if header.Type == "res" {
 			c.dispatchResponse(header, payload)
 		} else if header.Type == "req" {
-			response, responseBody := c.inboundResponse(ctx, header, payload)
-			frame, err := makeFrame(response, responseBody)
-			if err != nil {
-				return err
-			}
-			if err := c.writeFrame(ctx, conn, frame); err != nil {
-				return err
+			if !inbound.start(ctx, func() {
+				c.serveInboundRequest(ctx, conn, header, payload)
+			}) {
+				return nil
 			}
 		}
 	}
+}
+
+func (c *Client) serveInboundRequest(ctx context.Context, conn *websocket.Conn, header frameHeader, payload []byte) {
+	response, responseBody := c.inboundResponse(ctx, header, payload)
+	frame, err := makeFrame(response, responseBody)
+	if err != nil || ctx.Err() != nil || c.closed.Load() || !c.isCurrentConnection(conn) {
+		return
+	}
+	if err := c.writeFrame(ctx, conn, frame); err != nil && ctx.Err() == nil && !c.closed.Load() {
+		c.clearConnection(conn)
+	}
+}
+
+func (c *Client) isCurrentConnection(conn *websocket.Conn) bool {
+	c.connMu.RLock()
+	defer c.connMu.RUnlock()
+	return conn != nil && c.conn == conn
 }
 
 func parseFrame(raw []byte) (frameHeader, []byte, error) {
