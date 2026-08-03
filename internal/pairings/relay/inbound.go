@@ -5,10 +5,23 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 )
 
 var errRelayResponseTooLarge = errors.New("relay response too large")
+
+var inboundAllowedRequests = map[string]map[string]struct{}{
+	http.MethodGet: {
+		"/v1/network": {},
+		"/v1/rooms":   {},
+		"/v1/agents":  {},
+	},
+	http.MethodPost: {
+		"/v1/messages": {},
+	},
+}
 
 // InboundHandler serves relay requests through an injected HTTP handler.
 type InboundHandler struct {
@@ -38,6 +51,9 @@ func (h *InboundHandler) serve(ctx context.Context, header frameHeader, payload 
 		http.Error(writer, "relay inbound handler unavailable", http.StatusNotImplemented)
 		return responseFrame(header, writer.statusCode()), writer.body
 	}
+	if !isAllowedInboundRequest(header.Method, header.Path) {
+		return inboundErrorResponse(header, "relay inbound request forbidden", http.StatusForbidden)
+	}
 
 	request, err := http.NewRequestWithContext(ctx, header.Method, header.Path, bytes.NewReader(payload))
 	if err != nil {
@@ -57,6 +73,22 @@ func (h *InboundHandler) serve(ctx context.Context, header frameHeader, payload 
 		return inboundErrorResponse(header, errRelayResponseTooLarge.Error(), http.StatusInternalServerError)
 	}
 	return responseFrame(header, writer.statusCode()), writer.body
+}
+
+func isAllowedInboundRequest(method, requestTarget string) bool {
+	requestURL, err := url.ParseRequestURI(requestTarget)
+	if err != nil || requestURL.Scheme != "" || requestURL.Host != "" || requestURL.RawPath != "" {
+		return false
+	}
+
+	// Reject escaped paths rather than decoding them: this prevents encoded dot
+	// segments or slashes from changing the path considered by the allowlist.
+	cleanPath := path.Clean(requestURL.Path)
+	if requestURL.Path != cleanPath {
+		return false
+	}
+	_, allowed := inboundAllowedRequests[method][cleanPath]
+	return allowed
 }
 
 func unavailableInboundResponse(header frameHeader) (frameHeader, []byte) {
