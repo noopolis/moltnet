@@ -169,7 +169,7 @@ type Pairing struct {
 	Relay             *PairingRelay       `json:"relay,omitempty" yaml:"relay,omitempty"`
 	Status            string              `json:"status,omitempty" yaml:"status,omitempty"`
 	Diagnostics       *PairingDiagnostics `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
-	Token             string              `json:"token,omitempty" yaml:"token,omitempty"`
+	Token             SecretString        `json:"token,omitempty" yaml:"token,omitempty"`
 }
 
 type CreateRoomRequest struct {

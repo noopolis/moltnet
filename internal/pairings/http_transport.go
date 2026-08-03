@@ -124,7 +124,7 @@ func endpoint(pairing protocol.Pairing, path string) string {
 }
 
 func authorizeRequest(request *http.Request, pairing protocol.Pairing) {
-	if token := strings.TrimSpace(pairing.Token); token != "" {
+	if token := strings.TrimSpace(pairing.Token.Reveal()); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 }

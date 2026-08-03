@@ -17,7 +17,7 @@ type PairingRelay struct {
 	// the relay's RELAY_TOKEN. When unset, internal/app falls back to
 	// Pairing.Token for that connection; this transport-neutral type makes no
 	// fallback policy decision itself.
-	Token string `json:"token,omitempty" yaml:"token,omitempty"`
+	Token SecretString `json:"token,omitempty" yaml:"token,omitempty"`
 }
 
 type PairingDiagnostics struct {

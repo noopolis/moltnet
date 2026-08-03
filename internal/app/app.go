@@ -132,11 +132,11 @@ func newRelayClients(config Config, pairingClient *pairings.Client) []*relay.Cli
 		if pairing.Relay == nil || strings.TrimSpace(pairing.Relay.URL) == "" {
 			continue
 		}
-		relayToken := strings.TrimSpace(pairing.Relay.Token)
+		relayToken := strings.TrimSpace(pairing.Relay.Token.Reveal())
 		if relayToken == "" {
-			relayToken = pairing.Token
+			relayToken = pairing.Token.Reveal()
 		}
-		client := relay.NewClient(relayEndpoint(pairing.Relay.URL, pairing.Relay.Room), relayToken, pairing.Token, config.NetworkID)
+		client := relay.NewClient(relayEndpoint(pairing.Relay.URL, pairing.Relay.Room), relayToken, pairing.Token.Reveal(), config.NetworkID)
 		pairingClient.RegisterRelay(pairing.ID, client)
 		clients = append(clients, client)
 	}

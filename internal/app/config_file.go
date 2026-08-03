@@ -56,11 +56,11 @@ type rawAuthConfig struct {
 }
 
 type rawAuthTokenConfig struct {
-	ID      string   `json:"id" yaml:"id"`
-	Value   string   `json:"value" yaml:"value"`
-	Network string   `json:"network,omitempty" yaml:"network,omitempty"`
-	Scopes  []string `json:"scopes" yaml:"scopes"`
-	Agents  []string `json:"agents,omitempty" yaml:"agents,omitempty"`
+	ID      string                `json:"id" yaml:"id"`
+	Value   protocol.SecretString `json:"value" yaml:"value"`
+	Network string                `json:"network,omitempty" yaml:"network,omitempty"`
+	Scopes  []string              `json:"scopes" yaml:"scopes"`
+	Agents  []string              `json:"agents,omitempty" yaml:"agents,omitempty"`
 }
 
 type rawStorageConfig struct {
@@ -95,7 +95,7 @@ func loadFileConfig(path string) (rawConfigFile, error) {
 	if err := validateConfigFile(config); err != nil {
 		return rawConfigFile{}, fmt.Errorf("validate Moltnet config %q: %w", path, err)
 	}
-	if hasPlaintextPairingTokens(config.Pairings) || hasPlaintextAuthTokens(config.Auth) || hasSensitivePostgresConfig(config.Storage) {
+	if hasPlaintextConfigSecrets(config) {
 		if err := validatePrivateConfigMode(path); err != nil {
 			return rawConfigFile{}, err
 		}
@@ -267,7 +267,7 @@ func authTokenConfigs(tokens []rawAuthTokenConfig) []authn.TokenConfig {
 		}
 		configs = append(configs, authn.TokenConfig{
 			ID:      token.ID,
-			Value:   token.Value,
+			Value:   token.Value.Reveal(),
 			Network: strings.TrimSpace(token.Network),
 			Scopes:  scopes,
 			Agents:  append([]string(nil), token.Agents...),

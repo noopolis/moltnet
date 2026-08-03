@@ -80,7 +80,7 @@ func newAPIClient(config bridgeconfig.Config) *apiClient {
 		inboundURL:  config.Runtime.InboundURL,
 		outboundURL: config.Runtime.OutboundURL,
 		ackURL:      strings.TrimRight(config.Runtime.AckURL, "/"),
-		token:       config.Runtime.Token,
+		token:       config.Runtime.Token.Reveal(),
 	}
 }
 

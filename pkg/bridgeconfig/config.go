@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 const (
@@ -38,39 +40,39 @@ type AgentConfig struct {
 }
 
 type MoltnetConfig struct {
-	AuthMode     string `json:"auth_mode,omitempty" yaml:"auth_mode,omitempty"`
-	BaseURL      string `json:"base_url" yaml:"base_url"`
-	NetworkID    string `json:"network_id" yaml:"network_id"`
-	Registration string `json:"registration,omitempty" yaml:"registration,omitempty"`
-	StaticToken  bool   `json:"static_token,omitempty" yaml:"static_token,omitempty"`
-	Token        string `json:"token,omitempty" yaml:"token,omitempty"`
-	TokenEnv     string `json:"token_env,omitempty" yaml:"token_env,omitempty"`
-	TokenPath    string `json:"token_path,omitempty" yaml:"token_path,omitempty"`
+	AuthMode     string                `json:"auth_mode,omitempty" yaml:"auth_mode,omitempty"`
+	BaseURL      string                `json:"base_url" yaml:"base_url"`
+	NetworkID    string                `json:"network_id" yaml:"network_id"`
+	Registration string                `json:"registration,omitempty" yaml:"registration,omitempty"`
+	StaticToken  bool                  `json:"static_token,omitempty" yaml:"static_token,omitempty"`
+	Token        protocol.SecretString `json:"token,omitempty" yaml:"token,omitempty"`
+	TokenEnv     string                `json:"token_env,omitempty" yaml:"token_env,omitempty"`
+	TokenPath    string                `json:"token_path,omitempty" yaml:"token_path,omitempty"`
 }
 
 type MoltnetTokenConfig struct {
-	Token     string `json:"token,omitempty" yaml:"token,omitempty"`
-	TokenEnv  string `json:"token_env,omitempty" yaml:"token_env,omitempty"`
-	TokenPath string `json:"token_path,omitempty" yaml:"token_path,omitempty"`
+	Token     protocol.SecretString `json:"token,omitempty" yaml:"token,omitempty"`
+	TokenEnv  string                `json:"token_env,omitempty" yaml:"token_env,omitempty"`
+	TokenPath string                `json:"token_path,omitempty" yaml:"token_path,omitempty"`
 }
 
 type RuntimeConfig struct {
-	Kind             string `json:"kind" yaml:"kind"`
-	Token            string `json:"token,omitempty" yaml:"token,omitempty"`
-	Channel          string `json:"channel,omitempty" yaml:"channel,omitempty"`
-	Command          string `json:"command,omitempty" yaml:"command,omitempty"`
-	ConfigPath       string `json:"config_path,omitempty" yaml:"config_path,omitempty"`
-	HomePath         string `json:"home_path,omitempty" yaml:"home_path,omitempty"`
-	GatewayURL       string `json:"gateway_url,omitempty" yaml:"gateway_url,omitempty"`
-	InboundURL       string `json:"inbound_url,omitempty" yaml:"inbound_url,omitempty"`
-	OutboundURL      string `json:"outbound_url,omitempty" yaml:"outbound_url,omitempty"`
-	AckURL           string `json:"ack_url,omitempty" yaml:"ack_url,omitempty"`
-	EventsURL        string `json:"events_url,omitempty" yaml:"events_url,omitempty"`
-	ControlURL       string `json:"control_url,omitempty" yaml:"control_url,omitempty"`
-	WorkspacePath    string `json:"workspace_path,omitempty" yaml:"workspace_path,omitempty"`
-	SessionStorePath string `json:"session_store_path,omitempty" yaml:"session_store_path,omitempty"`
-	SessionPrefix    string `json:"session_prefix,omitempty" yaml:"session_prefix,omitempty"`
-	Driver           string `json:"driver,omitempty" yaml:"driver,omitempty"`
+	Kind             string                `json:"kind" yaml:"kind"`
+	Token            protocol.SecretString `json:"token,omitempty" yaml:"token,omitempty"`
+	Channel          string                `json:"channel,omitempty" yaml:"channel,omitempty"`
+	Command          string                `json:"command,omitempty" yaml:"command,omitempty"`
+	ConfigPath       string                `json:"config_path,omitempty" yaml:"config_path,omitempty"`
+	HomePath         string                `json:"home_path,omitempty" yaml:"home_path,omitempty"`
+	GatewayURL       string                `json:"gateway_url,omitempty" yaml:"gateway_url,omitempty"`
+	InboundURL       string                `json:"inbound_url,omitempty" yaml:"inbound_url,omitempty"`
+	OutboundURL      string                `json:"outbound_url,omitempty" yaml:"outbound_url,omitempty"`
+	AckURL           string                `json:"ack_url,omitempty" yaml:"ack_url,omitempty"`
+	EventsURL        string                `json:"events_url,omitempty" yaml:"events_url,omitempty"`
+	ControlURL       string                `json:"control_url,omitempty" yaml:"control_url,omitempty"`
+	WorkspacePath    string                `json:"workspace_path,omitempty" yaml:"workspace_path,omitempty"`
+	SessionStorePath string                `json:"session_store_path,omitempty" yaml:"session_store_path,omitempty"`
+	SessionPrefix    string                `json:"session_prefix,omitempty" yaml:"session_prefix,omitempty"`
+	Driver           string                `json:"driver,omitempty" yaml:"driver,omitempty"`
 }
 
 type RoomBinding struct {
@@ -119,7 +121,7 @@ func LoadFile(path string) (Config, error) {
 	if err := config.Validate(); err != nil {
 		return Config{}, err
 	}
-	if strings.TrimSpace(config.Moltnet.Token) != "" || strings.TrimSpace(config.Runtime.Token) != "" {
+	if strings.TrimSpace(config.Moltnet.Token.Reveal()) != "" || strings.TrimSpace(config.Runtime.Token.Reveal()) != "" {
 		if err := validatePrivateConfigMode(path); err != nil {
 			return Config{}, err
 		}

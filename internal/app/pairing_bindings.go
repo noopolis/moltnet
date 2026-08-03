@@ -18,7 +18,7 @@ func bindPairingNetworks(tokens []authn.TokenConfig, pairings []protocol.Pairing
 		matched := false
 		ambiguous := false
 		for _, pairing := range pairings {
-			if strings.TrimSpace(pairing.Token) != strings.TrimSpace(bound[index].Value) {
+			if strings.TrimSpace(pairing.Token.Reveal()) != strings.TrimSpace(bound[index].Value) {
 				continue
 			}
 			candidate := strings.TrimSpace(pairing.RemoteNetworkID)

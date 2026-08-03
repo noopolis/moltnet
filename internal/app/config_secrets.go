@@ -78,12 +78,19 @@ func validateRemoteURL(name string, value string) error {
 	return nil
 }
 
+func hasPlaintextConfigSecrets(config rawConfigFile) bool {
+	return hasPlaintextPairingTokens(config.Pairings) ||
+		hasPlaintextRoomSecrets(config.Rooms) ||
+		hasPlaintextAuthTokens(config.Auth) ||
+		hasSensitivePostgresConfig(config.Storage)
+}
+
 func hasPlaintextPairingTokens(pairings []protocol.Pairing) bool {
 	for _, pairing := range pairings {
-		if strings.TrimSpace(pairing.Token) != "" {
+		if strings.TrimSpace(pairing.Token.Reveal()) != "" {
 			return true
 		}
-		if pairing.Relay != nil && strings.TrimSpace(pairing.Relay.Token) != "" {
+		if pairing.Relay != nil && strings.TrimSpace(pairing.Relay.Token.Reveal()) != "" {
 			return true
 		}
 	}
@@ -91,9 +98,16 @@ func hasPlaintextPairingTokens(pairings []protocol.Pairing) bool {
 	return false
 }
 
+// hasPlaintextRoomSecrets is intentionally a separate extension point: rooms
+// do not carry credentials yet, but room-level credentials must participate in
+// the same private-config policy when introduced.
+func hasPlaintextRoomSecrets(_ []RoomConfig) bool {
+	return false
+}
+
 func hasPlaintextAuthTokens(config rawAuthConfig) bool {
 	for _, token := range config.Tokens {
-		if strings.TrimSpace(token.Value) != "" {
+		if strings.TrimSpace(token.Value.Reveal()) != "" {
 			return true
 		}
 	}

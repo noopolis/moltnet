@@ -240,7 +240,7 @@ func sendControlText(
 	}
 
 	request.Header.Set("Content-Type", "application/json")
-	if token := strings.TrimSpace(config.Runtime.Token); token != "" {
+	if token := strings.TrimSpace(config.Runtime.Token.Reveal()); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 

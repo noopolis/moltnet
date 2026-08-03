@@ -150,6 +150,10 @@ func sendPicoPrompt(
 		query.Set("token", token)
 	}
 	socketURL.RawQuery = query.Encode()
+	redactedSocketURL := *socketURL
+	redactedQuery := redactedSocketURL.Query()
+	redactedQuery.Del("token")
+	redactedSocketURL.RawQuery = redactedQuery.Encode()
 
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	if token := picoRuntimeToken(config); token != "" {
@@ -162,9 +166,9 @@ func sendPicoPrompt(
 	conn, response, err := dialer.DialContext(ctx, socketURL.String(), headers)
 	if err != nil {
 		if response != nil {
-			return fmt.Errorf("connect pico websocket %s: %w (status %s)", socketURL.Redacted(), err, response.Status)
+			return fmt.Errorf("connect pico websocket %s: %w (status %s)", redactedSocketURL.Redacted(), err, response.Status)
 		}
-		return fmt.Errorf("connect pico websocket %s: %w", socketURL.Redacted(), err)
+		return fmt.Errorf("connect pico websocket %s: %w", redactedSocketURL.Redacted(), err)
 	}
 	defer conn.Close()
 
@@ -193,7 +197,7 @@ func sendPicoPrompt(
 }
 
 func picoRuntimeToken(config bridgeconfig.Config) string {
-	if token := strings.TrimSpace(config.Runtime.Token); token != "" {
+	if token := strings.TrimSpace(config.Runtime.Token.Reveal()); token != "" {
 		return token
 	}
 	return defaultPicoToken

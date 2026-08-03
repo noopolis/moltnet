@@ -60,7 +60,7 @@ func loadApplyFileConfig(path string) (rawConfigFile, error) {
 	if err := validateApplyConfigFile(config); err != nil {
 		return rawConfigFile{}, fmt.Errorf("validate Moltnet config %q: %w", path, err)
 	}
-	if hasPlaintextPairingTokens(config.Pairings) || hasPlaintextAuthTokens(config.Auth) || hasSensitivePostgresConfig(config.Storage) {
+	if hasPlaintextConfigSecrets(config) {
 		if err := validatePrivateConfigMode(path); err != nil {
 			return rawConfigFile{}, err
 		}
@@ -100,7 +100,7 @@ func validateApplyAuth(config rawAuthConfig) error {
 				return fmt.Errorf("auth.tokens[%d].agents[%d] %w", tokenIndex, agentIndex, err)
 			}
 		}
-		if len(token.Agents) > 0 && strings.TrimSpace(token.ID) == "" && strings.TrimSpace(token.Value) == "" {
+		if len(token.Agents) > 0 && strings.TrimSpace(token.ID) == "" && strings.TrimSpace(token.Value.Reveal()) == "" {
 			return fmt.Errorf("auth.tokens[%d].id is required when agents are declared without a token value", tokenIndex)
 		}
 	}
@@ -118,7 +118,7 @@ func applyRequestFromRawConfig(config rawConfigFile) (protocol.ApplyConfigReques
 	for _, token := range config.Auth.Tokens {
 		tokenConfig := authn.TokenConfig{
 			ID:    token.ID,
-			Value: token.Value,
+			Value: token.Value.Reveal(),
 		}
 		credentialKey := authn.TokenConfigCredentialKey(tokenConfig)
 		for _, agentID := range token.Agents {

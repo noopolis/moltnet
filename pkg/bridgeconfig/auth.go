@@ -37,13 +37,13 @@ func (m MoltnetConfig) EffectiveAuthMode() string {
 }
 
 func (m MoltnetConfig) HasTokenSource() bool {
-	return strings.TrimSpace(m.Token) != "" ||
+	return strings.TrimSpace(m.Token.Reveal()) != "" ||
 		strings.TrimSpace(m.TokenEnv) != "" ||
 		strings.TrimSpace(m.TokenPath) != ""
 }
 
 func (m MoltnetTokenConfig) HasTokenSource() bool {
-	return strings.TrimSpace(m.Token) != "" ||
+	return strings.TrimSpace(m.Token.Reveal()) != "" ||
 		strings.TrimSpace(m.TokenEnv) != "" ||
 		strings.TrimSpace(m.TokenPath) != ""
 }
@@ -81,8 +81,8 @@ func (m MoltnetConfig) ResolveToken() (string, bool, error) {
 		return "", false, nil
 	}
 
-	if m.Token != "" {
-		token := strings.TrimSpace(m.Token)
+	if m.Token.Reveal() != "" {
+		token := strings.TrimSpace(m.Token.Reveal())
 		if token == "" {
 			return "", false, fmt.Errorf("bridge config moltnet.token is empty")
 		}

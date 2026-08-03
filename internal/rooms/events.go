@@ -218,7 +218,6 @@ func (s *Service) setPairingRuntime(pairingID string, next pairingStatus, replac
 	var eventPairing *protocol.Pairing
 	for _, pairing := range s.pairings {
 		if pairing.ID == pairingID {
-			pairing.Token = ""
 			pairing.Status = next.value
 			pairing.Diagnostics = clonePairingDiagnostics(next.diagnostics)
 			copyPairing := pairing

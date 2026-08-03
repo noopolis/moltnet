@@ -165,14 +165,14 @@ func (a AttachmentConfig) bridgeConfig(moltnet bridgeconfig.MoltnetConfig) bridg
 }
 
 func (c Config) hasPlaintextTokens() bool {
-	if strings.TrimSpace(c.Moltnet.Token) != "" {
+	if strings.TrimSpace(c.Moltnet.Token.Reveal()) != "" {
 		return true
 	}
 	for _, attachment := range c.Attachments {
-		if strings.TrimSpace(attachment.Moltnet.Token) != "" {
+		if strings.TrimSpace(attachment.Moltnet.Token.Reveal()) != "" {
 			return true
 		}
-		if strings.TrimSpace(attachment.Runtime.Token) != "" {
+		if strings.TrimSpace(attachment.Runtime.Token.Reveal()) != "" {
 			return true
 		}
 	}
@@ -197,7 +197,7 @@ func validateSharedOpenAuth(moltnet bridgeconfig.MoltnetConfig) error {
 }
 
 func resolveSharedOpenStaticToken(moltnet bridgeconfig.MoltnetConfig) (string, error) {
-	if token := strings.TrimSpace(moltnet.Token); token != "" {
+	if token := strings.TrimSpace(moltnet.Token.Reveal()); token != "" {
 		return token, nil
 	}
 	if envName := strings.TrimSpace(moltnet.TokenEnv); envName != "" {

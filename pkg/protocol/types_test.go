@@ -8,7 +8,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func TestPairingRelayJSONAndYAMLRoundTrip(t *testing.T) {
+func TestPairingRelaySerializationRedactsToken(t *testing.T) {
 	t.Parallel()
 
 	want := Pairing{ID: "pair", Relay: &PairingRelay{URL: "wss://relay.example.com", Room: "lobby", Token: "relay-connect-token"}}
@@ -20,8 +20,8 @@ func TestPairingRelayJSONAndYAMLRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(jsonBytes, &gotJSON); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if gotJSON.Relay == nil || *gotJSON.Relay != *want.Relay {
-		t.Fatalf("JSON relay = %#v, want %#v", gotJSON.Relay, want.Relay)
+	if gotJSON.Relay == nil || gotJSON.Relay.Token.Reveal() != RedactedSecretString {
+		t.Fatalf("JSON relay token = %#v, want redaction marker", gotJSON.Relay)
 	}
 
 	yamlBytes, err := yaml.Marshal(want)
@@ -32,8 +32,8 @@ func TestPairingRelayJSONAndYAMLRoundTrip(t *testing.T) {
 	if err := yaml.Unmarshal(yamlBytes, &gotYAML); err != nil {
 		t.Fatalf("yaml.Unmarshal() error = %v", err)
 	}
-	if gotYAML.Relay == nil || *gotYAML.Relay != *want.Relay {
-		t.Fatalf("YAML relay = %#v, want %#v", gotYAML.Relay, want.Relay)
+	if gotYAML.Relay == nil || gotYAML.Relay.Token.Reveal() != RedactedSecretString {
+		t.Fatalf("YAML relay token = %#v, want redaction marker", gotYAML.Relay)
 	}
 }
 
