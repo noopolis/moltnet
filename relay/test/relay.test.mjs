@@ -31,7 +31,8 @@ test.after(async () => {
   await once(worker, "exit");
 });
 
-test("relays opaque header-and-payload req and res frames byte-for-byte", async (t) => {
+// Intentionally text-framed compatibility coverage; production traffic is binary.
+test("relays opaque header-and-payload req and res frames byte-for-byte (text frames still work)", async (t) => {
   const first = await RawWebSocket.connect({ token });
   const second = await RawWebSocket.connect({ token });
   t.after(() => first.close());
@@ -70,6 +71,14 @@ test("relays binary frames with non-UTF-8 opaque payload bytes byte-for-byte", a
   first.sendBinary(frame);
 
   assert.deepEqual(await second.nextBinary(), frame);
+
+  const response = Buffer.concat([
+    Buffer.from('{"t":"res","id":"binary-opaque","to":"network-a"}\n'),
+    Buffer.from([0xff, 0x80, 0x42, 0x00])
+  ]);
+  second.sendBinary(response);
+
+  assert.deepEqual(await first.nextBinary(), response);
 });
 
 test("a third peer can never relay a frame to either admitted peer", async (t) => {
@@ -78,8 +87,8 @@ test("a third peer can never relay a frame to either admitted peer", async (t) =
   t.after(() => first.close());
   t.after(() => second.close());
 
-  first.send(JSON.stringify({ t: "hello", network: "network-a" }));
-  second.send(JSON.stringify({ t: "hello", network: "network-b" }));
+  first.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "network-a" })));
+  second.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "network-b" })));
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   const third = await RawWebSocket.connect({ token, room: "strict-capacity" });
@@ -87,9 +96,9 @@ test("a third peer can never relay a frame to either admitted peer", async (t) =
   // Header-only frames are valid in both wire formats, so old vulnerable relays
   // would route this rather than rejecting it merely because parsing failed.
   const forbidden = JSON.stringify({ t: "req", id: "third-peer", to: "network-a" });
-  third.send(forbidden);
+  third.sendBinary(Buffer.from(forbidden));
 
-  await Promise.all([assertNoText(first), assertNoText(second)]);
+  await Promise.all([assertNoBinary(first), assertNoBinary(second)]);
   assert.equal((await third.nextClose()).code, 1013);
 });
 
@@ -99,8 +108,8 @@ test("releases a peer slot after a protocol-error teardown", async (t) => {
   t.after(() => surviving.close());
   t.after(() => errored.close());
 
-  surviving.send(JSON.stringify({ t: "hello", network: "surviving-network" }));
-  errored.send(JSON.stringify({ t: "hello", network: "errored-network" }));
+  surviving.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "surviving-network" })));
+  errored.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "errored-network" })));
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   errored.sendProtocolViolation();
@@ -108,13 +117,14 @@ test("releases a peer slot after a protocol-error teardown", async (t) => {
 
   const replacement = await RawWebSocket.connect({ token, room: "protocol-error-teardown" });
   t.after(() => replacement.close());
-  replacement.send(JSON.stringify({ t: "hello", network: "replacement-network" }));
+  replacement.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "replacement-network" })));
   await assertNoClose(replacement);
 
   const request =
     '{"t":"req","id":"replacement-request","to":"replacement-network"}\nopaque replacement payload';
-  surviving.send(request);
-  assert.equal(await replacement.nextText(), request);
+  const binaryRequest = Buffer.from(request);
+  surviving.sendBinary(binaryRequest);
+  assert.deepEqual(await replacement.nextBinary(), binaryRequest);
 });
 
 test("drops a routing header larger than 8192 bytes", async (t) => {
@@ -123,8 +133,8 @@ test("drops a routing header larger than 8192 bytes", async (t) => {
   t.after(() => first.close());
   t.after(() => second.close());
 
-  first.send(JSON.stringify({ t: "hello", network: "network-a" }));
-  second.send(JSON.stringify({ t: "hello", network: "network-b" }));
+  first.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "network-a" })));
+  second.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "network-b" })));
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   // This complete JSON header deliberately has no newline and is over the
@@ -135,9 +145,9 @@ test("drops a routing header larger than 8192 bytes", async (t) => {
     to: "network-b",
     padding: "x".repeat(8_192)
   });
-  first.send(oversized);
+  first.sendBinary(Buffer.from(oversized));
 
-  await assertNoText(second);
+  await assertNoBinary(second);
 });
 
 test("a colliding _pk cannot join, displace peers, or relay", async (t) => {
@@ -150,24 +160,32 @@ test("a colliding _pk cannot join, displace peers, or relay", async (t) => {
   t.after(() => first.close());
   t.after(() => second.close());
 
+  first.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "network-a" })));
+  second.sendBinary(Buffer.from(JSON.stringify({ t: "hello", network: "network-b" })));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
   const colliding = await RawWebSocket.connect({
     token,
     room: "pk-collision",
     connectionId: "first-admitted-peer"
   });
   t.after(() => colliding.close());
-  colliding.send('{"t":"req","id":"collision-attempt"}\nignored');
+  colliding.sendBinary(Buffer.from('{"t":"req","id":"collision-attempt"}\nignored'));
 
-  await Promise.all([assertNoText(first), assertNoText(second)]);
+  await Promise.all([assertNoBinary(first), assertNoBinary(second)]);
   assert.equal((await colliding.nextClose()).code, 1013);
 
-  const request = '{"t":"req","id":"original-peers-still-connected"}\nping';
-  first.send(request);
-  assert.equal(await second.nextText(), request);
+  const request = Buffer.from(
+    '{"t":"req","id":"original-peers-still-connected"}\nping'
+  );
+  first.sendBinary(request);
+  assert.deepEqual(await second.nextBinary(), request);
 
-  const response = '{"t":"res","id":"original-peers-still-connected"}\npong';
-  second.send(response);
-  assert.equal(await first.nextText(), response);
+  const response = Buffer.from(
+    '{"t":"res","id":"original-peers-still-connected"}\npong'
+  );
+  second.sendBinary(response);
+  assert.deepEqual(await first.nextBinary(), response);
 });
 
 test("refuses invalid bearer tokens", async () => {
@@ -176,6 +194,10 @@ test("refuses invalid bearer tokens", async () => {
 
 async function assertNoText(socket) {
   await assert.rejects(socket.nextText(300), /timed out waiting for text frame/);
+}
+
+async function assertNoBinary(socket) {
+  await assert.rejects(socket.nextBinary(300), /timed out waiting for binary frame/);
 }
 
 async function assertNoClose(socket) {
