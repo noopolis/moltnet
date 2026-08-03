@@ -7,6 +7,7 @@ import (
 
 func TestConfigFromEnv(t *testing.T) {
 	t.Setenv("MOLTNET_ALLOW_HUMAN_INGRESS", "false")
+	t.Setenv("MOLTNET_REQUIRE_PAIR_NETWORK_BINDING", "true")
 	t.Setenv("MOLTNET_ALLOW_DIRECT_MESSAGES", "false")
 	t.Setenv("MOLTNET_DEBUG_EVENTS", "true")
 	t.Setenv("MOLTNET_LISTEN_ADDR", ":9999")
@@ -22,6 +23,9 @@ func TestConfigFromEnv(t *testing.T) {
 	}
 	if config.AllowHumanIngress {
 		t.Fatalf("expected human ingress disabled, got %#v", config)
+	}
+	if !config.Auth.RequirePairNetworkBinding {
+		t.Fatalf("expected pair network binding to be required, got %#v", config.Auth)
 	}
 	if !config.DebugEvents {
 		t.Fatalf("expected debug events enabled, got %#v", config)

@@ -8,10 +8,15 @@ import (
 	"github.com/noopolis/moltnet/internal/observability"
 )
 
-func pairCredentialMatchesOrigin(ctx context.Context, claims authn.Claims, originNetworkID string) bool {
+func pairCredentialMatchesOrigin(ctx context.Context, claims authn.Claims, originNetworkID string, strict bool) bool {
 	credentialNetworkID := strings.TrimSpace(claims.Network())
 	if credentialNetworkID != "" {
 		return credentialNetworkID == originNetworkID
+	}
+	if strict {
+		observability.Logger(ctx, "rooms.pairing", "origin_network_id", originNetworkID).
+			Warn("rejecting inbound pair-scoped message from a pair token with no bound network because auth.require_pair_network_binding is enabled")
+		return false
 	}
 
 	observability.Logger(ctx, "rooms.pairing", "origin_network_id", originNetworkID).

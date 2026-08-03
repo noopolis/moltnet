@@ -31,6 +31,7 @@ server:
 auth:
   mode: bearer
   public_read: true
+  require_pair_network_binding: true
   agent_registration: token
   tokens:
     - id: operator
@@ -96,7 +97,7 @@ pairings:
 	if config.Auth.Mode != authn.ModeBearer || len(config.Auth.Tokens) != 1 || len(config.Auth.AllowedOrigins) != 1 {
 		t.Fatalf("unexpected auth %#v", config.Auth)
 	}
-	if !config.Auth.PublicRead || config.Auth.AgentRegistration != authn.AgentRegistrationToken {
+	if !config.Auth.PublicRead || !config.Auth.RequirePairNetworkBinding || config.Auth.AgentRegistration != authn.AgentRegistrationToken {
 		t.Fatalf("unexpected auth policy %#v", config.Auth)
 	}
 }

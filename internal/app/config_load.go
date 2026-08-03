@@ -115,6 +115,9 @@ func mergeFileConfig(config Config, fileConfig rawConfigFile) Config {
 	if fileConfig.Auth.PublicRead != nil {
 		config.Auth.PublicRead = *fileConfig.Auth.PublicRead
 	}
+	if fileConfig.Auth.RequirePairNetworkBinding != nil {
+		config.Auth.RequirePairNetworkBinding = *fileConfig.Auth.RequirePairNetworkBinding
+	}
 	if strings.TrimSpace(fileConfig.Auth.AgentRegistration) != "" {
 		config.Auth.AgentRegistration = strings.TrimSpace(fileConfig.Auth.AgentRegistration)
 	}
@@ -149,6 +152,9 @@ func mergeEnvConfig(config Config) (Config, error) {
 	}
 	if value, ok := envBoolValue("MOLTNET_ALLOW_HUMAN_INGRESS"); ok {
 		config.AllowHumanIngress = value
+	}
+	if value, ok := envBoolValue("MOLTNET_REQUIRE_PAIR_NETWORK_BINDING"); ok {
+		config.Auth.RequirePairNetworkBinding = value
 	}
 	if value, ok := envValue("MOLTNET_CAUSAL_EVENTS_PATH"); ok {
 		config.CausalEventsPath = value

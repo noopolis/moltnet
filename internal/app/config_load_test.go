@@ -32,6 +32,9 @@ func TestLoadConfigDefaultsWithoutFile(t *testing.T) {
 	if config.Auth.Mode != authn.ModeNone || config.Auth.ListenAddr != defaultListenAddr {
 		t.Fatalf("unexpected auth defaults %#v", config.Auth)
 	}
+	if config.Auth.RequirePairNetworkBinding {
+		t.Fatalf("expected pair network binding to be optional by default, got %#v", config.Auth)
+	}
 	if config.DisableDirectMessages {
 		t.Fatalf("expected direct messages enabled by default, got %#v", config)
 	}

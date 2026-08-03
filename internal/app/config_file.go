@@ -48,10 +48,11 @@ type rawConsoleAnalyticsConfig struct {
 }
 
 type rawAuthConfig struct {
-	Mode              string               `json:"mode" yaml:"mode"`
-	PublicRead        *bool                `json:"public_read,omitempty" yaml:"public_read,omitempty"`
-	AgentRegistration string               `json:"agent_registration,omitempty" yaml:"agent_registration,omitempty"`
-	Tokens            []rawAuthTokenConfig `json:"tokens" yaml:"tokens"`
+	Mode                      string               `json:"mode" yaml:"mode"`
+	PublicRead                *bool                `json:"public_read,omitempty" yaml:"public_read,omitempty"`
+	RequirePairNetworkBinding *bool                `json:"require_pair_network_binding,omitempty" yaml:"require_pair_network_binding,omitempty"`
+	AgentRegistration         string               `json:"agent_registration,omitempty" yaml:"agent_registration,omitempty"`
+	Tokens                    []rawAuthTokenConfig `json:"tokens" yaml:"tokens"`
 }
 
 type rawAuthTokenConfig struct {
