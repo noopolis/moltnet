@@ -66,11 +66,16 @@ type Service struct {
 	pairingsMu                sync.RWMutex
 	pairingPublishMu          sync.Mutex
 	pairingStatuses           map[string]pairingStatus
-	agentPresenceMu           sync.RWMutex
-	connectedAgents           map[string]bool
-	lifecycleCtx              context.Context
-	lifecycleCancel           context.CancelFunc
-	now                       func() time.Time
+	// roomCredentials deliberately stay in memory: protocol.Room is persisted
+	// and publicly serialized, while configured credentials are repopulated by
+	// ApplyConfigContext at boot and must never enter either surface.
+	roomCredentials   map[string]protocol.SecretString
+	roomCredentialsMu sync.RWMutex
+	agentPresenceMu   sync.RWMutex
+	connectedAgents   map[string]bool
+	lifecycleCtx      context.Context
+	lifecycleCancel   context.CancelFunc
+	now               func() time.Time
 }
 
 type pairingStatus struct {
@@ -117,6 +122,7 @@ func NewService(config ServiceConfig) *Service {
 		causalWriter:              config.CausalWriter,
 		relaySlots:                make(chan struct{}, 8),
 		pairingStatuses:           statuses,
+		roomCredentials:           make(map[string]protocol.SecretString),
 		connectedAgents:           make(map[string]bool),
 		lifecycleCtx:              lifecycleCtx,
 		lifecycleCancel:           lifecycleCancel,

@@ -65,10 +65,49 @@ func (c *Client) ApplyConfig(
 	request protocol.ApplyConfigRequest,
 ) (protocol.ApplyConfigResult, error) {
 	var result protocol.ApplyConfigResult
-	if err := c.doJSON(ctx, http.MethodPost, "/v1/apply", request, &result); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/apply", outboundApplyConfigRequest(request), &result); err != nil {
 		return protocol.ApplyConfigResult{}, err
 	}
 	return result, nil
+}
+
+// outboundApplyConfigRequest is intentionally client-local: /v1/apply is the
+// authenticated operator-to-server boundary where room credentials must be
+// plaintext, while protocol.SecretString remains redacted everywhere else.
+func outboundApplyConfigRequest(request protocol.ApplyConfigRequest) applyConfigRequestWire {
+	rooms := make([]createRoomRequestWire, 0, len(request.Rooms))
+	for _, room := range request.Rooms {
+		rooms = append(rooms, createRoomRequestWire{
+			ID:          room.ID,
+			Name:        room.Name,
+			Members:     room.Members,
+			Visibility:  room.Visibility,
+			WritePolicy: room.WritePolicy,
+			Federation:  room.Federation,
+			Credential:  room.Credential.Reveal(),
+		})
+	}
+	return applyConfigRequestWire{
+		NetworkID: request.NetworkID,
+		Rooms:     rooms,
+		Agents:    request.Agents,
+	}
+}
+
+type applyConfigRequestWire struct {
+	NetworkID string                       `json:"network_id,omitempty"`
+	Rooms     []createRoomRequestWire      `json:"rooms,omitempty"`
+	Agents    []protocol.ApplyAgentRequest `json:"agents,omitempty"`
+}
+
+type createRoomRequestWire struct {
+	ID          string                   `json:"id"`
+	Name        string                   `json:"name,omitempty"`
+	Members     []string                 `json:"members,omitempty"`
+	Visibility  string                   `json:"visibility,omitempty"`
+	WritePolicy string                   `json:"write_policy,omitempty"`
+	Federation  *protocol.RoomFederation `json:"federation,omitempty"`
+	Credential  string                   `json:"credential,omitempty"`
 }
 
 func (c *Client) UpdateRoomMembers(

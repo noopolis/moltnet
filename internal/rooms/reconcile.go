@@ -11,12 +11,22 @@ import (
 )
 
 func (s *Service) ReconcileRoomContext(ctx context.Context, request protocol.CreateRoomRequest) (protocol.Room, error) {
+	if err := validateRoomCredentialMode(ctx, request.Credential); err != nil {
+		return protocol.Room{}, err
+	}
 	room, err := roomFromCreateRequest(s.networkID, request)
 	if err != nil {
 		return protocol.Room{}, err
 	}
+	previousCredential, hadCredential := s.roomCredential(room.ID)
+	s.setRoomCredential(room.ID, request.Credential)
 	reconciled, err := s.reconcileRoom(ctx, room)
 	if err != nil {
+		if hadCredential {
+			s.setRoomCredential(room.ID, previousCredential)
+		} else {
+			s.clearRoomCredential(room.ID)
+		}
 		if errors.Is(err, store.ErrRoomNotFound) {
 			return protocol.Room{}, unknownRoomError(room.ID)
 		}

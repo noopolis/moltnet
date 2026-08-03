@@ -24,6 +24,9 @@ func (s *Service) CreateRoom(request protocol.CreateRoomRequest) (protocol.Room,
 }
 
 func (s *Service) CreateRoomContext(ctx context.Context, request protocol.CreateRoomRequest) (protocol.Room, error) {
+	if err := validateRoomCredentialMode(ctx, request.Credential); err != nil {
+		return protocol.Room{}, err
+	}
 	room, err := roomFromCreateRequest(s.networkID, request)
 	if err != nil {
 		return protocol.Room{}, err
@@ -35,6 +38,7 @@ func (s *Service) CreateRoomContext(ctx context.Context, request protocol.Create
 		}
 		return protocol.Room{}, err
 	}
+	s.setRoomCredential(room.ID, request.Credential)
 
 	s.publishEvent(protocol.Event{
 		ID:        newPrefixedID("evt"),

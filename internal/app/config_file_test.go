@@ -287,3 +287,67 @@ server:
 		t.Fatal("expected trust_forwarded_proto to load")
 	}
 }
+
+func TestRoomCredentialConfigRequiresPrivateModeOnlyForPlaintext(t *testing.T) {
+	directory := t.TempDir()
+	plaintextPath := filepath.Join(directory, "plaintext.yaml")
+	writeConfigFile(t, plaintextPath, `
+version: moltnet.v1
+auth:
+  mode: open
+rooms:
+  - id: research
+    credential:
+      token: room-secret
+`)
+	if err := os.Chmod(plaintextPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadFileConfig(plaintextPath); err == nil {
+		t.Fatal("expected plaintext room credential to require 0600")
+	}
+	if _, err := loadApplyFileConfig(plaintextPath); err == nil {
+		t.Fatal("expected apply plaintext room credential to require 0600")
+	}
+	if err := os.Chmod(plaintextPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadFileConfig(plaintextPath); err != nil {
+		t.Fatalf("private plaintext room credential config error = %v", err)
+	}
+	if _, err := loadApplyFileConfig(plaintextPath); err != nil {
+		t.Fatalf("private apply plaintext room credential config error = %v", err)
+	}
+
+	for name, source := range map[string]string{
+		"environment": "token_env: MOLTNET_ROOM_TOKEN",
+		"path":        "token_path: secrets/room-token",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "indirect.yaml")
+			writeConfigFile(t, path, "version: moltnet.v1\nauth:\n  mode: open\nrooms:\n  - id: research\n    credential:\n      "+source+"\n")
+			if err := os.Chmod(path, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loadFileConfig(path); err != nil {
+				t.Fatalf("indirect credential should not require 0600: %v", err)
+			}
+			if _, err := loadApplyFileConfig(path); err != nil {
+				t.Fatalf("indirect apply credential should not require 0600: %v", err)
+			}
+		})
+	}
+}
+
+func TestRoomCredentialIsRejectedWhenAuthIsNone(t *testing.T) {
+	config := rawConfigFile{Rooms: []RoomConfig{{
+		ID:         "research",
+		Credential: &RoomCredentialConfig{Token: protocol.NewSecretString("room-secret")},
+	}}}
+	if err := validateConfigFile(config); err == nil {
+		t.Fatal("expected auth none room credential validation error")
+	}
+	if err := validateApplyConfigFile(config); err == nil {
+		t.Fatal("expected apply auth none room credential validation error")
+	}
+}

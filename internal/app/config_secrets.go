@@ -98,10 +98,12 @@ func hasPlaintextPairingTokens(pairings []protocol.Pairing) bool {
 	return false
 }
 
-// hasPlaintextRoomSecrets is intentionally a separate extension point: rooms
-// do not carry credentials yet, but room-level credentials must participate in
-// the same private-config policy when introduced.
-func hasPlaintextRoomSecrets(_ []RoomConfig) bool {
+func hasPlaintextRoomSecrets(rooms []RoomConfig) bool {
+	for _, room := range rooms {
+		if room.Credential != nil && strings.TrimSpace(room.Credential.Token.Reveal()) != "" {
+			return true
+		}
+	}
 	return false
 }
 

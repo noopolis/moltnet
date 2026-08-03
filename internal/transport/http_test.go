@@ -61,6 +61,7 @@ type fakeService struct {
 	failedWakeAgents   []protocol.Actor
 	failedWakeDetails  []protocol.WakeFailureDetails
 	updatedRoom        protocol.UpdateRoomMembersRequest
+	joinRoom           protocol.JoinRoomRequest
 	sentMessage        protocol.SendMessageRequest
 	roomID             string
 	roomBefore         string
@@ -231,6 +232,11 @@ func (f *fakeService) UpdateRoomMembers(ctx context.Context, roomID string, requ
 	f.roomID = roomID
 	f.updatedRoom = request
 	return protocol.Room{ID: roomID, Members: append(append([]string(nil), request.Add...), request.Remove...)}, nil
+}
+func (f *fakeService) JoinRoomContext(ctx context.Context, roomID string, request protocol.JoinRoomRequest) (protocol.Room, error) {
+	f.roomID = roomID
+	f.joinRoom = request
+	return protocol.Room{ID: roomID, Members: []string{request.From.ID}}, nil
 }
 func (f *fakeService) RegisterAgentContext(ctx context.Context, request protocol.RegisterAgentRequest) (protocol.AgentRegistration, error) {
 	f.registeredAgent = request

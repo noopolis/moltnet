@@ -64,6 +64,7 @@ func (s *Service) RemoveRoomContext(ctx context.Context, roomID string) (protoco
 	if err := s.removeRoom(ctx, id); err != nil {
 		return protocol.RemoveResult{}, err
 	}
+	s.clearRoomCredential(id)
 
 	now := s.now().UTC()
 	s.publishEvent(protocol.Event{

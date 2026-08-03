@@ -106,6 +106,26 @@ func TestPlaintextTokenDetection(t *testing.T) {
 	}
 }
 
+func TestPlaintextRoomCredentialDetection(t *testing.T) {
+	if hasPlaintextRoomSecrets(nil) {
+		t.Fatal("expected empty rooms to report no credentials")
+	}
+	if !hasPlaintextRoomSecrets([]RoomConfig{{
+		ID:         "research",
+		Credential: &RoomCredentialConfig{Token: protocol.NewSecretString("room-secret")},
+	}}) {
+		t.Fatal("expected plaintext room credential detection")
+	}
+	for _, credential := range []*RoomCredentialConfig{
+		{TokenEnv: "MOLTNET_ROOM_TOKEN"},
+		{TokenPath: "secrets/room-token"},
+	} {
+		if hasPlaintextRoomSecrets([]RoomConfig{{ID: "research", Credential: credential}}) {
+			t.Fatalf("indirect credential %#v should not force private config mode", credential)
+		}
+	}
+}
+
 func TestValidatePrivateConfigMode(t *testing.T) {
 	t.Parallel()
 

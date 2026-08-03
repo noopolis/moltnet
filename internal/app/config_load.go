@@ -32,6 +32,7 @@ func LoadConfig(version string) (Config, error) {
 		}
 
 		config = mergeFileConfig(config, fileConfig)
+		config.roomCredentialBaseDir = filepath.Dir(path)
 	}
 
 	config, err = mergeEnvConfig(config)
@@ -51,6 +52,7 @@ func LoadFile(path string, version string) (Config, error) {
 	}
 
 	config := mergeFileConfig(defaultConfig(version), fileConfig)
+	config.roomCredentialBaseDir = filepath.Dir(path)
 	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
 		return Config{}, err
 	}

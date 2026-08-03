@@ -158,6 +158,9 @@ func validateConfigFile(config rawConfigFile) error {
 	if err := validateRooms(config.Rooms); err != nil {
 		return err
 	}
+	if err := validateRoomCredentials(config.Rooms, config.Auth.Mode); err != nil {
+		return err
+	}
 	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
 		return err
 	}
@@ -241,6 +244,22 @@ func validateRooms(rooms []RoomConfig) error {
 		}
 		if err := protocol.ValidateRoomFederation(room.Federation); err != nil {
 			return fmt.Errorf("rooms[%d].federation: %w", index, err)
+		}
+	}
+	return nil
+}
+
+func validateRoomCredentials(rooms []RoomConfig, authMode string) error {
+	mode := strings.TrimSpace(authMode)
+	if mode == "" {
+		mode = authn.ModeNone
+	}
+	if mode != authn.ModeNone {
+		return nil
+	}
+	for index, room := range rooms {
+		if room.Credential != nil && room.Credential.HasTokenSource() {
+			return fmt.Errorf("rooms[%d].credential requires auth.mode other than none", index)
 		}
 	}
 	return nil

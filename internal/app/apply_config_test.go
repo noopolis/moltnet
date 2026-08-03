@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -110,5 +111,47 @@ func TestValidateApplyAuthRejectsInvalidValues(t *testing.T) {
 		},
 	}); err == nil {
 		t.Fatal("expected invalid agent id error")
+	}
+}
+
+func TestRoomCredentialsResolveIntoApplyRequests(t *testing.T) {
+	directory := t.TempDir()
+	tokenPath := filepath.Join(directory, "room-token")
+	if err := os.WriteFile(tokenPath, []byte("path-room-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "moltnet.yaml")
+	writeConfigFile(t, path, `
+version: moltnet.v1
+auth:
+  mode: open
+rooms:
+  - id: by-path
+    credential:
+      token_path: room-token
+`)
+	request, _, err := LoadApplyFile(path)
+	if err != nil {
+		t.Fatalf("LoadApplyFile() error = %v", err)
+	}
+	if got := request.Rooms[0].Credential.Reveal(); got != "path-room-secret" {
+		t.Fatalf("path credential = %q", got)
+	}
+
+	t.Setenv("MOLTNET_ROOM_TOKEN", "env-room-secret")
+	config := Config{
+		NetworkID:             "local",
+		roomCredentialBaseDir: directory,
+		Rooms: []RoomConfig{{
+			ID:         "by-env",
+			Credential: &RoomCredentialConfig{TokenEnv: "MOLTNET_ROOM_TOKEN"},
+		}},
+	}
+	request, err = applyRequestFromConfig(config)
+	if err != nil {
+		t.Fatalf("applyRequestFromConfig() error = %v", err)
+	}
+	if got := request.Rooms[0].Credential.Reveal(); got != "env-room-secret" {
+		t.Fatalf("environment credential = %q", got)
 	}
 }

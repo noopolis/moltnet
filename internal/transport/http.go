@@ -28,6 +28,7 @@ type Service interface {
 	ListRoomsContext(ctx context.Context, page protocol.PageRequest) (protocol.RoomPage, error)
 	ApplyConfigContext(ctx context.Context, request protocol.ApplyConfigRequest) (protocol.ApplyConfigResult, error)
 	CreateRoomContext(ctx context.Context, request protocol.CreateRoomRequest) (protocol.Room, error)
+	JoinRoomContext(ctx context.Context, roomID string, request protocol.JoinRoomRequest) (protocol.Room, error)
 	RemoveRoomContext(ctx context.Context, roomID string) (protocol.RemoveResult, error)
 	UpdateRoomMembers(ctx context.Context, roomID string, request protocol.UpdateRoomMembersRequest) (protocol.Room, error)
 	RegisterAgentContext(ctx context.Context, request protocol.RegisterAgentRequest) (protocol.AgentRegistration, error)
@@ -47,12 +48,6 @@ type Service interface {
 	Subscribe(ctx context.Context) <-chan protocol.Event
 	SubscribeFrom(ctx context.Context, lastEventID string) <-chan protocol.Event
 }
-
-var (
-	readScopes     = []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}
-	roomListScopes = []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin, authn.ScopePair}
-	networkScopes  = []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin, authn.ScopePair, authn.ScopeAttach}
-)
 
 func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig) http.Handler {
 	config := httpConfigFrom(configs)
@@ -261,6 +256,8 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 
 		writeJSON(response, http.StatusOK, room)
 	}))
+
+	mux.HandleFunc("POST /v1/rooms/{roomID}/join", authorizedAnyWithVerifier(policy, service, []authn.Scope{authn.ScopeWrite, authn.ScopePair}, handleJoinRoom(service)))
 
 	mux.HandleFunc("GET /v1/rooms/{roomID}/messages", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)

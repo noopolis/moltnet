@@ -179,6 +179,12 @@ type CreateRoomRequest struct {
 	Visibility  string          `json:"visibility,omitempty"`
 	WritePolicy string          `json:"write_policy,omitempty"`
 	Federation  *RoomFederation `json:"federation,omitempty" yaml:"federation,omitempty"`
+	Credential  SecretString    `json:"credential,omitempty"`
+}
+
+type JoinRoomRequest struct {
+	From       Actor        `json:"from"`
+	Credential SecretString `json:"credential"`
 }
 
 type UpdateRoomMembersRequest struct {

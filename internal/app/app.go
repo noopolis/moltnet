@@ -41,6 +41,9 @@ type serviceStore interface {
 }
 
 func New(config Config) (*App, error) {
+	if err := validateRoomCredentials(config.Rooms, config.Auth.Mode); err != nil {
+		return nil, err
+	}
 	broker := events.NewBroker()
 	roomStore, err := buildStore(config)
 	if err != nil {
@@ -119,7 +122,8 @@ func New(config Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := service.ApplyConfigContext(context.Background(), applyRequest); err != nil {
+	applyContext := authn.WithMode(context.Background(), config.Auth.Mode)
+	if _, err := service.ApplyConfigContext(applyContext, applyRequest); err != nil {
 		return nil, err
 	}
 

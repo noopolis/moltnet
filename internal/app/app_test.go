@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -214,6 +215,23 @@ func TestNewRejectsInvalidSeedRoom(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected invalid seed room error")
+	}
+}
+
+func TestNewRejectsRoomCredentialWhenAuthIsNone(t *testing.T) {
+	_, err := New(Config{
+		ListenAddr:  ":0",
+		NetworkID:   "local",
+		NetworkName: "Local",
+		Version:     "test",
+		Auth:        authn.Config{Mode: authn.ModeNone},
+		Rooms: []RoomConfig{{
+			ID:         "research",
+			Credential: &RoomCredentialConfig{Token: protocol.NewSecretString("room-secret")},
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected auth none room credential validation error")
 	}
 }
 

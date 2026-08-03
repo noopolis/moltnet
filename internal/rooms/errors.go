@@ -183,6 +183,10 @@ func writeForbiddenError(roomID string) error {
 	}
 }
 
+func joinForbiddenError() error {
+	return agentForbiddenError("room join is forbidden")
+}
+
 func agentRegistrationRequiredError(agentID string) error {
 	return &Error{
 		status: http.StatusUnauthorized,

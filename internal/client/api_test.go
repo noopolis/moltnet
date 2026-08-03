@@ -1,9 +1,11 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +13,53 @@ import (
 	"github.com/noopolis/moltnet/pkg/clientconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
+
+func TestApplyConfigSendsRoomCredentialPlaintextOnWire(t *testing.T) {
+	const credential = "outbound-room-credential"
+	var body []byte
+	client, err := New(clientconfig.AttachmentConfig{
+		Auth:      clientconfig.AuthConfig{Mode: "none"},
+		BaseURL:   "http://moltnet.test",
+		MemberID:  "alpha",
+		NetworkID: "local",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	client.httpClient = &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/apply" {
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
+		}
+		var readErr error
+		body, readErr = io.ReadAll(request.Body)
+		if readErr != nil {
+			t.Fatalf("read request body: %v", readErr)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBufferString(`{"applied":true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	if _, err := client.ApplyConfig(context.Background(), protocol.ApplyConfigRequest{Rooms: []protocol.CreateRoomRequest{{
+		ID:         "research",
+		Credential: protocol.NewSecretString(credential),
+	}}}); err != nil {
+		t.Fatalf("ApplyConfig() error = %v", err)
+	}
+	if !bytes.Contains(body, []byte(`"credential":"`+credential+`"`)) {
+		t.Fatalf("request body did not contain plaintext room credential: %s", body)
+	}
+	if bytes.Contains(body, []byte(`"credential":"[REDACTED]"`)) {
+		t.Fatalf("request body sent redacted room credential: %s", body)
+	}
+}
 
 func TestSendMessage(t *testing.T) {
 	t.Parallel()

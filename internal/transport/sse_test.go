@@ -24,58 +24,6 @@ func (s *signalingService) SubscribeFrom(ctx context.Context, lastEventID string
 	return s.fakeService.SubscribeFrom(ctx, lastEventID)
 }
 
-type signalRecorder struct {
-	header http.Header
-	body   strings.Builder
-	code   int
-	needle string
-	signal chan struct{}
-	once   sync.Once
-}
-
-func newSignalRecorder(needle string) *signalRecorder {
-	return &signalRecorder{
-		header: make(http.Header),
-		code:   http.StatusOK,
-		needle: needle,
-		signal: make(chan struct{}),
-	}
-}
-
-func (r *signalRecorder) Header() http.Header { return r.header }
-
-func (r *signalRecorder) Write(bytes []byte) (int, error) {
-	written, err := r.body.Write(bytes)
-	if strings.Contains(r.body.String(), r.needle) {
-		r.once.Do(func() { close(r.signal) })
-	}
-	return written, err
-}
-
-func (r *signalRecorder) WriteHeader(status int) { r.code = status }
-func (r *signalRecorder) Flush()                 {}
-
-type plainRecorder struct {
-	header http.Header
-	body   strings.Builder
-	code   int
-}
-
-func newPlainRecorder() *plainRecorder {
-	return &plainRecorder{
-		header: make(http.Header),
-		code:   http.StatusOK,
-	}
-}
-
-func (r *plainRecorder) Header() http.Header { return r.header }
-
-func (r *plainRecorder) Write(bytes []byte) (int, error) {
-	return r.body.Write(bytes)
-}
-
-func (r *plainRecorder) WriteHeader(status int) { r.code = status }
-
 func TestEventStreamHeartbeats(t *testing.T) {
 	t.Parallel()
 
@@ -105,7 +53,7 @@ func TestEventStreamHeartbeats(t *testing.T) {
 	select {
 	case <-recorder.signal:
 	case <-time.After(time.Second):
-		t.Fatalf("timed out waiting for keep-alive comment, body=%q", recorder.body.String())
+		t.Fatalf("timed out waiting for keep-alive comment, body=%q", recorder.String())
 	}
 
 	cancel()
@@ -290,8 +238,8 @@ func TestEventStreamSkipsUnsafeEventFields(t *testing.T) {
 		request := httptest.NewRequest(http.MethodGet, "/v1/events/stream", nil)
 		handler.ServeHTTP(response, request)
 
-		if strings.Contains(response.body.String(), "event: ") {
-			t.Fatalf("expected unsafe event type to be skipped, got %q", response.body.String())
+		if strings.Contains(response.String(), "event: ") {
+			t.Fatalf("expected unsafe event type to be skipped, got %q", response.String())
 		}
 	})
 
@@ -311,8 +259,8 @@ func TestEventStreamSkipsUnsafeEventFields(t *testing.T) {
 		request := httptest.NewRequest(http.MethodGet, "/v1/events/stream", nil)
 		handler.ServeHTTP(response, request)
 
-		if strings.Contains(response.body.String(), "id: ") {
-			t.Fatalf("expected unsafe event id to be skipped, got %q", response.body.String())
+		if strings.Contains(response.String(), "id: ") {
+			t.Fatalf("expected unsafe event id to be skipped, got %q", response.String())
 		}
 	})
 }
@@ -370,7 +318,7 @@ func TestAdminTokenGetsFullPublicOpenEventStream(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer admin-secret")
 	handler.ServeHTTP(response, request)
 
-	if body := response.body.String(); !strings.Contains(body, "event: agent.connected") {
+	if body := response.String(); !strings.Contains(body, "event: agent.connected") {
 		t.Fatalf("admin stream should receive private/admin events, got %q", body)
 	}
 }
