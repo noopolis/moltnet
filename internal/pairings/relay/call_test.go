@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -79,6 +81,101 @@ func TestClientOpaquePayloadRoundTrip(t *testing.T) {
 	}
 	if !bytes.Equal(got, body) {
 		t.Fatalf("Call() body = %v, want %v", got, body)
+	}
+}
+
+func TestClientCallRejectsOversizedPayloadLocally(t *testing.T) {
+	hello := make(chan frameHeader, 1)
+	noRequestObserved := make(chan struct{})
+	type readResult struct {
+		header frameHeader
+		body   []byte
+		err    error
+	}
+	server := newRelayTestServer(t, func(conn *websocket.Conn) {
+		readHello(t, conn, hello)
+
+		read := make(chan readResult, 1)
+		go func() {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				read <- readResult{err: err}
+				return
+			}
+			header, body, err := parseFrame(raw)
+			read <- readResult{header: header, body: body, err: err}
+		}()
+
+		select {
+		case result := <-read:
+			if result.err != nil {
+				t.Errorf("read unexpected request: %v", result.err)
+			} else {
+				t.Errorf("received unexpected request before oversized Call() returned: %#v", result.header)
+			}
+			return
+		case <-time.After(100 * time.Millisecond):
+			close(noRequestObserved)
+		}
+
+		result := <-read
+		if result.err != nil {
+			t.Errorf("read normal request: %v", result.err)
+			return
+		}
+		if result.header.Type != "req" {
+			t.Errorf("normal request type = %q, want req", result.header.Type)
+			return
+		}
+		frame, err := makeFrame(frameHeader{Type: "res", ID: result.header.ID, Status: http.StatusOK}, []byte("still connected"))
+		if err != nil {
+			t.Errorf("make normal response: %v", err)
+			return
+		}
+		if err := conn.WriteMessage(websocket.BinaryMessage, frame); err != nil {
+			t.Errorf("write normal response: %v", err)
+		}
+	})
+	defer server.Close()
+
+	client, stop := startRelayClient(t, server.URL)
+	defer stop()
+	select {
+	case <-hello:
+	case <-time.After(time.Second):
+		t.Fatal("did not receive hello frame")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for client.currentConnection() == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("client did not establish a relay connection")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, _, err := client.Call(ctx, http.MethodPost, "/v1/messages", make([]byte, maxRelayPayloadBytes+1))
+	if !errors.Is(err, ErrPayloadTooLarge) {
+		t.Fatalf("Call() error = %v, want ErrPayloadTooLarge", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%d", maxRelayPayloadBytes)) || !strings.Contains(err.Error(), fmt.Sprintf("%d", maxRelayPayloadBytes+1)) {
+		t.Fatalf("Call() error = %v, want limit and actual payload size", err)
+	}
+
+	select {
+	case <-noRequestObserved:
+	case <-time.After(time.Second):
+		t.Fatal("server observed a request from the oversized Call()")
+	}
+
+	status, body, err := client.Call(ctx, http.MethodPost, "/v1/messages", []byte("normal request"))
+	if err != nil {
+		t.Fatalf("normal Call() error = %v", err)
+	}
+	if status != http.StatusOK || string(body) != "still connected" {
+		t.Fatalf("normal Call() = (%d, %q), want (200, still connected)", status, body)
 	}
 }
 

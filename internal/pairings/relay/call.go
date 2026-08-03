@@ -17,15 +17,16 @@ const (
 	maxHeaderSize               = 8192
 	maxRelayPayloadBytes        = 1 << 20                                  // One MiB matches the service's normal JSON and attachment frame allowance.
 	maxRelayFrameBytes          = maxHeaderSize + 1 + maxRelayPayloadBytes // Includes the largest JSON header and its newline delimiter.
-	maxInboundResponseBodyBytes = 1 << 20                                  // Bound relayed handler buffering to a normal Moltnet response size.
+	maxInboundResponseBodyBytes = maxRelayPayloadBytes                     // Bound relayed handler buffering to a normal Moltnet response size.
 	defaultCallTimeout          = 15 * time.Second
 )
 
 var (
 	// ErrNotConnected is returned when Call is made while the relay is reconnecting.
-	ErrNotConnected   = errors.New("relay is not connected")
-	ErrConnectionLost = errors.New("relay connection lost")
-	ErrClosed         = errors.New("relay client is closed")
+	ErrNotConnected    = errors.New("relay is not connected")
+	ErrConnectionLost  = errors.New("relay connection lost")
+	ErrClosed          = errors.New("relay client is closed")
+	ErrPayloadTooLarge = errors.New("relay payload too large")
 )
 
 type frameHeader struct {
@@ -116,6 +117,9 @@ func (c *Client) Call(
 	path string,
 	body []byte,
 ) (status int, respBody []byte, err error) {
+	if len(body) > maxRelayPayloadBytes {
+		return 0, nil, fmt.Errorf("relay payload exceeds %d bytes: got %d bytes: %w", maxRelayPayloadBytes, len(body), ErrPayloadTooLarge)
+	}
 	if err := ctx.Err(); err != nil {
 		return 0, nil, err
 	}
