@@ -16,18 +16,18 @@ func TestInboundReentrantCallKeepsConnectionServing(t *testing.T) {
 	afterResponse := make(chan receivedRequest, 1)
 	server := newRelayTestServer(t, func(conn *websocket.Conn) {
 		readHello(t, conn, make(chan frameHeader, 1))
-		writeInboundTestRequest(t, conn, "outer", "/reentrant")
+		writeInboundTestRequest(t, conn, "outer", "/v1/network")
 
 		nested := readRequest(t, conn)
-		if nested.header.Path != "/nested" {
-			t.Errorf("nested request path = %q, want /nested", nested.header.Path)
+		if nested.header.Path != "/v1/rooms" {
+			t.Errorf("nested request path = %q, want /v1/rooms", nested.header.Path)
 			return
 		}
 		writeTestFrame(t, conn, frameHeader{Type: "res", ID: nested.header.ID, Status: http.StatusOK}, []byte("nested response"))
 
 		outer := readTestFrame(t, conn)
 		outerResponse <- outer
-		writeInboundTestRequest(t, conn, "after", "/after")
+		writeInboundTestRequest(t, conn, "after", "/v1/agents")
 		afterResponse <- readTestFrame(t, conn)
 	})
 	defer server.Close()
@@ -36,15 +36,15 @@ func TestInboundReentrantCallKeepsConnectionServing(t *testing.T) {
 	clientReady := make(chan struct{})
 	client, runDone := startInboundTestClient(t, server.URL, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
-		case "/reentrant":
+		case "/v1/network":
 			<-clientReady
-			status, body, err := client.Call(request.Context(), http.MethodGet, "/nested", nil)
+			status, body, err := client.Call(request.Context(), http.MethodGet, "/v1/rooms", nil)
 			if err != nil || status != http.StatusOK || string(body) != "nested response" {
 				http.Error(writer, fmt.Sprintf("nested Call() = (%d, %q, %v)", status, body, err), http.StatusBadGateway)
 				return
 			}
 			_, _ = writer.Write([]byte("outer response"))
-		case "/after":
+		case "/v1/agents":
 			_, _ = writer.Write([]byte("after response"))
 		default:
 			http.NotFound(writer, request)
@@ -81,12 +81,12 @@ func TestSlowInboundHandlerDoesNotBlockClientCall(t *testing.T) {
 
 	server := newRelayTestServer(t, func(conn *websocket.Conn) {
 		readHello(t, conn, make(chan frameHeader, 1))
-		writeInboundTestRequest(t, conn, "slow", "/slow")
+		writeInboundTestRequest(t, conn, "slow", "/v1/network")
 		<-slowStarted
 
 		fast := readRequest(t, conn)
-		if fast.header.Path != "/fast" {
-			t.Errorf("fast request path = %q, want /fast", fast.header.Path)
+		if fast.header.Path != "/v1/rooms" {
+			t.Errorf("fast request path = %q, want /v1/rooms", fast.header.Path)
 			return
 		}
 		writeTestFrame(t, conn, frameHeader{Type: "res", ID: fast.header.ID, Status: http.StatusOK}, []byte("fast response"))
@@ -95,7 +95,7 @@ func TestSlowInboundHandlerDoesNotBlockClientCall(t *testing.T) {
 	defer server.Close()
 
 	client, runDone := startInboundTestClient(t, server.URL, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/slow" {
+		if request.URL.Path != "/v1/network" {
 			http.NotFound(writer, request)
 			return
 		}
@@ -119,7 +119,7 @@ func TestSlowInboundHandlerDoesNotBlockClientCall(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	started := time.Now()
-	status, body, err := client.Call(ctx, http.MethodGet, "/fast", nil)
+	status, body, err := client.Call(ctx, http.MethodGet, "/v1/rooms", nil)
 	elapsed := time.Since(started)
 	if err != nil {
 		t.Fatalf("Call() error = %v", err)
@@ -147,7 +147,7 @@ func TestCloseCancelsAndWaitsForInboundHandler(t *testing.T) {
 	handlerCanceled := make(chan struct{})
 	server := newRelayTestServer(t, func(conn *websocket.Conn) {
 		readHello(t, conn, make(chan frameHeader, 1))
-		writeInboundTestRequest(t, conn, "blocking", "/blocking")
+		writeInboundTestRequest(t, conn, "blocking", "/v1/network")
 		_, _, _ = conn.ReadMessage() // Close closes the connection once the handler is canceled.
 	})
 	defer server.Close()

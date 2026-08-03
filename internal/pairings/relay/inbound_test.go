@@ -69,28 +69,88 @@ func TestInboundRelayedMessageWithNoTokenIsRejected(t *testing.T) {
 	}
 }
 
-func TestInboundRelayedRequestForUnknownPathReturnsHandlerStatus(t *testing.T) {
+func TestInboundRelayedRequestForUnknownPathIsForbidden(t *testing.T) {
 	handler, service := newInboundHandlerFixture(t)
 	defer service.Close()
 
 	request := receivedRequest{
 		header: frameHeader{Type: "req", ID: "unknown-path", Method: http.MethodGet, Path: "/v1/does-not-exist?source=relay"},
 	}
-	expected := httptest.NewRecorder()
-	handler.ServeHTTP(expected, httptest.NewRequest(request.header.Method, request.header.Path, nil))
-	if expected.Code != http.StatusTemporaryRedirect {
-		t.Fatalf("direct handler status = %d, want %d", expected.Code, http.StatusTemporaryRedirect)
-	}
-
 	response := relayInboundRoundTrip(t, handler, "correct-pair-token", request)
 	if response.header.Type != "res" || response.header.ID != "unknown-path" {
 		t.Fatalf("response header = %#v, want res for unknown-path", response.header)
 	}
-	if response.header.Status != expected.Code {
-		t.Fatalf("response status = %d, want handler status %d", response.header.Status, expected.Code)
+	if response.header.Status != http.StatusForbidden {
+		t.Fatalf("response status = %d, want %d", response.header.Status, http.StatusForbidden)
 	}
-	if !bytes.Equal(response.body, expected.Body.Bytes()) {
-		t.Fatalf("response body = %q, want handler body %q", response.body, expected.Body.Bytes())
+	if got, want := string(response.body), "relay inbound request forbidden\n"; got != want {
+		t.Fatalf("response body = %q, want %q", got, want)
+	}
+}
+
+func TestInboundHandlerRejectsNonAllowlistedPathWithoutInvokingHandler(t *testing.T) {
+	invocations := 0
+	handler := NewInboundHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { invocations++ }), "")
+	response, body := handler.serve(context.Background(), frameHeader{Method: http.MethodGet, Path: "/install.md"}, nil)
+	if response.Status != http.StatusForbidden || string(body) != "relay inbound request forbidden\n" {
+		t.Fatalf("response = (%d, %q), want forbidden response", response.Status, body)
+	}
+	if invocations != 0 {
+		t.Fatalf("handler invocations = %d, want 0", invocations)
+	}
+}
+
+func TestInboundHandlerForwardsAllowlistedRequests(t *testing.T) {
+	var invocations int
+	var gotMethod, gotPath string
+	handler := NewInboundHandler(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		invocations++
+		gotMethod, gotPath = request.Method, request.URL.Path
+		writer.WriteHeader(http.StatusNoContent)
+	}), "")
+	for _, request := range []frameHeader{
+		{Method: http.MethodGet, Path: "/v1/network"}, {Method: http.MethodGet, Path: "/v1/rooms"},
+		{Method: http.MethodGet, Path: "/v1/agents"}, {Method: http.MethodPost, Path: "/v1/messages"},
+	} {
+		response, _ := handler.serve(context.Background(), request, nil)
+		if response.Status != http.StatusNoContent || gotMethod != request.Method || gotPath != request.Path {
+			t.Fatalf("request %s %s = (%d, %s %s), want forwarded no-content request", request.Method, request.Path, response.Status, gotMethod, gotPath)
+		}
+	}
+	if invocations != 4 {
+		t.Fatalf("handler invocations = %d, want 4", invocations)
+	}
+}
+
+func TestInboundHandlerRejectsWrongMethodWithoutInvokingHandler(t *testing.T) {
+	invocations := 0
+	handler := NewInboundHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { invocations++ }), "")
+	for _, method := range []string{http.MethodDelete, http.MethodPost} {
+		response, _ := handler.serve(context.Background(), frameHeader{Method: method, Path: "/v1/rooms"}, nil)
+		if response.Status != http.StatusForbidden {
+			t.Fatalf("%s /v1/rooms status = %d, want %d", method, response.Status, http.StatusForbidden)
+		}
+	}
+	if invocations != 0 {
+		t.Fatalf("handler invocations = %d, want 0", invocations)
+	}
+}
+
+func TestInboundHandlerRejectsPathEvasion(t *testing.T) {
+	invocations := 0
+	handler := NewInboundHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { invocations++ }), "")
+	response, _ := handler.serve(context.Background(), frameHeader{Method: http.MethodGet, Path: "/v1/rooms?x=1"}, nil)
+	if response.Status != http.StatusOK || invocations != 1 {
+		t.Fatalf("query request = (%d, %d invocations), want forwarded", response.Status, invocations)
+	}
+	for _, requestPath := range []string{"/v1/rooms/", "//v1/rooms", "/v1/rooms/../../console", "/v1/rooms/../../../etc/passwd", "/v1/rooms/%2e%2e/%2e%2e/console"} {
+		response, _ = handler.serve(context.Background(), frameHeader{Method: http.MethodGet, Path: requestPath}, nil)
+		if response.Status != http.StatusForbidden {
+			t.Fatalf("GET %s status = %d, want %d", requestPath, response.Status, http.StatusForbidden)
+		}
+	}
+	if invocations != 1 {
+		t.Fatalf("handler invocations = %d, want 1", invocations)
 	}
 }
 
@@ -99,7 +159,7 @@ func TestInboundRelayedHandlerPanicReturnsInternalServerError(t *testing.T) {
 		panic("boom")
 	})
 	request := receivedRequest{
-		header: frameHeader{Type: "req", ID: "panic-handler", Method: http.MethodGet, Path: "/panic"},
+		header: frameHeader{Type: "req", ID: "panic-handler", Method: http.MethodGet, Path: "/v1/network"},
 	}
 
 	response := relayInboundRoundTrip(t, handler, "correct-pair-token", request)
@@ -120,7 +180,7 @@ func TestInboundHandlerRejectsOversizedResponseBody(t *testing.T) {
 	}), "correct-pair-token")
 
 	response, body := handler.serve(context.Background(), frameHeader{
-		Type: "req", ID: "oversized-response", Method: http.MethodGet, Path: "/oversized",
+		Type: "req", ID: "oversized-response", Method: http.MethodGet, Path: "/v1/network",
 	}, nil)
 	if response.Status != http.StatusInternalServerError {
 		t.Fatalf("response status = %d, want %d", response.Status, http.StatusInternalServerError)
@@ -139,7 +199,7 @@ func TestInboundHandlerRejectsCumulativeOversizedResponseBody(t *testing.T) {
 	}), "correct-pair-token")
 
 	response, body := handler.serve(context.Background(), frameHeader{
-		Type: "req", ID: "cumulative-oversized-response", Method: http.MethodGet, Path: "/oversized",
+		Type: "req", ID: "cumulative-oversized-response", Method: http.MethodGet, Path: "/v1/network",
 	}, nil)
 	if response.Status != http.StatusInternalServerError {
 		t.Fatalf("response status = %d, want %d", response.Status, http.StatusInternalServerError)
@@ -156,7 +216,7 @@ func TestInboundHandlerOversizedResponseOverridesHandlerStatus(t *testing.T) {
 	}), "correct-pair-token")
 
 	response, body := handler.serve(context.Background(), frameHeader{
-		Type: "req", ID: "oversized-created-response", Method: http.MethodGet, Path: "/oversized",
+		Type: "req", ID: "oversized-created-response", Method: http.MethodGet, Path: "/v1/network",
 	}, nil)
 	if response.Status != http.StatusInternalServerError {
 		t.Fatalf("response status = %d, want %d", response.Status, http.StatusInternalServerError)
