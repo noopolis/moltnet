@@ -48,7 +48,12 @@ type Config struct {
 	ListenAddr          string
 	AllowedOrigins      []string
 	TrustForwardedProto bool
-	Tokens              []TokenConfig
+	// RequirePairNetworkBinding rejects remote-origin pairing messages when their
+	// pair credential has no bound network. Default false preserves current
+	// behavior and keeps TestPairRelayDoesNotBypassMembership passing; new
+	// deployments should enable it for the safe posture.
+	RequirePairNetworkBinding bool
+	Tokens                    []TokenConfig
 }
 
 type Policy struct {

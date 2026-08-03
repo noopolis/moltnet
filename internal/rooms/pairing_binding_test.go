@@ -110,13 +110,93 @@ func TestPairTokenAcceptsBoundPairingNetworkAsHuman(t *testing.T) {
 	}
 }
 
+func TestStrictPairNetworkBindingRejectsUnboundRemoteOriginSenders(t *testing.T) {
+	t.Parallel()
+
+	for _, senderType := range []string{"agent", "human"} {
+		t.Run(senderType, func(t *testing.T) {
+			service := newPairingCredentialBindingTestServiceWithStrictBinding(true)
+			mustCreateFederatedPolicyRoom(t, service, "floor", []string{"remote-b:member"})
+			claims := authn.NewStaticClaims(authn.TokenConfig{
+				ID:     "pair-unbound",
+				Value:  "pair-unbound-secret",
+				Scopes: []authn.Scope{authn.ScopePair},
+			})
+			request := roomSend("floor", "member")
+			request.From.Type = senderType
+			request.From.NetworkID = "remote-b"
+			request.Origin = protocol.MessageOrigin{NetworkID: "remote-b", MessageID: "remote-b-unbound-" + senderType}
+
+			before := roomMessageCount(t, service, "floor")
+			if _, err := service.SendMessageContext(bearerClaimsContext(claims), request); err == nil {
+				t.Fatal("expected unbound pair credential to be rejected when strict binding is enabled")
+			}
+			if after := roomMessageCount(t, service, "floor"); after != before {
+				t.Fatalf("stored message count = %d, want %d after strict rejection", after, before)
+			}
+		})
+	}
+}
+
+func TestStrictPairNetworkBindingAcceptsBoundRemoteOriginCredential(t *testing.T) {
+	t.Parallel()
+
+	service := newPairingCredentialBindingTestServiceWithStrictBinding(true)
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"remote-b:member"})
+	claims := authn.NewStaticClaims(authn.TokenConfig{
+		ID:      "pair-b",
+		Value:   "pair-b-secret",
+		Network: "remote-b",
+		Scopes:  []authn.Scope{authn.ScopePair},
+	})
+	request := roomSend("floor", "member")
+	request.From.NetworkID = "remote-b"
+	request.Origin = protocol.MessageOrigin{NetworkID: "remote-b", MessageID: "remote-b-strict-bound"}
+
+	before := roomMessageCount(t, service, "floor")
+	if _, err := service.SendMessageContext(bearerClaimsContext(claims), request); err != nil {
+		t.Fatalf("expected bound pair credential to be accepted in strict mode, got %v", err)
+	}
+	if after := roomMessageCount(t, service, "floor"); after != before+1 {
+		t.Fatalf("stored message count = %d, want %d", after, before+1)
+	}
+}
+
+func TestDefaultPairNetworkBindingAcceptsUnboundRemoteOriginCredential(t *testing.T) {
+	t.Parallel()
+
+	service := newPairingCredentialBindingTestService()
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"remote-b:member"})
+	claims := authn.NewStaticClaims(authn.TokenConfig{
+		ID:     "pair-unbound",
+		Value:  "pair-unbound-secret",
+		Scopes: []authn.Scope{authn.ScopePair},
+	})
+	request := roomSend("floor", "member")
+	request.From.NetworkID = "remote-b"
+	request.Origin = protocol.MessageOrigin{NetworkID: "remote-b", MessageID: "remote-b-default-unbound"}
+
+	before := roomMessageCount(t, service, "floor")
+	if _, err := service.SendMessageContext(bearerClaimsContext(claims), request); err != nil {
+		t.Fatalf("expected unbound pair credential to be accepted by default, got %v", err)
+	}
+	if after := roomMessageCount(t, service, "floor"); after != before+1 {
+		t.Fatalf("stored message count = %d, want %d", after, before+1)
+	}
+}
+
 func newPairingCredentialBindingTestService() *Service {
+	return newPairingCredentialBindingTestServiceWithStrictBinding(false)
+}
+
+func newPairingCredentialBindingTestServiceWithStrictBinding(requirePairNetworkBinding bool) *Service {
 	memory := store.NewMemoryStore()
 	return NewService(ServiceConfig{
-		AllowHumanIngress: true,
-		NetworkID:         "local",
-		NetworkName:       "Local",
-		Version:           "test",
+		AllowHumanIngress:         true,
+		RequirePairNetworkBinding: requirePairNetworkBinding,
+		NetworkID:                 "local",
+		NetworkName:               "Local",
+		Version:                   "test",
 		Pairings: []protocol.Pairing{
 			{ID: "pair-b", RemoteNetworkID: "remote-b", Token: "pair-b-secret"},
 			{ID: "pair-c", RemoteNetworkID: "network-c", Token: "pair-c-secret"},

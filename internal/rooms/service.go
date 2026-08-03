@@ -24,17 +24,18 @@ type PairingClient interface {
 }
 
 type ServiceConfig struct {
-	AllowHumanIngress     bool
-	DebugEvents           bool
-	DisableDirectMessages bool
-	NetworkID             string
-	NetworkName           string
-	Pairings              []protocol.Pairing
-	Version               string
-	Store                 store.RoomStore
-	Messages              store.MessageStore
-	Broker                EventBroker
-	PairingClient         PairingClient
+	AllowHumanIngress         bool
+	DebugEvents               bool
+	DisableDirectMessages     bool
+	RequirePairNetworkBinding bool
+	NetworkID                 string
+	NetworkName               string
+	Pairings                  []protocol.Pairing
+	Version                   string
+	Store                     store.RoomStore
+	Messages                  store.MessageStore
+	Broker                    EventBroker
+	PairingClient             PairingClient
 	// CausalWriter is optional. When set, SendMessageContext stamps a
 	// message.accepted causal event (pkg/protocol.CausalEvent) after each
 	// durable, non-duplicate message append. When nil, causal stamping is
@@ -43,32 +44,33 @@ type ServiceConfig struct {
 }
 
 type Service struct {
-	allowHumanIngress     bool
-	debugEvents           bool
-	disableDirectMessages bool
-	networkID             string
-	networkName           string
-	pairings              []protocol.Pairing
-	version               string
-	store                 store.RoomStore
-	messages              store.MessageStore
-	contextStore          store.ContextRoomStore
-	contextMessages       store.ContextMessageStore
-	lifecycleMessages     store.ContextLifecycleMessageStore
-	contextAgents         store.ContextAgentStore
-	agentRegistry         store.ContextAgentRegistryStore
-	broker                EventBroker
-	pairingClient         PairingClient
-	causalWriter          *observability.CausalWriter
-	relaySlots            chan struct{}
-	pairingsMu            sync.RWMutex
-	pairingPublishMu      sync.Mutex
-	pairingStatuses       map[string]pairingStatus
-	agentPresenceMu       sync.RWMutex
-	connectedAgents       map[string]bool
-	lifecycleCtx          context.Context
-	lifecycleCancel       context.CancelFunc
-	now                   func() time.Time
+	allowHumanIngress         bool
+	debugEvents               bool
+	disableDirectMessages     bool
+	requirePairNetworkBinding bool
+	networkID                 string
+	networkName               string
+	pairings                  []protocol.Pairing
+	version                   string
+	store                     store.RoomStore
+	messages                  store.MessageStore
+	contextStore              store.ContextRoomStore
+	contextMessages           store.ContextMessageStore
+	lifecycleMessages         store.ContextLifecycleMessageStore
+	contextAgents             store.ContextAgentStore
+	agentRegistry             store.ContextAgentRegistryStore
+	broker                    EventBroker
+	pairingClient             PairingClient
+	causalWriter              *observability.CausalWriter
+	relaySlots                chan struct{}
+	pairingsMu                sync.RWMutex
+	pairingPublishMu          sync.Mutex
+	pairingStatuses           map[string]pairingStatus
+	agentPresenceMu           sync.RWMutex
+	connectedAgents           map[string]bool
+	lifecycleCtx              context.Context
+	lifecycleCancel           context.CancelFunc
+	now                       func() time.Time
 }
 
 type pairingStatus struct {
@@ -95,29 +97,30 @@ func NewService(config ServiceConfig) *Service {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 
 	return &Service{
-		allowHumanIngress:     config.AllowHumanIngress,
-		debugEvents:           config.DebugEvents,
-		disableDirectMessages: config.DisableDirectMessages,
-		networkID:             config.NetworkID,
-		networkName:           config.NetworkName,
-		pairings:              append([]protocol.Pairing(nil), config.Pairings...),
-		version:               config.Version,
-		store:                 config.Store,
-		messages:              config.Messages,
-		contextStore:          contextStore,
-		contextMessages:       contextMessages,
-		lifecycleMessages:     lifecycleMessages,
-		contextAgents:         contextAgents,
-		agentRegistry:         agentRegistry,
-		broker:                config.Broker,
-		pairingClient:         config.PairingClient,
-		causalWriter:          config.CausalWriter,
-		relaySlots:            make(chan struct{}, 8),
-		pairingStatuses:       statuses,
-		connectedAgents:       make(map[string]bool),
-		lifecycleCtx:          lifecycleCtx,
-		lifecycleCancel:       lifecycleCancel,
-		now:                   now,
+		allowHumanIngress:         config.AllowHumanIngress,
+		debugEvents:               config.DebugEvents,
+		disableDirectMessages:     config.DisableDirectMessages,
+		requirePairNetworkBinding: config.RequirePairNetworkBinding,
+		networkID:                 config.NetworkID,
+		networkName:               config.NetworkName,
+		pairings:                  append([]protocol.Pairing(nil), config.Pairings...),
+		version:                   config.Version,
+		store:                     config.Store,
+		messages:                  config.Messages,
+		contextStore:              contextStore,
+		contextMessages:           contextMessages,
+		lifecycleMessages:         lifecycleMessages,
+		contextAgents:             contextAgents,
+		agentRegistry:             agentRegistry,
+		broker:                    config.Broker,
+		pairingClient:             config.PairingClient,
+		causalWriter:              config.CausalWriter,
+		relaySlots:                make(chan struct{}, 8),
+		pairingStatuses:           statuses,
+		connectedAgents:           make(map[string]bool),
+		lifecycleCtx:              lifecycleCtx,
+		lifecycleCancel:           lifecycleCancel,
+		now:                       now,
 	}
 }
 

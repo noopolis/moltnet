@@ -58,18 +58,19 @@ func New(config Config) (*App, error) {
 	pairingClient := pairings.NewClient()
 	relayClients := newRelayClients(config, pairingClient)
 	service := rooms.NewService(rooms.ServiceConfig{
-		AllowHumanIngress:     config.AllowHumanIngress,
-		CausalWriter:          causalWriter,
-		DebugEvents:           config.DebugEvents,
-		DisableDirectMessages: config.DisableDirectMessages,
-		NetworkID:             config.NetworkID,
-		NetworkName:           config.NetworkName,
-		Pairings:              config.Pairings,
-		Version:               config.Version,
-		Store:                 roomStore,
-		Messages:              roomStore,
-		Broker:                broker,
-		PairingClient:         pairingClient,
+		AllowHumanIngress:         config.AllowHumanIngress,
+		CausalWriter:              causalWriter,
+		DebugEvents:               config.DebugEvents,
+		DisableDirectMessages:     config.DisableDirectMessages,
+		RequirePairNetworkBinding: config.Auth.RequirePairNetworkBinding,
+		NetworkID:                 config.NetworkID,
+		NetworkName:               config.NetworkName,
+		Pairings:                  config.Pairings,
+		Version:                   config.Version,
+		Store:                     roomStore,
+		Messages:                  roomStore,
+		Broker:                    broker,
+		PairingClient:             pairingClient,
 	})
 
 	config.Auth.Tokens = bindPairingNetworks(config.Auth.Tokens, config.Pairings)
