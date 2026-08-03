@@ -43,13 +43,11 @@ test("relays opaque header-and-payload req and res frames byte-for-byte (text fr
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   // Only the header before the newline is JSON. This payload must remain opaque.
-  const request =
-    '{ "to" : "network-b", "id" : "opaque-request", "t" : "req" }\n{"unclosed": <<< \u0000';
+  const request = '{ "id" : "opaque-request", "t" : "req" }\n{"unclosed": <<< \u0000';
   first.send(request);
   assert.equal(await second.nextText(), request);
 
-  const response =
-    '{"t":"res","id":"opaque-request","to":"network-a"}\nnot a protocol payload: >>>';
+  const response = '{"t":"res","id":"opaque-request"}\nnot a protocol payload: >>>';
   second.send(response);
   assert.equal(await first.nextText(), response);
 });
@@ -65,7 +63,7 @@ test("relays binary frames with non-UTF-8 opaque payload bytes byte-for-byte", a
   await new Promise((resolve) => setTimeout(resolve, 20));
 
   const frame = Buffer.concat([
-    Buffer.from('{"t":"req","id":"binary-opaque","to":"network-b"}\n'),
+    Buffer.from('{"t":"req","id":"binary-opaque"}\n'),
     Buffer.from([0x00, 0xff, 0x80, 0x41])
   ]);
   first.sendBinary(frame);
@@ -73,7 +71,7 @@ test("relays binary frames with non-UTF-8 opaque payload bytes byte-for-byte", a
   assert.deepEqual(await second.nextBinary(), frame);
 
   const response = Buffer.concat([
-    Buffer.from('{"t":"res","id":"binary-opaque","to":"network-a"}\n'),
+    Buffer.from('{"t":"res","id":"binary-opaque"}\n'),
     Buffer.from([0xff, 0x80, 0x42, 0x00])
   ]);
   second.sendBinary(response);
@@ -95,7 +93,7 @@ test("a third peer can never relay a frame to either admitted peer", async (t) =
   t.after(() => third.close());
   // Header-only frames are valid in both wire formats, so old vulnerable relays
   // would route this rather than rejecting it merely because parsing failed.
-  const forbidden = JSON.stringify({ t: "req", id: "third-peer", to: "network-a" });
+  const forbidden = JSON.stringify({ t: "req", id: "third-peer" });
   third.sendBinary(Buffer.from(forbidden));
 
   await Promise.all([assertNoBinary(first), assertNoBinary(second)]);
@@ -121,7 +119,7 @@ test("releases a peer slot after a protocol-error teardown", async (t) => {
   await assertNoClose(replacement);
 
   const request =
-    '{"t":"req","id":"replacement-request","to":"replacement-network"}\nopaque replacement payload';
+    '{"t":"req","id":"replacement-request"}\nopaque replacement payload';
   const binaryRequest = Buffer.from(request);
   surviving.sendBinary(binaryRequest);
   assert.deepEqual(await replacement.nextBinary(), binaryRequest);
@@ -142,7 +140,6 @@ test("drops a routing header larger than 8192 bytes", async (t) => {
   const oversized = JSON.stringify({
     t: "req",
     id: "oversized-header",
-    to: "network-b",
     padding: "x".repeat(8_192)
   });
   first.sendBinary(Buffer.from(oversized));
