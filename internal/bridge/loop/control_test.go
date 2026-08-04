@@ -181,7 +181,7 @@ func TestRunControlLoop(t *testing.T) {
 				t.Fatalf("expected no event_id on the bootstrap control request, got %#v", body)
 			}
 		}
-		if strings.Contains(body, "\"from\":\"Writer\"") {
+		if strings.Contains(body, "\"from\":\"writer\"") {
 			sawInbound = true
 			// Gap 3: an inbound wake's control POST must carry the real
 			// moltnet causal event id for its triggering message
@@ -202,6 +202,55 @@ func TestRunControlLoop(t *testing.T) {
 	if publishedSnapshot != 0 {
 		t.Fatalf("expected control loop responses to stay off Moltnet, got %d sends", publishedSnapshot)
 	}
+}
+
+func TestSendControlMessageUsesCredentialBoundActorID(t *testing.T) {
+	var request controlRequest
+	controlClient := &http.Client{Transport: roundTripFunc(func(requestHTTP *http.Request) (*http.Response, error) {
+		defer requestHTTP.Body.Close()
+		if err := json.NewDecoder(requestHTTP.Body).Decode(&request); err != nil {
+			t.Fatalf("decode control request: %v", err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(`{"from":"researcher","message":""}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	_, err := sendControlMessage(context.Background(), controlClient, bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "researcher"},
+		Runtime: bridgeconfig.RuntimeConfig{ControlURL: "http://control.invalid"},
+		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "pitch"},
+	}, protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
+		Message: &protocol.Message{
+			ID:     "message-1",
+			Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "room"},
+			From: protocol.Actor{
+				Type:            "agent",
+				ID:              "red",
+				Name:            "operator",
+				NetworkID:       "pitch",
+				FQID:            protocol.AgentFQID("pitch", "red"),
+				CredentialBound: true,
+			},
+			Parts: []protocol.Part{{Kind: protocol.PartKindText, Text: "hello"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("sendControlMessage() error = %v", err)
+	}
+	if request.From != "red" {
+		t.Fatalf("control attribution = %q, want credential-bound actor ID %q", request.From, "red")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
 }
 
 func TestRunControlLoopReconnectsAfterAttachFailure(t *testing.T) {
