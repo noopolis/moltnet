@@ -41,6 +41,9 @@ type ServiceConfig struct {
 	// durable, non-duplicate message append. When nil, causal stamping is
 	// skipped entirely and message send behavior is unchanged.
 	CausalWriter *observability.CausalWriter
+	// TranscriptWriter is optional. When set, accepted room/DM messages are
+	// exported beside causal.jsonl as research data for the memetics programme.
+	TranscriptWriter *observability.TranscriptWriter
 }
 
 type Service struct {
@@ -62,6 +65,7 @@ type Service struct {
 	broker                    EventBroker
 	pairingClient             PairingClient
 	causalWriter              *observability.CausalWriter
+	transcriptWriter          *observability.TranscriptWriter
 	relaySlots                chan struct{}
 	pairingsMu                sync.RWMutex
 	pairingPublishMu          sync.Mutex
@@ -120,6 +124,7 @@ func NewService(config ServiceConfig) *Service {
 		broker:                    config.Broker,
 		pairingClient:             config.PairingClient,
 		causalWriter:              config.CausalWriter,
+		transcriptWriter:          config.TranscriptWriter,
 		relaySlots:                make(chan struct{}, 8),
 		pairingStatuses:           statuses,
 		roomCredentials:           make(map[string]protocol.SecretString),

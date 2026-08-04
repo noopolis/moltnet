@@ -109,6 +109,11 @@ func (s *Service) stampMessageAccepted(ctx context.Context, message protocol.Mes
 	if _, err := s.causalWriter.Append(event); err != nil {
 		logger.Error("failed to append message.accepted causal event", "error", err.Error())
 	}
+	if s.transcriptWriter != nil {
+		if err := s.transcriptWriter.Append(message, event.PrincipalID); err != nil {
+			logger.Error("failed to append moltnet transcript", "error", err.Error())
+		}
+	}
 }
 
 // stampMessageDenied records a message.denied causal event for a message

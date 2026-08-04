@@ -199,7 +199,12 @@ func sendControlMessage(
 		config,
 		event.Message.Target,
 		protocol.MessageEventID(event.Message.ID),
-		bridgeutil.SenderName(event.Message.From),
+		// Control attribution is an authenticated identity, not a display
+		// string. Actor.ID is credential-bound by the server before this
+		// stored event reaches the bridge. The protocol validation on that
+		// path enforces [A-Za-z0-9][A-Za-z0-9._:-]{0,127}, so this derived
+		// header value cannot contain a newline, space, or bracket.
+		event.Message.From.ID,
 		bridgeutil.RenderInboundText(event.Message),
 		bridgeutil.RenderMessageBody(event.Message),
 	)
