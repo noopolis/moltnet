@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -51,9 +52,15 @@ func New(config Config) (*App, error) {
 	}
 
 	var causalWriter *observability.CausalWriter
+	var transcriptWriter *observability.TranscriptWriter
 	if path := strings.TrimSpace(config.CausalEventsPath); path != "" {
 		causalWriter, err = observability.NewCausalFileWriter(path)
 		if err != nil {
+			return nil, err
+		}
+		transcriptWriter, err = observability.NewTranscriptFileWriter(filepath.Join(filepath.Dir(path), "transcript.json"), config.NetworkID)
+		if err != nil {
+			_ = causalWriter.Close()
 			return nil, err
 		}
 	}
@@ -63,6 +70,7 @@ func New(config Config) (*App, error) {
 	service := rooms.NewService(rooms.ServiceConfig{
 		AllowHumanIngress:         config.AllowHumanIngress,
 		CausalWriter:              causalWriter,
+		TranscriptWriter:          transcriptWriter,
 		DebugEvents:               config.DebugEvents,
 		DisableDirectMessages:     config.DisableDirectMessages,
 		RequirePairNetworkBinding: config.Auth.RequirePairNetworkBinding,
@@ -116,6 +124,9 @@ func New(config Config) (*App, error) {
 	}
 	if causalWriter != nil {
 		instance.closers = append(instance.closers, causalWriter)
+	}
+	if transcriptWriter != nil {
+		instance.closers = append(instance.closers, transcriptWriter)
 	}
 
 	applyRequest, err := applyRequestFromConfig(config)
