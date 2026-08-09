@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -18,13 +19,23 @@ func TestSessionActiveCapacity(t *testing.T) {
 		lines = append(lines, harmonizeRequest(buildReadRequest(i)))
 	}
 
-	out := &bytes.Buffer{}
+	out := &responseCaptureWriter{
+		records: make(chan protocol.MachineResponse, protocol.MachineMaxActiveRequests+1),
+	}
 	done := make(chan error, 1)
 	session := NewSession(context.Background(), io.NopCloser(strings.NewReader(strings.Join(lines, "\n"))), out, WithExecutor(exec))
 	go func() { done <- session.Run() }()
 
 	for i := 0; i < protocol.MachineMaxActiveRequests; i++ {
 		readLine(t, exec.start)
+	}
+	select {
+	case response := <-out.records:
+		if response.Error == nil || response.Error.Code != protocol.MachineErrorCapacity {
+			t.Fatalf("expected active-capacity rejection, got %#v", response)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for active-capacity rejection")
 	}
 	close(gate)
 
