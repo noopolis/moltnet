@@ -92,6 +92,8 @@ func (session *Session) Run() error {
 	}()
 
 	var runErr error
+
+readLoop:
 	for {
 		if session.isShuttingDownOrStopped() || session.ctx.Err() != nil {
 			break
@@ -111,10 +113,10 @@ func (session *Session) Run() error {
 			err := session.processRawLine(rawLine)
 			if err != nil {
 				runErr = err
-				break
+				break readLoop
 			}
 		case errors.Is(readErr, context.Canceled) || errors.Is(session.ctx.Err(), context.Canceled):
-			break
+			break readLoop
 		default:
 			if runErr == nil {
 				runErr = readErr

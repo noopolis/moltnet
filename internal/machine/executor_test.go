@@ -1,7 +1,6 @@
 package machine
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/noopolis/moltnet/pkg/protocol"
@@ -56,20 +55,4 @@ func TestDeliveryIdentityFromSendNudge(t *testing.T) {
 			t.Fatalf("expected identical identity across correlation changes")
 		}
 	})
-}
-
-func _buildSendNudgeRequest(index int) protocol.MachineRequest {
-	return protocol.MachineRequest{
-		Version:       protocol.MachineProtocolV1,
-		CorrelationID: fmt.Sprintf("corr_%d", index),
-		Operation:     protocol.MachineOpSendNudge,
-		SendNudge: &protocol.MachineSendNudgeRequest{
-			DeliveryID: "delivery-id-1",
-			Target: protocol.MachineTarget{
-				Kind: protocol.MachineTargetKindRoom,
-				ID:   "room_1",
-			},
-			Body: "hello",
-		},
-	}
 }

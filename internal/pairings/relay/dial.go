@@ -66,7 +66,7 @@ func (c *Client) Run(ctx context.Context) error {
 		live := err == nil
 		if err == nil {
 			attempt = 0
-			err = c.readLoop(runCtx, conn, state.inbound, func() { attempt = 0 })
+			_ = c.readLoop(runCtx, conn, state.inbound, func() { attempt = 0 })
 		}
 		c.clearConnection(conn)
 		if !live && conn != nil {

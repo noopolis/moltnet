@@ -241,21 +241,11 @@ func machineContractEnvelopeFields(shapeName string) (map[string]MachineContract
 	return fields, nil
 }
 
-func machineContractEnumContains(name, value string) bool {
-	for _, candidate := range machineContractEnumValues[name] {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
-}
-
 func machineContractGrammar(name string) (MachineContractGrammar, bool) {
 	grammar, ok := machineContractGrammarValues[name]
 	return grammar, ok
 }
 
-var machineContractEnumValues = machineContractEnums()
 var machineContractGrammarValues = machineContractGrammars()
 var machineContractRegexes = func() map[string]*regexp.Regexp {
 	patterns := make(map[string]*regexp.Regexp, len(machineContractGrammarValues))

@@ -194,11 +194,7 @@ func (registry *requestLifecycleRegistry) closeAdmission() ([]cancelTarget, bool
 		return snapshots[i].operation < snapshots[j].operation
 	})
 	for _, snapshot := range snapshots {
-		targets = append(targets, cancelTarget{
-			correlation: snapshot.correlation,
-			operation:   snapshot.operation,
-			cancel:      snapshot.cancel,
-		})
+		targets = append(targets, cancelTarget(snapshot))
 	}
 	registry.activeCount = 0
 	return targets, true

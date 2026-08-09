@@ -157,7 +157,7 @@ func TestSessionDeliveryResolveAmbiguousAfterLateCancel(t *testing.T) {
 		done <- session.Run()
 	}()
 
-	_ = <-start
+	<-start
 	close(firstSessionGate)
 	targetSeen := false
 	cancelSeen := false
@@ -180,7 +180,7 @@ func TestSessionDeliveryResolveAmbiguousAfterLateCancel(t *testing.T) {
 	}
 
 	close(hold)
-	_ = <-execDone
+	<-execDone
 	if err := <-done; err != nil {
 		t.Fatalf("expected clean run: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestSessionDeliveryReservationReleasedAfterActiveCapacity(t *testing.T) {
 	if _, err := firstSessionWriter.Write([]byte(harmonizeRequest(requestOne) + "\n")); err != nil {
 		t.Fatalf("expected request one write: %v", err)
 	}
-	_ = <-execStarted
+	<-execStarted
 	if _, err := firstSessionWriter.Write([]byte(harmonizeRequest(requestTwo) + "\n")); err != nil {
 		t.Fatalf("expected request two write: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestSessionDeliveryReservationReleasedAfterActiveCapacity(t *testing.T) {
 	if err := firstSessionWriter.Close(); err != nil {
 		t.Fatalf("expected request input close: %v", err)
 	}
-	_ = <-firstDone
+	<-firstDone
 	if err := <-done; err != nil {
 		t.Fatalf("expected clean run: %v", err)
 	}

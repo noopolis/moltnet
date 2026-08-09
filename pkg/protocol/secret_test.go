@@ -30,7 +30,8 @@ func TestSecretStringRedactsOutput(t *testing.T) {
 		t.Fatalf("YAML leaked secret: %q", got)
 	}
 
-	for _, formatted := range []string{fmt.Sprintf("%v", secret), fmt.Sprintf("%s", secret), fmt.Sprintf("%#v", secret)} {
+	for _, format := range []string{"%v", "%s", "%#v"} {
+		formatted := fmt.Sprintf(format, secret)
 		if formatted != RedactedSecretString {
 			t.Fatalf("formatted secret = %q, want redaction", formatted)
 		}
