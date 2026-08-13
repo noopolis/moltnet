@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
@@ -21,7 +22,7 @@ func LoadApplyFile(path string) (protocol.ApplyConfigRequest, string, error) {
 	if err != nil {
 		return protocol.ApplyConfigRequest{}, "", err
 	}
-	request, err := applyRequestFromRawConfig(config)
+	request, err := applyRequestFromRawConfig(config, filepath.Dir(resolvedPath))
 	if err != nil {
 		return protocol.ApplyConfigRequest{}, "", fmt.Errorf("build apply request from %q: %w", resolvedPath, err)
 	}
@@ -40,9 +41,13 @@ func applyRequestFromConfig(config Config) (protocol.ApplyConfigRequest, error) 
 		}
 	}
 
+	rooms, err := createRoomRequests(config.Rooms, config.roomCredentialBaseDir)
+	if err != nil {
+		return protocol.ApplyConfigRequest{}, err
+	}
 	return protocol.ApplyConfigRequest{
 		NetworkID: config.NetworkID,
-		Rooms:     createRoomRequests(config.Rooms),
+		Rooms:     rooms,
 		Agents:    agents,
 	}, nil
 }
@@ -60,7 +65,7 @@ func loadApplyFileConfig(path string) (rawConfigFile, error) {
 	if err := validateApplyConfigFile(config); err != nil {
 		return rawConfigFile{}, fmt.Errorf("validate Moltnet config %q: %w", path, err)
 	}
-	if hasPlaintextPairingTokens(config.Pairings) || hasPlaintextAuthTokens(config.Auth) || hasSensitivePostgresConfig(config.Storage) {
+	if hasPlaintextConfigSecrets(config) {
 		if err := validatePrivateConfigMode(path); err != nil {
 			return rawConfigFile{}, err
 		}
@@ -75,6 +80,12 @@ func validateApplyConfigFile(config rawConfigFile) error {
 		return fmt.Errorf("unsupported version %q", version)
 	}
 	if err := validateRooms(config.Rooms); err != nil {
+		return err
+	}
+	if err := validateRoomCredentials(config.Rooms, config.Auth.Mode); err != nil {
+		return err
+	}
+	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
 		return err
 	}
 	return validateApplyAuth(config.Auth)
@@ -97,25 +108,29 @@ func validateApplyAuth(config rawAuthConfig) error {
 				return fmt.Errorf("auth.tokens[%d].agents[%d] %w", tokenIndex, agentIndex, err)
 			}
 		}
-		if len(token.Agents) > 0 && strings.TrimSpace(token.ID) == "" && strings.TrimSpace(token.Value) == "" {
+		if len(token.Agents) > 0 && strings.TrimSpace(token.ID) == "" && strings.TrimSpace(token.Value.Reveal()) == "" {
 			return fmt.Errorf("auth.tokens[%d].id is required when agents are declared without a token value", tokenIndex)
 		}
 	}
 	return nil
 }
 
-func applyRequestFromRawConfig(config rawConfigFile) (protocol.ApplyConfigRequest, error) {
+func applyRequestFromRawConfig(config rawConfigFile, credentialBaseDir string) (protocol.ApplyConfigRequest, error) {
 	base := mergeFileConfig(defaultConfig(""), config)
+	rooms, err := createRoomRequests(base.Rooms, credentialBaseDir)
+	if err != nil {
+		return protocol.ApplyConfigRequest{}, err
+	}
 	request := protocol.ApplyConfigRequest{
 		NetworkID: base.NetworkID,
-		Rooms:     createRoomRequests(base.Rooms),
+		Rooms:     rooms,
 	}
 
 	agentCredentials := make(map[string]string)
 	for _, token := range config.Auth.Tokens {
 		tokenConfig := authn.TokenConfig{
 			ID:    token.ID,
-			Value: token.Value,
+			Value: token.Value.Reveal(),
 		}
 		credentialKey := authn.TokenConfigCredentialKey(tokenConfig)
 		for _, agentID := range token.Agents {
@@ -152,16 +167,27 @@ func appendApplyAgent(
 	return nil
 }
 
-func createRoomRequests(rooms []RoomConfig) []protocol.CreateRoomRequest {
+func createRoomRequests(rooms []RoomConfig, credentialBaseDir string) ([]protocol.CreateRoomRequest, error) {
 	requests := make([]protocol.CreateRoomRequest, 0, len(rooms))
 	for _, room := range rooms {
-		requests = append(requests, protocol.CreateRoomRequest{
+		request := protocol.CreateRoomRequest{
 			ID:          room.ID,
 			Name:        room.Name,
 			Members:     append([]string(nil), room.Members...),
 			Visibility:  room.Visibility,
 			WritePolicy: room.WritePolicy,
-		})
+			Federation:  room.Federation,
+		}
+		if room.Credential != nil {
+			token, found, err := room.Credential.ResolveTokenPath(credentialBaseDir).ResolveToken()
+			if err != nil {
+				return nil, fmt.Errorf("resolve credential for room %q: %w", room.ID, err)
+			}
+			if found {
+				request.Credential = protocol.NewSecretString(token)
+			}
+		}
+		requests = append(requests, request)
 	}
-	return requests
+	return requests, nil
 }

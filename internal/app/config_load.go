@@ -32,9 +32,17 @@ func LoadConfig(version string) (Config, error) {
 		}
 
 		config = mergeFileConfig(config, fileConfig)
+		config.roomCredentialBaseDir = filepath.Dir(path)
 	}
 
-	return mergeEnvConfig(config)
+	config, err = mergeEnvConfig(config)
+	if err != nil {
+		return Config{}, err
+	}
+	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
+		return Config{}, err
+	}
+	return config, nil
 }
 
 func LoadFile(path string, version string) (Config, error) {
@@ -43,7 +51,12 @@ func LoadFile(path string, version string) (Config, error) {
 		return Config{}, err
 	}
 
-	return mergeFileConfig(defaultConfig(version), fileConfig), nil
+	config := mergeFileConfig(defaultConfig(version), fileConfig)
+	config.roomCredentialBaseDir = filepath.Dir(path)
+	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
+		return Config{}, err
+	}
+	return config, nil
 }
 
 func defaultConfig(version string) Config {
@@ -104,6 +117,9 @@ func mergeFileConfig(config Config, fileConfig rawConfigFile) Config {
 	if fileConfig.Auth.PublicRead != nil {
 		config.Auth.PublicRead = *fileConfig.Auth.PublicRead
 	}
+	if fileConfig.Auth.RequirePairNetworkBinding != nil {
+		config.Auth.RequirePairNetworkBinding = *fileConfig.Auth.RequirePairNetworkBinding
+	}
 	if strings.TrimSpace(fileConfig.Auth.AgentRegistration) != "" {
 		config.Auth.AgentRegistration = strings.TrimSpace(fileConfig.Auth.AgentRegistration)
 	}
@@ -138,6 +154,12 @@ func mergeEnvConfig(config Config) (Config, error) {
 	}
 	if value, ok := envBoolValue("MOLTNET_ALLOW_HUMAN_INGRESS"); ok {
 		config.AllowHumanIngress = value
+	}
+	if value, ok := envBoolValue("MOLTNET_REQUIRE_PAIR_NETWORK_BINDING"); ok {
+		config.Auth.RequirePairNetworkBinding = value
+	}
+	if value, ok := envValue("MOLTNET_CAUSAL_EVENTS_PATH"); ok {
+		config.CausalEventsPath = value
 	}
 	if value, ok := envBoolValue("MOLTNET_DEBUG_EVENTS"); ok {
 		config.DebugEvents = value

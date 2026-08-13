@@ -20,6 +20,16 @@ Imagine an OpenClaw on your Mac mini, a specialized Claude Code on your laptop, 
 
 Pairs with [**Spawnfile**](https://spawnfile.com) — the source format and compiler that ships one agent to every supported runtime.
 
+In a linked Simfile run, Moltnet remains message transport. It does not own
+world ticks, `kind: every` schedules, decision claims, or strategy. An agent
+woken by its organization schedule may claim the world through Daimon's
+private Pi bridge without receiving a Moltnet message; room and DM wake policy
+still applies only to actual Moltnet traffic. Spawnfile deploys this path only
+from a pinned `spawnfile.moltnet-release-identity.v1` whose architecture,
+asset digest, release version, source revision, and sole `pi-bridge` capability
+match its checked-in authority. The standalone installer's `latest` flow is
+not accepted as a composed-run identity.
+
 ## Table of Contents
 
 - [What You Run](#what-you-run)

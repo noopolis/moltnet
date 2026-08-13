@@ -15,7 +15,7 @@ type Service interface {
 	Network() protocol.Network
 	GetAgent(agentID string) (protocol.AgentSummary, error)
 	GetAgentContext(ctx context.Context, agentID string) (protocol.AgentSummary, error)
-	GetDirectConversation(dmID string) (protocol.DirectConversation, error)
+	GetDirectConversationContext(ctx context.Context, dmID string) (protocol.DirectConversation, error)
 	GetRoom(roomID string) (protocol.Room, error)
 	GetRoomContext(ctx context.Context, roomID string) (protocol.Room, error)
 	GetThread(threadID string) (protocol.Thread, error)
@@ -28,6 +28,7 @@ type Service interface {
 	ListRoomsContext(ctx context.Context, page protocol.PageRequest) (protocol.RoomPage, error)
 	ApplyConfigContext(ctx context.Context, request protocol.ApplyConfigRequest) (protocol.ApplyConfigResult, error)
 	CreateRoomContext(ctx context.Context, request protocol.CreateRoomRequest) (protocol.Room, error)
+	JoinRoomContext(ctx context.Context, roomID string, request protocol.JoinRoomRequest) (protocol.Room, error)
 	RemoveRoomContext(ctx context.Context, roomID string) (protocol.RemoveResult, error)
 	UpdateRoomMembers(ctx context.Context, roomID string, request protocol.UpdateRoomMembersRequest) (protocol.Room, error)
 	RegisterAgentContext(ctx context.Context, request protocol.RegisterAgentRequest) (protocol.AgentRegistration, error)
@@ -35,7 +36,7 @@ type Service interface {
 	AgentConnected(ctx context.Context, agent protocol.Actor)
 	AgentDisconnected(ctx context.Context, agent protocol.Actor, reason string, err error)
 	AgentWakeDelivered(ctx context.Context, agent protocol.Actor, event protocol.Event)
-	AgentWakeFailed(ctx context.Context, agent protocol.Actor, event protocol.Event, err error)
+	AgentWakeFailed(ctx context.Context, agent protocol.Actor, event protocol.Event, err error, details protocol.WakeFailureDetails)
 	ListRoomMessagesContext(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.MessagePage, error)
 	ListThreadsContext(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.ThreadPage, error)
 	ListThreadMessagesContext(ctx context.Context, threadID string, page protocol.PageRequest) (protocol.MessagePage, error)
@@ -48,12 +49,6 @@ type Service interface {
 	SubscribeFrom(ctx context.Context, lastEventID string) <-chan protocol.Event
 }
 
-var (
-	readScopes     = []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}
-	roomListScopes = []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin, authn.ScopePair}
-	networkScopes  = []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin, authn.ScopePair, authn.ScopeAttach}
-)
-
 func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig) http.Handler {
 	config := httpConfigFrom(configs)
 	mux := http.NewServeMux()
@@ -61,11 +56,9 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 	attachDiscoveryRoutes(mux, policy, service)
 	sseLimiter := newStreamLimiter(defaultMaxSSESubscribers)
 	attachments := newAttachmentRegistry()
-
 	mux.Handle("GET /metrics", authorizedWithVerifier(policy, service, authn.ScopeAdmin, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		observability.DefaultMetrics.ServeHTTP(response, request)
 	})))
-
 	mux.HandleFunc("GET /healthz", anonymousAllowedInOpen(policy, service, func(response http.ResponseWriter, request *http.Request) {
 		if err := service.Health(request.Context()); err != nil {
 			observability.DefaultMetrics.RecordStoreHealth(false)
@@ -88,7 +81,6 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 			"status": "ready",
 		})
 	}))
-
 	mux.HandleFunc("GET /v1/network", publicInOpen(policy, service, networkScopes, func(response http.ResponseWriter, request *http.Request) {
 		writeJSON(response, http.StatusOK, networkForRequest(policy, request, service.Network()))
 	}))
@@ -100,6 +92,11 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 			return
 		}
 		page, err := service.ListRoomsContext(request.Context(), pageRequest)
+		if err != nil {
+			writeError(response, statusForError(err), err)
+			return
+		}
+		page, err = filterPairScopedRoomDiscovery(request.Context(), service, page)
 		if err != nil {
 			writeError(response, statusForError(err), err)
 			return
@@ -260,6 +257,8 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, room)
 	}))
 
+	mux.HandleFunc("POST /v1/rooms/{roomID}/join", authorizedAnyWithVerifier(policy, service, []authn.Scope{authn.ScopeWrite, authn.ScopePair}, handleJoinRoom(service)))
+
 	mux.HandleFunc("GET /v1/rooms/{roomID}/messages", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
@@ -329,7 +328,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 	}))
 
 	mux.HandleFunc("GET /v1/dms/{dmID}", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
-		dm, err := service.GetDirectConversation(request.PathValue("dmID"))
+		dm, err := directConversationForRequest(service, request.Context(), request.PathValue("dmID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
 			return
@@ -387,11 +386,11 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusAccepted, accepted)
 	}))
 
+	registerWakeFailedRoute(mux, policy, service)
+
 	mux.HandleFunc("GET /v1/attach", authorizedAttach(policy, service, func(response http.ResponseWriter, request *http.Request) {
 		handleAttachment(response, request, service, policy, attachments)
 	}))
-
 	mux.HandleFunc("GET /v1/events/stream", authorizedEventStream(policy, service, service, sseLimiter))
-
 	return withObservability(mux)
 }

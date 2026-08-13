@@ -38,8 +38,23 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	}
 
 	from := protocol.NormalizeActor(s.networkID, request.From)
+	// CredentialBound is server authority, never caller testimony. The request
+	// uses the same Actor wire type as stored messages, so overwrite it after
+	// normalization even when a caller supplied true.
+	from.CredentialBound = s.senderCredentialBound(ctx, from)
+	if err := s.validateDMSenderTopology(request.Target, from); err != nil {
+		return protocol.MessageAccepted{}, err
+	}
 	if request.Target.Kind == protocol.TargetKindRoom || request.Target.Kind == protocol.TargetKindThread {
 		if err := s.enforceTargetWritePolicy(ctx, request.Target, from); err != nil {
+			// A canWriteRoom denial (non-member / write-policy rejection)
+			// must always be ledger-visible, never a silent drop: stamp
+			// message.denied before returning the existing error. Other
+			// enforceTargetWritePolicy failures (e.g. unknown room) are not
+			// write-policy denials and are left unstamped.
+			if errors.Is(err, ErrWriteForbidden) {
+				s.stampMessageDenied(ctx, messageID, request, err.Error())
+			}
 			return protocol.MessageAccepted{}, err
 		}
 	}
@@ -82,6 +97,9 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 					Accepted:  true,
 				}, nil
 			}
+			if errors.Is(err, store.ErrDMTopologyConflict) {
+				return protocol.MessageAccepted{}, dmTopologyConflictError()
+			}
 			return protocol.MessageAccepted{}, err
 		}
 	} else if err := s.appendMessage(ctx, message); err != nil {
@@ -92,6 +110,9 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 				Accepted:  true,
 			}, nil
 		}
+		if errors.Is(err, store.ErrDMTopologyConflict) {
+			return protocol.MessageAccepted{}, dmTopologyConflictError()
+		}
 		return protocol.MessageAccepted{}, err
 	} else {
 		lifecycle, err = s.conversationLifecycle(ctx, message)
@@ -99,6 +120,11 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 			return protocol.MessageAccepted{}, err
 		}
 	}
+
+	// The durable append above has succeeded and this is not a duplicate
+	// (both ErrDuplicateMessage branches return before reaching here), so
+	// this is exactly one message.accepted causal stamp per accepted message.
+	s.stampMessageAccepted(ctx, message, request)
 
 	if lifecycle.Thread != nil {
 		s.publishEvent(protocol.Event{
@@ -128,6 +154,56 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		ThreadCreated: lifecycle.Thread != nil,
 		DMCreated:     lifecycle.DM != nil,
 	}, nil
+}
+
+func (s *Service) validateDMSenderTopology(target protocol.Target, actor protocol.Actor) error {
+	if target.Kind != protocol.TargetKindDM {
+		return nil
+	}
+
+	participantIDs := protocol.UniqueTrimmedStrings(target.ParticipantIDs)
+	canonicalIDs := make(map[string]struct{}, len(participantIDs))
+	senderIncluded := false
+	for _, participantID := range participantIDs {
+		networkID, agentID := normalizedAgentIdentity(s.networkID, participantID)
+		canonicalID := protocol.ScopedAgentID(networkID, agentID)
+		if _, duplicate := canonicalIDs[canonicalID]; duplicate {
+			return dmTopologyConflictError()
+		}
+		canonicalIDs[canonicalID] = struct{}{}
+		if AgentIdentityMatches(actor.NetworkID, actor.ID, s.networkID, participantID) {
+			senderIncluded = true
+		}
+	}
+	if len(canonicalIDs) < 2 || !senderIncluded {
+		return dmTopologyConflictError()
+	}
+	return nil
+}
+
+func (s *Service) senderCredentialBound(ctx context.Context, actor protocol.Actor) bool {
+	if strings.TrimSpace(actor.Type) == "human" || strings.TrimSpace(actor.NetworkID) != s.networkID {
+		return false
+	}
+	agentID, local := s.agentCollisionID(actor)
+	if !local || agentID == "" || strings.TrimSpace(actor.ID) != agentID ||
+		strings.TrimSpace(actor.FQID) != protocol.AgentFQID(s.networkID, agentID) {
+		return false
+	}
+	claims, ok := authn.ClaimsFromContext(ctx)
+	if !ok || !claims.Allows(authn.ScopeWrite) || claims.Allows(authn.ScopePair) {
+		return false
+	}
+	agentIDs := claims.AgentIDs()
+	if len(agentIDs) != 1 || strings.TrimSpace(agentIDs[0]) != agentID {
+		return false
+	}
+	registration, ok, err := s.registeredAgent(ctx, agentID)
+	if err != nil || !ok {
+		return false
+	}
+	credentialKey := strings.TrimSpace(claims.CredentialKey)
+	return credentialKey != "" && credentialKey == strings.TrimSpace(registration.CredentialKey)
 }
 
 func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Actor, origin protocol.MessageOrigin) error {
@@ -237,6 +313,9 @@ func (s *Service) validateHumanSender(ctx context.Context, origin protocol.Messa
 		if !ok || !claims.Allows(authn.ScopePair) {
 			return agentForbiddenError("remote-origin human sender requires pair scope")
 		}
+		if !pairCredentialMatchesOrigin(ctx, claims, originNetworkID, s.requirePairNetworkBinding) {
+			return agentForbiddenError("remote-origin human sender requires a pair credential bound to this network")
+		}
 	}
 	if authn.ModeFromContext(ctx) == authn.ModeNone {
 		return nil
@@ -267,7 +346,10 @@ func (s *Service) isPairedRemoteOriginActor(ctx context.Context, actor protocol.
 	if !ok || !claims.Allows(authn.ScopePair) {
 		return false
 	}
-	return actorHasExplicitConsistentNetworkID(actor, originNetworkID)
+	if !actorHasExplicitConsistentNetworkID(actor, originNetworkID) {
+		return false
+	}
+	return pairCredentialMatchesOrigin(ctx, claims, originNetworkID, s.requirePairNetworkBinding)
 }
 
 func (s *Service) agentCollisionID(actor protocol.Actor) (string, bool) {

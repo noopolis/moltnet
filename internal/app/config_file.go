@@ -48,17 +48,19 @@ type rawConsoleAnalyticsConfig struct {
 }
 
 type rawAuthConfig struct {
-	Mode              string               `json:"mode" yaml:"mode"`
-	PublicRead        *bool                `json:"public_read,omitempty" yaml:"public_read,omitempty"`
-	AgentRegistration string               `json:"agent_registration,omitempty" yaml:"agent_registration,omitempty"`
-	Tokens            []rawAuthTokenConfig `json:"tokens" yaml:"tokens"`
+	Mode                      string               `json:"mode" yaml:"mode"`
+	PublicRead                *bool                `json:"public_read,omitempty" yaml:"public_read,omitempty"`
+	RequirePairNetworkBinding *bool                `json:"require_pair_network_binding,omitempty" yaml:"require_pair_network_binding,omitempty"`
+	AgentRegistration         string               `json:"agent_registration,omitempty" yaml:"agent_registration,omitempty"`
+	Tokens                    []rawAuthTokenConfig `json:"tokens" yaml:"tokens"`
 }
 
 type rawAuthTokenConfig struct {
-	ID     string   `json:"id" yaml:"id"`
-	Value  string   `json:"value" yaml:"value"`
-	Scopes []string `json:"scopes" yaml:"scopes"`
-	Agents []string `json:"agents,omitempty" yaml:"agents,omitempty"`
+	ID      string                `json:"id" yaml:"id"`
+	Value   protocol.SecretString `json:"value" yaml:"value"`
+	Network string                `json:"network,omitempty" yaml:"network,omitempty"`
+	Scopes  []string              `json:"scopes" yaml:"scopes"`
+	Agents  []string              `json:"agents,omitempty" yaml:"agents,omitempty"`
 }
 
 type rawStorageConfig struct {
@@ -93,7 +95,7 @@ func loadFileConfig(path string) (rawConfigFile, error) {
 	if err := validateConfigFile(config); err != nil {
 		return rawConfigFile{}, fmt.Errorf("validate Moltnet config %q: %w", path, err)
 	}
-	if hasPlaintextPairingTokens(config.Pairings) || hasPlaintextAuthTokens(config.Auth) || hasSensitivePostgresConfig(config.Storage) {
+	if hasPlaintextConfigSecrets(config) {
 		if err := validatePrivateConfigMode(path); err != nil {
 			return rawConfigFile{}, err
 		}
@@ -154,6 +156,12 @@ func validateConfigFile(config rawConfigFile) error {
 		return err
 	}
 	if err := validateRooms(config.Rooms); err != nil {
+		return err
+	}
+	if err := validateRoomCredentials(config.Rooms, config.Auth.Mode); err != nil {
+		return err
+	}
+	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
 		return err
 	}
 
@@ -234,6 +242,37 @@ func validateRooms(rooms []RoomConfig) error {
 		if err := protocol.ValidateRoomWritePolicy(room.WritePolicy); err != nil {
 			return fmt.Errorf("rooms[%d].write_policy: %w", index, err)
 		}
+		if err := protocol.ValidateRoomFederation(room.Federation); err != nil {
+			return fmt.Errorf("rooms[%d].federation: %w", index, err)
+		}
+	}
+	return nil
+}
+
+func validateRoomCredentials(rooms []RoomConfig, authMode string) error {
+	mode := strings.TrimSpace(authMode)
+	if mode == "" {
+		mode = authn.ModeNone
+	}
+	if mode != authn.ModeNone {
+		return nil
+	}
+	for index, room := range rooms {
+		if room.Credential != nil && room.Credential.HasTokenSource() {
+			return fmt.Errorf("rooms[%d].credential requires auth.mode other than none", index)
+		}
+	}
+	return nil
+}
+
+func validateRoomFederationStances(rooms []RoomConfig, pairings []protocol.Pairing) error {
+	if len(pairings) == 0 {
+		return nil
+	}
+	for index, room := range rooms {
+		if room.Federation == nil {
+			return fmt.Errorf("rooms[%d] %q must declare federation when pairings are configured", index, room.ID)
+		}
 	}
 	return nil
 }
@@ -246,10 +285,11 @@ func authTokenConfigs(tokens []rawAuthTokenConfig) []authn.TokenConfig {
 			scopes = append(scopes, authn.Scope(strings.TrimSpace(scope)))
 		}
 		configs = append(configs, authn.TokenConfig{
-			ID:     token.ID,
-			Value:  token.Value,
-			Scopes: scopes,
-			Agents: append([]string(nil), token.Agents...),
+			ID:      token.ID,
+			Value:   token.Value.Reveal(),
+			Network: strings.TrimSpace(token.Network),
+			Scopes:  scopes,
+			Agents:  append([]string(nil), token.Agents...),
 		})
 	}
 	return configs

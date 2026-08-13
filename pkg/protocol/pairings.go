@@ -10,6 +10,16 @@ const (
 	PairingStatusUnknown      = "unknown"
 )
 
+type PairingRelay struct {
+	URL  string `json:"url" yaml:"url"`
+	Room string `json:"room,omitempty" yaml:"room,omitempty"`
+	// Token is used solely to open the relay WebSocket connection and matches
+	// the relay's RELAY_TOKEN. When unset, internal/app falls back to
+	// Pairing.Token for that connection; this transport-neutral type makes no
+	// fallback policy decision itself.
+	Token SecretString `json:"token,omitempty" yaml:"token,omitempty"`
+}
+
 type PairingDiagnostics struct {
 	CheckedAt       time.Time        `json:"checked_at,omitempty" yaml:"checked_at,omitempty"`
 	RemoteVersion   string           `json:"remote_version,omitempty" yaml:"remote_version,omitempty"`

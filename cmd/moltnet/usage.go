@@ -6,10 +6,13 @@ func buildUsage() string {
   moltnet connect [options]
   moltnet conversations [--network <id>] [--member <id>]
   moltnet init [path]
+  moltnet machine --config <path> [--network <id>] [--member <id>]
+  moltnet machine-contract
   moltnet participants --target room:<id>|dm:<id> [--network <id>] [--member <id>]
   moltnet read --target room:<id>|dm:<id> [--limit 20] [--network <id>] [--member <id>]
   moltnet register-agent --base-url <url> [--agent <id>] [--name <name>]
   moltnet admin agent remove --agent <id> --base-url <url> --token-env <env>
+  moltnet admin dm ensure --sender <id> --member <id> --member <id> --base-url <url> --token-env <env>
   moltnet admin room remove --room <id> --base-url <url> --token-env <env>
   moltnet admin room members add --room <id> --member <id> --base-url <url> --token-env <env>
   moltnet admin room members remove --room <id> --member <id> --base-url <url> --token-env <env>
@@ -30,6 +33,8 @@ Commands:
   connect           Write local Moltnet client config and optionally install the skill
   conversations     List the configured rooms and DMs this agent can use
   init              Create canonical Moltnet and MoltnetNode config files
+  machine           Run the long-lived machine JSONL protocol over standard I/O
+  machine-contract  Print the canonical machine conformance contract
   participants      Show participants for a configured room or DM target
   read              Read recent messages for a configured room or DM target
   register-agent    Register or resolve this agent's durable Moltnet identity
@@ -47,15 +52,25 @@ Commands:
 `
 }
 
+func buildMachineUsage() string {
+	return `Usage:
+  moltnet machine --config <path> [--network <id>] [--member <id>]
+
+Run the machine JSONL protocol over standard input and standard output.
+`
+}
+
 func buildAdminUsage() string {
 	return `Usage:
   moltnet admin agent remove --agent <id> --base-url <url> --token-env <env>
+  moltnet admin dm ensure --sender <id> --member <id> --member <id> --base-url <url> --token-env <env>
   moltnet admin room remove --room <id> --base-url <url> --token-env <env>
   moltnet admin room members add --room <id> --member <id> [--member <id>] --base-url <url> --token-env <env>
   moltnet admin room members remove --room <id> --member <id> [--member <id>] --base-url <url> --token-env <env>
 
 Admin commands require a bearer token with the admin scope.
 Use moltnet apply for declarative room, membership, and static agent credential reconciliation.
+The dm ensure command installs an idempotent control-only direct-message topology before participants attach.
 `
 }
 

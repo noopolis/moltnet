@@ -28,23 +28,36 @@ func (s *Service) normalizeTarget(target protocol.Target, from protocol.Actor) p
 	if target.Kind != protocol.TargetKindDM {
 		return target
 	}
-
-	if !hasScopedParticipant(target.ParticipantIDs) {
-		return target
-	}
-
-	participants := make([]string, 0, len(target.ParticipantIDs))
-	for _, participantID := range target.ParticipantIDs {
-		if protocol.ActorMatches(from.NetworkID, from.ID, participantID) {
-			participants = append(participants, protocol.ScopedAgentID(from.NetworkID, from.ID))
-			continue
-		}
-
-		participants = append(participants, normalizeParticipantID(participantID))
-	}
-	target.ParticipantIDs = protocol.UniqueTrimmedStrings(participants)
-
+	target.ParticipantIDs = canonicalDMParticipantIDs(s.networkID, from, target.ParticipantIDs)
 	return target
+}
+
+func canonicalDMParticipantIDs(defaultNetworkID string, from protocol.Actor, participantIDs []string) []string {
+	type identity struct{ networkID, agentID string }
+	identities := make([]identity, 0, len(participantIDs))
+	allLocal := true
+	for _, participantID := range protocol.UniqueTrimmedStrings(participantIDs) {
+		var networkID, agentID string
+		if protocol.ActorMatches(from.NetworkID, from.ID, participantID) {
+			networkID, agentID = normalizedAgentIdentity(from.NetworkID, from.ID)
+		} else {
+			networkID, agentID = normalizedAgentIdentity(defaultNetworkID, participantID)
+		}
+		if networkID != defaultNetworkID {
+			allLocal = false
+		}
+		identities = append(identities, identity{networkID: networkID, agentID: agentID})
+	}
+
+	participants := make([]string, 0, len(identities))
+	for _, identity := range identities {
+		if allLocal {
+			participants = append(participants, identity.agentID)
+		} else {
+			participants = append(participants, protocol.ScopedAgentID(identity.networkID, identity.agentID))
+		}
+	}
+	return protocol.SortedUniqueTrimmedStrings(participants)
 }
 
 func (s *Service) relayMessage(message protocol.Message) {
@@ -114,10 +127,13 @@ func (s *Service) shouldRelayMessage(message protocol.Message) bool {
 }
 
 func (s *Service) shouldRelayToPairing(pairing protocol.Pairing, message protocol.Message) bool {
-	if strings.TrimSpace(pairing.RemoteBaseURL) == "" {
+	if !pairingHasTransport(pairing) {
 		return false
 	}
 	if !s.pairingRelayAllowed(pairing, message) {
+		return false
+	}
+	if !s.pairingMatchesRelayTarget(pairing, message) {
 		return false
 	}
 
@@ -140,13 +156,18 @@ func (s *Service) shouldRelayToPairing(pairing protocol.Pairing, message protoco
 }
 
 func (s *Service) shouldAttemptRelayToPairing(pairing protocol.Pairing, message protocol.Message) bool {
-	if strings.TrimSpace(pairing.RemoteBaseURL) == "" {
+	if !pairingHasTransport(pairing) {
 		return false
 	}
 	if !s.pairingRelayAttemptReady(pairing, message) {
 		return false
 	}
 	return s.pairingMatchesRelayTarget(pairing, message)
+}
+
+func pairingHasTransport(pairing protocol.Pairing) bool {
+	return strings.TrimSpace(pairing.RemoteBaseURL) != "" ||
+		(pairing.Relay != nil && strings.TrimSpace(pairing.Relay.URL) != "")
 }
 
 func (s *Service) currentPairingStatus(pairing protocol.Pairing) pairingStatus {
@@ -210,8 +231,13 @@ func (s *Service) setPairingRelaySuccess(pairingID string) {
 }
 
 func (s *Service) pairingMatchesRelayTarget(pairing protocol.Pairing, message protocol.Message) bool {
-	if message.Target.Kind != protocol.TargetKindDM {
-		return true
+	if message.Target.Kind == protocol.TargetKindRoom || message.Target.Kind == protocol.TargetKindThread {
+		room, err := s.roomForWrite(context.Background(), message.Target)
+		// SendMessageContext has already verified persisted room and thread
+		// targets before a real relay reaches this point. Preserve the transport
+		// eligibility helper's behavior for synthetic messages while enforcing
+		// federation whenever there is a stored room to inspect.
+		return err != nil || protocol.RoomFederationAllows(room.Federation, pairing.ID)
 	}
 
 	for _, participantID := range message.Target.ParticipantIDs {
@@ -228,10 +254,10 @@ func (s *Service) pairingMatchesRelayTarget(pairing protocol.Pairing, message pr
 	return false
 }
 
-func (s *Service) relayRequest(pairing protocol.Pairing, message protocol.Message) (protocol.SendMessageRequest, bool) {
+func (s *Service) relayRequest(_ protocol.Pairing, message protocol.Message) (protocol.SendMessageRequest, bool) {
 	target := message.Target
 	if target.Kind == protocol.TargetKindDM {
-		target.ParticipantIDs = relayParticipantIDs(pairing, message)
+		target.ParticipantIDs = canonicalDMParticipantIDs(message.NetworkID, message.From, target.ParticipantIDs)
 		if len(target.ParticipantIDs) < 2 {
 			return protocol.SendMessageRequest{}, false
 		}
@@ -245,49 +271,6 @@ func (s *Service) relayRequest(pairing protocol.Pairing, message protocol.Messag
 		Parts:    append([]protocol.Part(nil), message.Parts...),
 		Mentions: append([]string(nil), message.Mentions...),
 	}, true
-}
-
-func relayParticipantIDs(pairing protocol.Pairing, message protocol.Message) []string {
-	participants := make([]string, 0, len(message.Target.ParticipantIDs))
-	for _, participantID := range message.Target.ParticipantIDs {
-		normalized := normalizeParticipantID(participantID)
-		if normalized != "" {
-			participants = append(participants, normalized)
-			continue
-		}
-
-		if protocol.ActorMatches(message.From.NetworkID, message.From.ID, participantID) {
-			participants = append(participants, protocol.ScopedAgentID(message.From.NetworkID, message.From.ID))
-			continue
-		}
-
-		if strings.TrimSpace(pairing.RemoteNetworkID) != "" && strings.TrimSpace(participantID) != "" {
-			participants = append(participants, protocol.ScopedAgentID(pairing.RemoteNetworkID, participantID))
-		}
-	}
-
-	return protocol.UniqueTrimmedStrings(participants)
-}
-
-func hasScopedParticipant(participants []string) bool {
-	for _, participantID := range participants {
-		if normalizeParticipantID(participantID) != "" {
-			return true
-		}
-	}
-
-	return false
-}
-
-func normalizeParticipantID(value string) string {
-	if networkID, agentID, ok := protocol.ParseScopedAgentID(value); ok {
-		return protocol.ScopedAgentID(networkID, agentID)
-	}
-	if networkID, agentID, ok := protocol.ParseAgentFQID(value); ok {
-		return protocol.ScopedAgentID(networkID, agentID)
-	}
-
-	return ""
 }
 
 func sanitizeIDComponent(value string) string {

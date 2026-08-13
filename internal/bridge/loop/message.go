@@ -43,15 +43,5 @@ func shouldHandleRoom(config bridgeconfig.Config, message *protocol.Message) boo
 }
 
 func shouldHandleDirectMessage(config bridgeconfig.Config, message *protocol.Message) bool {
-	if config.DMs == nil || !config.DMs.Enabled || !bridgeutil.ShouldWakeDirect(config.DMs.Wake) {
-		return false
-	}
-
-	for _, participantID := range message.Target.ParticipantIDs {
-		if protocol.ActorMatches(config.Moltnet.NetworkID, config.Agent.ID, participantID) || participantID == config.Agent.Name {
-			return true
-		}
-	}
-
-	return false
+	return bridgeutil.ShouldWakeDirectMessage(config.DMs, config.Moltnet.NetworkID, config.Agent, message)
 }

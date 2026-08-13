@@ -1,0 +1,344 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0b;
+  --surface: #111;
+  --ink: #f3eee7;
+  --sub: #d1c7b8;
+  --mute: #a59d94;
+  --faint: #6b6560;
+  --green: #3ddc84;
+  --green-hi: #6ef5a7;
+  --green-deep: #1fa65f;
+  --coral: #d4604a;
+  --cyan: #00e5cc;
+  --border: rgba(255, 255, 255, 0.07);
+}
+
+html { scroll-behavior: smooth; overflow-x: hidden; }
+
+::selection {
+  background: var(--green);
+  color: #0b0b0b;
+}
+::-moz-selection {
+  background: var(--green);
+  color: #0b0b0b;
+}
+
+body {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+/* === GitHub corner === */
+.github-corner {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 150;
+  line-height: 0;
+  color: var(--bg);
+}
+.github-corner svg { display: block; }
+.github-corner .octo-arm { transform-origin: 130px 106px; }
+.github-corner:hover .octo-arm { animation: octo-wave 0.56s ease-in-out; }
+@keyframes octo-wave {
+  0%, 100% { transform: rotate(0); }
+  20%, 60% { transform: rotate(-26deg); }
+  40%, 80% { transform: rotate(12deg); }
+}
+
+/* === NAV === */
+.nav {
+  position: fixed; top: 0; width: 100%; z-index: 100;
+  background: rgba(11, 11, 11, 0.85);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-in {
+  max-width: 1200px; margin: 0 auto;
+  padding: 0.7rem 2.5rem;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mark {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 0.92rem;
+  text-decoration: none;
+  line-height: 1;
+}
+.mark .base { color: var(--ink); }
+.mark .accent { color: var(--green); }
+
+.nav-links { display: flex; gap: 1.5rem; margin-right: 3rem; }
+.nav-links a {
+  font-size: 0.78rem; font-weight: 500;
+  color: var(--mute); text-decoration: none;
+}
+.nav-links a:hover { color: var(--ink); }
+
+/* === HERO === */
+.hero {
+  max-width: 1200px; margin: 0 auto;
+  padding: 4.25rem 2.5rem 1.5rem;
+  position: relative;
+  overflow: visible;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -10%; left: 50%;
+  transform: translateX(-50%);
+  width: 100vw;
+  height: 600px;
+  background:
+    radial-gradient(ellipse 60% 70% at 30% 30%, rgba(61, 220, 132, 0.18), transparent),
+    radial-gradient(ellipse 50% 60% at 75% 35%, rgba(212, 96, 74, 0.08), transparent);
+  pointer-events: none;
+}
+
+.hero > * { position: relative; z-index: 1; }
+
+br.mobile-break { display: none; }
+
+.hero-top {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  align-items: center;
+  margin-bottom: 2.25rem;
+}
+
+.hero-illustration {
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  align-self: center;
+  justify-self: end;
+}
+
+.hero-illustration-placeholder {
+  width: 100%;
+  max-width: 520px;
+  aspect-ratio: 16 / 10;
+  justify-self: end;
+  border-radius: 20px;
+  border: 1px dashed rgba(61, 220, 132, 0.25);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(61, 220, 132, 0.14), transparent 55%),
+    radial-gradient(circle at 70% 70%, rgba(212, 96, 74, 0.08), transparent 55%),
+    linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--green);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 1rem;
+}
+
+.hero h1 {
+  font-family: 'Fraunces', serif;
+  font-size: clamp(2.3rem, 3.5vw, 3.3rem);
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+  margin-bottom: 1rem;
+  max-width: 18ch;
+}
+.hero h1 em { font-style: italic; color: var(--green); }
+
+.hero-sub {
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--sub);
+  line-height: 1.55;
+  max-width: 46ch;
+  margin-bottom: 1.2rem;
+}
+
+.hero-actions {
+  display: flex; gap: 0.7rem; align-items: center;
+}
+
+.hero-install {
+  margin-top: 1rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--faint);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.hero-install-cmd {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.hero-install code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.4rem 0.7rem;
+  color: var(--sub);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.hero-install-copy {
+  flex: 0 0 auto;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--faint);
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0 0.75rem;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.hero-install-copy:hover { color: var(--ink); background: rgba(255, 255, 255, 0.04); }
+.hero-install-copy.is-copied { color: var(--green); }
+.hero-install-note {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 0.8rem;
+  color: var(--faint);
+}
+
+.btn {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.88rem;
+  padding: 0.7rem 1.4rem;
+  border-radius: 8px;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  color: var(--ink);
+  background: var(--surface);
+  transition: all 0.15s;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+}
+.btn:hover { border-color: rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.05); }
+.btn-fill {
+  background: var(--green);
+  color: #0b0b0b;
+  border-color: var(--green);
+  box-shadow: 0 12px 32px rgba(61, 220, 132, 0.25);
+}
+.btn-fill:hover { background: var(--green-hi); border-color: var(--green-hi); color: #0b0b0b; }
+
+/* === PROOF PROLOGUE === */
+.proof-prologue {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.65rem 1.5rem;
+  margin-bottom: 0;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  background:
+    linear-gradient(180deg, rgba(61, 220, 132, 0.06), rgba(61, 220, 132, 0.02)),
+    var(--surface);
+  flex-wrap: wrap;
+}
+.proof-prologue::after {
+  content: '';
+  position: absolute;
+  left: 1.5rem;
+  right: 1.5rem;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(61, 220, 132, 0.35), transparent);
+}
+
+.prologue-label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--sub);
+  letter-spacing: 0.04em;
+}
+.prologue-step {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #0b0b0b;
+  background: var(--green);
+  padding: 0.1rem 0.42rem;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+
+.prologue-cmd {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+}
+.prologue-cmd .prompt { color: var(--green); margin-right: 0.35rem; }
+.prologue-cmd .hint { color: var(--faint); }
+
+.prologue-meta {
+  display: flex;
+  gap: 0.75rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--mute);
+}
+.prologue-meta .dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  margin-right: 0.3rem;
+}
+.prologue-meta code {
+  color: var(--sub);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.step-tag {
+  display: inline-block;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #0b0b0b;
+  background: var(--green);
+  padding: 0.14rem 0.4rem;
+  border-radius: 4px;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+

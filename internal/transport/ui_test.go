@@ -199,6 +199,10 @@ func TestUIRoutesInjectConsoleAnalytics(t *testing.T) {
 
 func TestConsoleBundleUsesRoomAccessForComposer(t *testing.T) {
 	t.Parallel()
+	webRoot, webDist := embeddedWebRoot()
+	if err := ensureEmbeddedWebBundleFresh(webRoot, webDist); err != nil {
+		t.Fatal(err)
+	}
 
 	var bundle strings.Builder
 	if err := fs.WalkDir(web.Files, "dist/assets", func(path string, entry fs.DirEntry, err error) error {

@@ -29,6 +29,92 @@ func TestOpenPublicRouteAuthSemantics(t *testing.T) {
 	assertStatus(t, handler, http.MethodGet, "/v1/artifacts", "", "", http.StatusUnauthorized)
 }
 
+func TestOpenPublicNetworkReadWritesPermissions(t *testing.T) {
+	t.Parallel()
+
+	policy, err := authn.NewPolicy(authn.Config{Mode: authn.ModeOpen})
+	if err != nil {
+		t.Fatalf("NewPolicy() error = %v", err)
+	}
+
+	memory := store.NewMemoryStore()
+	service := rooms.NewService(rooms.ServiceConfig{
+		AllowHumanIngress: true,
+		NetworkID:         "local",
+		NetworkName:       "Local",
+		Version:           "test",
+		Store:             memory,
+		Messages:          memory,
+		Broker:            events.NewBroker(),
+	})
+	mustCreateRoom(t, service, protocol.CreateRoomRequest{
+		ID:          "member-room",
+		Visibility:  protocol.RoomVisibilityPublic,
+		WritePolicy: protocol.RoomWritePolicyMembers,
+		Members:     []string{"member"},
+	})
+	mustCreateRoom(t, service, protocol.CreateRoomRequest{
+		ID:          "registered-room",
+		Visibility:  protocol.RoomVisibilityPublic,
+		WritePolicy: protocol.RoomWritePolicyRegisteredAgents,
+	})
+	mustCreateRoom(t, service, protocol.CreateRoomRequest{
+		ID:          "private-room",
+		Visibility:  protocol.RoomVisibilityPrivate,
+		WritePolicy: protocol.RoomWritePolicyMembers,
+	})
+	handler := NewHTTPHandler(service, policy)
+
+	member, code := registerAgentHTTP(t, handler, "", "member")
+	if code != http.StatusCreated || member.AgentID != "member" || member.AgentToken == "" {
+		t.Fatalf("unexpected member registration status=%d value=%#v", code, member)
+	}
+	outsider, code := registerAgentHTTP(t, handler, "", "outsider")
+	if code != http.StatusCreated || outsider.AgentID != "outsider" || outsider.AgentToken == "" {
+		t.Fatalf("unexpected outsider registration status=%d value=%#v", code, outsider)
+	}
+
+	assertStatus(t, handler, http.MethodGet, "/v1/network", "", "", http.StatusOK)
+	assertStatus(t, handler, http.MethodGet, "/v1/rooms", "", "", http.StatusOK)
+
+	roomsResponse := httptest.NewRecorder()
+	roomsRequest := httptest.NewRequest(http.MethodGet, "/v1/rooms", nil)
+	handler.ServeHTTP(roomsResponse, roomsRequest)
+	if roomsResponse.Code != http.StatusOK {
+		t.Fatalf("room list unexpected status=%d body=%s", roomsResponse.Code, roomsResponse.Body.String())
+	}
+	var roomPage protocol.RoomPage
+	if err := json.NewDecoder(roomsResponse.Body).Decode(&roomPage); err != nil {
+		t.Fatalf("decode room list: %v", err)
+	}
+	roomIDs := make(map[string]struct{}, len(roomPage.Rooms))
+	for _, room := range roomPage.Rooms {
+		roomIDs[room.ID] = struct{}{}
+	}
+	if len(roomIDs) != 2 {
+		t.Fatalf("expected 2 public rooms, got %v", roomIDs)
+	}
+	for _, expect := range []string{"member-room", "registered-room"} {
+		if _, ok := roomIDs[expect]; !ok {
+			t.Fatalf("expected public room %q in anonymous room list: %#v", expect, roomIDs)
+		}
+	}
+	if _, ok := roomIDs["private-room"]; ok {
+		t.Fatalf("private room leaked to anonymous browsing: %#v", roomIDs)
+	}
+
+	assertStatus(t, handler, http.MethodGet, "/v1/rooms/private-room", "", "", http.StatusForbidden)
+
+	sendPayload := func(roomID, sender string) string {
+		return `{"target":{"kind":"room","room_id":"` + roomID + `"},"from":{"type":"agent","id":"` + sender + `"},"parts":[{"kind":"text","text":"hello"}]}`
+	}
+
+	assertStatus(t, handler, http.MethodPost, "/v1/messages", "", sendPayload("member-room", "member"), http.StatusUnauthorized)
+	assertStatus(t, handler, http.MethodPost, "/v1/messages", "Bearer "+member.AgentToken, sendPayload("member-room", "member"), http.StatusAccepted)
+	assertStatus(t, handler, http.MethodPost, "/v1/messages", "Bearer "+outsider.AgentToken, sendPayload("member-room", "outsider"), http.StatusForbidden)
+	assertStatus(t, handler, http.MethodPost, "/v1/messages", "Bearer "+outsider.AgentToken, sendPayload("registered-room", "outsider"), http.StatusAccepted)
+}
+
 func TestOpenPublicEventStreamFiltersPrivateEvents(t *testing.T) {
 	t.Parallel()
 
@@ -156,6 +242,72 @@ func TestOpenStaticTokenOwnershipAndPairSpoofHTTP(t *testing.T) {
 	assertStatus(t, handler, http.MethodPost, "/v1/agents/register", "Bearer attach-secret", registerBody, http.StatusForbidden)
 }
 
+func TestConsoleListsHideRemovedRoomsAndAgents(t *testing.T) {
+	t.Parallel()
+
+	memory := store.NewMemoryStore()
+	service := rooms.NewService(rooms.ServiceConfig{
+		AllowHumanIngress: true,
+		NetworkID:         "local",
+		NetworkName:       "Local",
+		Version:           "test",
+		Store:             memory,
+		Messages:          memory,
+		Broker:            events.NewBroker(),
+	})
+	for _, room := range []protocol.CreateRoomRequest{
+		{ID: "agora", Members: []string{"luna", "atlas"}, Visibility: protocol.RoomVisibilityPublic},
+		{ID: "ops", Members: []string{"atlas"}, Visibility: protocol.RoomVisibilityPublic},
+	} {
+		if _, err := service.CreateRoom(room); err != nil {
+			t.Fatalf("CreateRoom(%q) error = %v", room.ID, err)
+		}
+	}
+
+	policy, err := authn.NewPolicy(authn.Config{
+		Mode:       authn.ModeOpen,
+		ListenAddr: ":8787",
+		Tokens: []authn.TokenConfig{
+			{ID: "admin", Value: "admin-secret", Scopes: []authn.Scope{authn.ScopeAdmin}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPolicy() error = %v", err)
+	}
+	handler := NewHTTPHandler(service, policy)
+
+	assertStatus(t, handler, http.MethodDelete, "/v1/agents/luna", "Bearer admin-secret", "", http.StatusOK)
+	assertStatus(t, handler, http.MethodDelete, "/v1/rooms/agora", "Bearer admin-secret", "", http.StatusOK)
+
+	roomResponse := httptest.NewRecorder()
+	roomRequest := httptest.NewRequest(http.MethodGet, "/v1/rooms", nil)
+	handler.ServeHTTP(roomResponse, roomRequest)
+	if roomResponse.Code != http.StatusOK {
+		t.Fatalf("GET /v1/rooms status = %d body=%s", roomResponse.Code, roomResponse.Body.String())
+	}
+	var roomPage protocol.RoomPage
+	if err := json.NewDecoder(roomResponse.Body).Decode(&roomPage); err != nil {
+		t.Fatalf("decode room page: %v", err)
+	}
+	if len(roomPage.Rooms) != 1 || roomPage.Rooms[0].ID != "ops" {
+		t.Fatalf("expected only active rooms in console list, got %#v", roomPage.Rooms)
+	}
+
+	agentResponse := httptest.NewRecorder()
+	agentRequest := httptest.NewRequest(http.MethodGet, "/v1/agents", nil)
+	handler.ServeHTTP(agentResponse, agentRequest)
+	if agentResponse.Code != http.StatusOK {
+		t.Fatalf("GET /v1/agents status = %d body=%s", agentResponse.Code, agentResponse.Body.String())
+	}
+	var agentPage protocol.AgentPage
+	if err := json.NewDecoder(agentResponse.Body).Decode(&agentPage); err != nil {
+		t.Fatalf("decode agent page: %v", err)
+	}
+	if len(agentPage.Agents) != 1 || agentPage.Agents[0].ID != "atlas" {
+		t.Fatalf("expected only active agents in console list, got %#v", agentPage.Agents)
+	}
+}
+
 func newOpenHTTPHandlerForTest(t *testing.T, tokens []authn.TokenConfig) http.Handler {
 	t.Helper()
 
@@ -181,6 +333,13 @@ func newOpenHTTPHandlerForTest(t *testing.T, tokens []authn.TokenConfig) http.Ha
 		t.Fatalf("NewPolicy() error = %v", err)
 	}
 	return NewHTTPHandler(service, policy)
+}
+
+func mustCreateRoom(t *testing.T, service *rooms.Service, request protocol.CreateRoomRequest) {
+	t.Helper()
+	if _, err := service.CreateRoom(request); err != nil {
+		t.Fatalf("CreateRoom() error = %v request=%#v", err, request)
+	}
 }
 
 func registerAgentHTTP(t *testing.T, handler http.Handler, authorization string, agentID string) (protocol.AgentRegistration, int) {

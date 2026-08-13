@@ -83,7 +83,11 @@ func TestShouldHandle(t *testing.T) {
 				Message: &protocol.Message{
 					NetworkID: "local",
 					From:      protocol.Actor{ID: "writer"},
-					Target:    protocol.Target{Kind: protocol.TargetKindDM, DMID: "dm_1"},
+					Target: protocol.Target{
+						Kind:           protocol.TargetKindDM,
+						DMID:           "dm_1",
+						ParticipantIDs: []string{"writer", "researcher"},
+					},
 				},
 			},
 			want: true,
@@ -146,6 +150,36 @@ func TestShouldHandle(t *testing.T) {
 				t.Fatalf("shouldHandle() = %v, want %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestShouldHandleAllowedWakeSenderUsesSharedPolicy(t *testing.T) {
+	t.Parallel()
+
+	bridge := newTestBridge()
+	bridge.config.Moltnet.NetworkID = "pitch"
+	bridge.config.Agent.ID = "red"
+	bridge.config.DMs.AllowedWakeSenders = []string{"world"}
+	event := protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
+		Message: &protocol.Message{
+			NetworkID: "pitch",
+			From: protocol.Actor{
+				Type:            "service",
+				ID:              "world",
+				NetworkID:       "pitch",
+				FQID:            protocol.AgentFQID("pitch", "world"),
+				CredentialBound: true,
+			},
+			Target: protocol.Target{Kind: protocol.TargetKindDM, DMID: "world-red", ParticipantIDs: []string{"world", "red"}},
+		},
+	}
+	if !bridge.shouldHandle(event) {
+		t.Fatal("expected strict provider DM to pass TinyClaw admission")
+	}
+	event.Message.Target.ParticipantIDs = []string{"world", "blue"}
+	if bridge.shouldHandle(event) {
+		t.Fatal("expected other provider DM to fail TinyClaw admission")
 	}
 }
 

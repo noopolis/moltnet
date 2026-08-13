@@ -24,6 +24,9 @@ func (s *Service) CreateRoom(request protocol.CreateRoomRequest) (protocol.Room,
 }
 
 func (s *Service) CreateRoomContext(ctx context.Context, request protocol.CreateRoomRequest) (protocol.Room, error) {
+	if err := validateRoomCredentialMode(ctx, request.Credential); err != nil {
+		return protocol.Room{}, err
+	}
 	room, err := roomFromCreateRequest(s.networkID, request)
 	if err != nil {
 		return protocol.Room{}, err
@@ -35,6 +38,7 @@ func (s *Service) CreateRoomContext(ctx context.Context, request protocol.Create
 		}
 		return protocol.Room{}, err
 	}
+	s.setRoomCredential(room.ID, request.Credential)
 
 	s.publishEvent(protocol.Event{
 		ID:        newPrefixedID("evt"),
@@ -155,6 +159,9 @@ func (s *Service) ListDirectConversationsContext(ctx context.Context, page proto
 
 	items := make([]directConversationItem, 0, len(conversations))
 	for _, conversation := range conversations {
+		if !s.canReadDirectConversation(ctx, conversation) {
+			continue
+		}
 		items = append(items, directConversationItem{DirectConversation: conversation})
 	}
 	selected, info, err := paginate(items, page)
@@ -193,10 +200,13 @@ func (s *Service) ListDMMessagesContext(
 	if s.disableDirectMessages {
 		return protocol.MessagePage{}, directMessagesDisabledError()
 	}
-	if _, ok, err := s.getDirectConversation(ctx, dmID); err != nil {
+	conversation, ok, err := s.getDirectConversation(ctx, dmID)
+	if err != nil {
 		return protocol.MessagePage{}, err
 	} else if !ok {
 		return protocol.MessagePage{}, unknownDirectConversationError(dmID)
+	} else if !s.canReadDirectConversation(ctx, conversation) {
+		return protocol.MessagePage{}, agentForbiddenError("direct conversation is not readable")
 	}
 
 	return s.listDMMessages(ctx, dmID, page)
@@ -224,19 +234,8 @@ func (s *Service) ListArtifactsContext(
 	if filter.DMID != "" && s.disableDirectMessages {
 		return protocol.ArtifactPage{}, directMessagesDisabledError()
 	}
-	if filter.RoomID != "" {
-		if _, ok, err := s.getRoom(ctx, filter.RoomID); err != nil {
-			return protocol.ArtifactPage{}, err
-		} else if !ok {
-			return protocol.ArtifactPage{}, unknownRoomError(filter.RoomID)
-		}
-	}
-	if filter.ThreadID != "" {
-		if _, ok, err := s.getThread(ctx, filter.ThreadID); err != nil {
-			return protocol.ArtifactPage{}, err
-		} else if !ok {
-			return protocol.ArtifactPage{}, unknownThreadError(filter.ThreadID)
-		}
+	if err := s.validateArtifactScope(ctx, filter); err != nil {
+		return protocol.ArtifactPage{}, err
 	}
 
 	return s.listArtifacts(ctx, filter, page)
@@ -256,6 +255,7 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 		if err != nil {
 			return protocol.AgentPage{}, err
 		}
+		agents = s.filterPairScopedAgentSummaries(ctx, agents)
 		for index := range agents {
 			agents[index].Connected = s.agentConnected(agents[index].ID)
 		}
@@ -268,7 +268,7 @@ func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageReque
 	}
 	readableRooms := make([]protocol.Room, 0, len(rooms))
 	for _, room := range rooms {
-		if readable, ok := s.readableRoom(ctx, room); ok {
+		if readable, ok := s.readableRoom(ctx, room); ok && s.roomVisibleToPairScopedContext(ctx, readable) {
 			readableRooms = append(readableRooms, readable)
 		}
 	}

@@ -15,14 +15,27 @@ import (
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
-const controlRequestTimeout = 15 * time.Second
+const controlRequestTimeout = 5 * time.Minute
 const maxControlResponseBytes = 1 << 20
 
 type controlRequest struct {
 	ContextID string `json:"context_id,omitempty"`
-	From      string `json:"from"`
-	Message   string `json:"message"`
-	To        string `json:"to"`
+	// EventID is the moltnet causal event id ("moltnet:<messageID>", via
+	// protocol.MessageEventID) of the inbound message.created event that
+	// triggered this control wake. It is empty for bootstrap sends, which
+	// have no inbound moltnet message to derive an id from. The runtime's
+	// control source (src/runtime/pi/appControlSource.ts
+	// formatControlEventId) prefers this field verbatim over its
+	// synthesized context_id+timestamp fallback, so daimon and mneme chain
+	// off a real moltnet id instead of a stand-in.
+	EventID string `json:"event_id,omitempty"`
+	From    string `json:"from"`
+	Message string `json:"message"`
+	// TransportText preserves the exact provider message body separately
+	// from Message's human-facing transport rendering. Runtimes may use it
+	// to recognize a versioned machine envelope without parsing display text.
+	TransportText string `json:"transport_text,omitempty"`
+	To            string `json:"to"`
 }
 
 type controlResponse struct {
@@ -41,6 +54,11 @@ func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
 	backoff := bridgeutil.NewBackoff(bridgeutil.DefaultReconnectBaseDelay, bridgeutil.DefaultReconnectMaxDelay)
 	attempt := 0
 	bootstrapped := false
+	// Created once, outside the reconnect loop below, so a permanently
+	// failing event.ID stays known across reconnects instead of every
+	// reconnect restarting its retry budget at zero (the structural cause
+	// of the retry-storm this loop used to be able to produce).
+	deliveries := newControlDeliveryTracker()
 
 	for {
 		if ctx.Err() != nil {
@@ -80,11 +98,7 @@ func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
 				return nil
 			}
 
-			response, err := sendControlMessage(ctx, controlClient, config, event)
-			if err != nil {
-				return err
-			}
-			return publishControlResponse(ctx, client, config, event.Message.Target, response)
+			return deliverControlMessage(ctx, controlClient, client, config, event, deliveries)
 		})
 		cancelStream()
 
@@ -131,8 +145,10 @@ func sendBootstrapControlMessages(
 			controlClient,
 			config,
 			target.target,
+			"", // bootstrap sends have no inbound moltnet message to derive an event id from
 			"Moltnet Bootstrap",
 			target.message,
+			"",
 		)
 		if err != nil {
 			return err
@@ -170,6 +186,9 @@ func sendControlMessage(
 	config bridgeconfig.Config,
 	event protocol.Event,
 ) (controlResponse, error) {
+	if event.Type != protocol.EventTypeMessageCreated {
+		return controlResponse{}, fmt.Errorf("control wake requires %s event, got %s", protocol.EventTypeMessageCreated, event.Type)
+	}
 	if event.Message == nil {
 		return controlResponse{}, fmt.Errorf("event has no message")
 	}
@@ -179,8 +198,15 @@ func sendControlMessage(
 		controlClient,
 		config,
 		event.Message.Target,
-		bridgeutil.SenderName(event.Message.From),
+		protocol.MessageEventID(event.Message.ID),
+		// Control attribution is an authenticated identity, not a display
+		// string. Actor.ID is credential-bound by the server before this
+		// stored event reaches the bridge. The protocol validation on that
+		// path enforces [A-Za-z0-9][A-Za-z0-9._:-]{0,127}, so this derived
+		// header value cannot contain a newline, space, or bracket.
+		event.Message.From.ID,
 		bridgeutil.RenderInboundText(event.Message),
+		bridgeutil.RenderMessageBody(event.Message),
 	)
 }
 
@@ -189,16 +215,20 @@ func sendControlText(
 	controlClient *http.Client,
 	config bridgeconfig.Config,
 	target protocol.Target,
+	eventID string,
 	from string,
 	message string,
+	transportText string,
 ) (controlResponse, error) {
 	contextID := conversationContextIDForTarget(config.Moltnet.NetworkID, target)
 
 	body, err := json.Marshal(controlRequest{
-		ContextID: contextID,
-		From:      from,
-		Message:   message,
-		To:        config.Agent.ID,
+		ContextID:     contextID,
+		EventID:       eventID,
+		From:          from,
+		Message:       message,
+		TransportText: transportText,
+		To:            config.Agent.ID,
 	})
 	if err != nil {
 		return controlResponse{}, fmt.Errorf("encode control request: %w", err)
@@ -215,7 +245,7 @@ func sendControlText(
 	}
 
 	request.Header.Set("Content-Type", "application/json")
-	if token := strings.TrimSpace(config.Runtime.Token); token != "" {
+	if token := strings.TrimSpace(config.Runtime.Token.Reveal()); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -242,6 +272,7 @@ func publishControlResponse(
 	client *MoltnetClient,
 	config bridgeconfig.Config,
 	target protocol.Target,
+	inboundMessageID string,
 	response controlResponse,
 ) error {
 	if config.Runtime.Kind != bridgeconfig.RuntimePi {
@@ -258,7 +289,8 @@ func publishControlResponse(
 			ID:   config.Agent.ID,
 			Name: bridgeutil.DisplayName(config.Agent),
 		},
-		Parts: []protocol.Part{{Kind: protocol.PartKindText, Text: message}},
+		Parts:         []protocol.Part{{Kind: protocol.PartKindText, Text: message}},
+		CauseEventIDs: []string{protocol.MessageEventID(inboundMessageID)},
 	})
 	return err
 }

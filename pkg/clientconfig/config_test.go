@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noopolis/moltnet/pkg/bridgeconfig"
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 func TestLoadFile(t *testing.T) {
@@ -130,6 +133,55 @@ func TestResolveAttachment(t *testing.T) {
 	}
 	if attachment.BaseURL != "http://127.0.0.1:9787" {
 		t.Fatalf("unexpected attachment %#v", attachment)
+	}
+}
+
+func TestLoadFilePreservesAllowedWakeSenders(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version": "moltnet.client.v1",
+  "attachments": [{
+    "auth": {"mode": "none"},
+    "base_url": "http://127.0.0.1:8787",
+    "member_id": "red",
+    "network_id": "pitch",
+    "dms": {"enabled": true, "allowed_wake_senders": ["world"]}
+  }]
+}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	config, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	dms := config.Attachments[0].DMs
+	if dms == nil || len(dms.AllowedWakeSenders) != 1 || dms.AllowedWakeSenders[0] != "world" {
+		t.Fatalf("allowed wake senders did not round-trip: %#v", dms)
+	}
+}
+
+func TestAttachmentRejectsInvalidAllowedWakeSenders(t *testing.T) {
+	invalid := [][]string{
+		{""},
+		{" world "},
+		{"remote:world"},
+		{"molt://remote/agents/world"},
+		{"world", " world "},
+		make([]string, protocol.MaxMembersPerRequest+1),
+	}
+	for _, senders := range invalid {
+		attachment := AttachmentConfig{
+			Auth:      AuthConfig{Mode: "none"},
+			BaseURL:   "http://127.0.0.1:8787",
+			MemberID:  "alpha",
+			NetworkID: "local",
+			DMs:       &bridgeconfig.DMConfig{Enabled: true, AllowedWakeSenders: senders},
+		}
+		if err := attachment.Validate(); err == nil {
+			t.Fatalf("expected invalid allowed wake senders error for %#v", senders)
+		}
 	}
 }
 

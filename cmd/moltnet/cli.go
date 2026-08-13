@@ -37,6 +37,10 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runConversations(rest)
 	case "init":
 		return runInit(rest)
+	case "machine":
+		return runMachine(ctx, rest)
+	case "machine-contract":
+		return runMachineContract(rest)
 	case "participants":
 		return runParticipants(rest)
 	case "read":

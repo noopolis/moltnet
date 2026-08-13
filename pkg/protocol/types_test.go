@@ -4,7 +4,38 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
+
+func TestPairingRelaySerializationRedactsToken(t *testing.T) {
+	t.Parallel()
+
+	want := Pairing{ID: "pair", Relay: &PairingRelay{URL: "wss://relay.example.com", Room: "lobby", Token: "relay-connect-token"}}
+	jsonBytes, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var gotJSON Pairing
+	if err := json.Unmarshal(jsonBytes, &gotJSON); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if gotJSON.Relay == nil || gotJSON.Relay.Token.Reveal() != RedactedSecretString {
+		t.Fatalf("JSON relay token = %#v, want redaction marker", gotJSON.Relay)
+	}
+
+	yamlBytes, err := yaml.Marshal(want)
+	if err != nil {
+		t.Fatalf("yaml.Marshal() error = %v", err)
+	}
+	var gotYAML Pairing
+	if err := yaml.Unmarshal(yamlBytes, &gotYAML); err != nil {
+		t.Fatalf("yaml.Unmarshal() error = %v", err)
+	}
+	if gotYAML.Relay == nil || gotYAML.Relay.Token.Reveal() != RedactedSecretString {
+		t.Fatalf("YAML relay token = %#v, want redaction marker", gotYAML.Relay)
+	}
+}
 
 func TestValidateTarget(t *testing.T) {
 	t.Parallel()
@@ -113,5 +144,31 @@ func TestAgentRegistrationAgentTokenJSON(t *testing.T) {
 	}
 	if strings.Contains(text, "credential") || strings.Contains(text, "agent-token:hash") {
 		t.Fatalf("credential key leaked in JSON %s", text)
+	}
+}
+
+func TestActorCredentialBoundJSONIsAdditive(t *testing.T) {
+	t.Parallel()
+
+	legacy, err := json.Marshal(Actor{Type: "agent", ID: "world"})
+	if err != nil {
+		t.Fatalf("Marshal() legacy error = %v", err)
+	}
+	if strings.Contains(string(legacy), "credential_bound") {
+		t.Fatalf("zero-value provenance should stay omitted: %s", legacy)
+	}
+	stamped, err := json.Marshal(Actor{Type: "agent", ID: "world", CredentialBound: true})
+	if err != nil {
+		t.Fatalf("Marshal() stamped error = %v", err)
+	}
+	if !strings.Contains(string(stamped), `"credential_bound":true`) {
+		t.Fatalf("stamped provenance missing from JSON: %s", stamped)
+	}
+	var decoded Actor
+	if err := json.Unmarshal([]byte(`{"type":"agent","id":"world"}`), &decoded); err != nil {
+		t.Fatalf("Unmarshal() legacy error = %v", err)
+	}
+	if decoded.CredentialBound {
+		t.Fatalf("legacy actor unexpectedly bound: %#v", decoded)
 	}
 }

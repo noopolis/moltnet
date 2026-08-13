@@ -58,7 +58,10 @@ type fakeService struct {
 	disconnectErrors   []string
 	deliveredWakes     []protocol.Event
 	failedWakes        []protocol.Event
+	failedWakeAgents   []protocol.Actor
+	failedWakeDetails  []protocol.WakeFailureDetails
 	updatedRoom        protocol.UpdateRoomMembersRequest
+	joinRoom           protocol.JoinRoomRequest
 	sentMessage        protocol.SendMessageRequest
 	roomID             string
 	roomBefore         string
@@ -159,10 +162,12 @@ func (f *fakeService) AgentWakeDelivered(ctx context.Context, agent protocol.Act
 	defer f.mu.Unlock()
 	f.deliveredWakes = append(f.deliveredWakes, event)
 }
-func (f *fakeService) AgentWakeFailed(ctx context.Context, agent protocol.Actor, event protocol.Event, err error) {
+func (f *fakeService) AgentWakeFailed(ctx context.Context, agent protocol.Actor, event protocol.Event, err error, details protocol.WakeFailureDetails) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failedWakes = append(f.failedWakes, event)
+	f.failedWakeAgents = append(f.failedWakeAgents, agent)
+	f.failedWakeDetails = append(f.failedWakeDetails, details)
 }
 func (f *fakeService) ListPairingsContext(ctx context.Context, page protocol.PageRequest) (protocol.PairingPage, error) {
 	f.pairBefore = page.Before
@@ -227,6 +232,11 @@ func (f *fakeService) UpdateRoomMembers(ctx context.Context, roomID string, requ
 	f.roomID = roomID
 	f.updatedRoom = request
 	return protocol.Room{ID: roomID, Members: append(append([]string(nil), request.Add...), request.Remove...)}, nil
+}
+func (f *fakeService) JoinRoomContext(ctx context.Context, roomID string, request protocol.JoinRoomRequest) (protocol.Room, error) {
+	f.roomID = roomID
+	f.joinRoom = request
+	return protocol.Room{ID: roomID, Members: []string{request.From.ID}}, nil
 }
 func (f *fakeService) RegisterAgentContext(ctx context.Context, request protocol.RegisterAgentRequest) (protocol.AgentRegistration, error) {
 	f.registeredAgent = request
@@ -745,6 +755,34 @@ func TestNewHTTPHandlerRoutes(t *testing.T) {
 		}
 	})
 
+	t.Run("report wake failed", func(t *testing.T) {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/v1/agents/wake-failed", strings.NewReader(`{
+			"agent_id":"orchestrator",
+			"event":{"id":"evt_1","type":"message.created","network_id":"local","message":{"id":"msg_1"}},
+			"error":"control url returned 400 Bad Request",
+			"attempts":5,
+			"classification":"permanent"
+		}`))
+		request.Header.Set("Content-Type", "application/json")
+		handler.ServeHTTP(response, request)
+
+		if response.Code != http.StatusAccepted {
+			t.Fatalf("unexpected status %d, body %s", response.Code, response.Body.String())
+		}
+		if len(service.failedWakes) != 1 || service.failedWakes[0].ID != "evt_1" {
+			t.Fatalf("unexpected recorded wake failure %#v", service.failedWakes)
+		}
+		if len(service.failedWakeAgents) != 1 || service.failedWakeAgents[0].ID != "orchestrator" {
+			t.Fatalf("unexpected wake failure agent %#v", service.failedWakeAgents)
+		}
+		if len(service.failedWakeDetails) != 1 ||
+			service.failedWakeDetails[0].Attempts != 5 ||
+			service.failedWakeDetails[0].Classification != protocol.WakeFailureClassificationPermanent {
+			t.Fatalf("unexpected wake failure details %#v", service.failedWakeDetails)
+		}
+	})
+
 	t.Run("stream events", func(t *testing.T) {
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, "/v1/events/stream", nil)
@@ -865,6 +903,9 @@ func TestNewHTTPHandlerErrorsAndHelpers(t *testing.T) {
 		{name: "dm list error", method: http.MethodGet, path: "/v1/dms/x/messages", status: http.StatusUnprocessableEntity},
 		{name: "artifacts error", method: http.MethodGet, path: "/v1/artifacts?room_id=x", status: http.StatusNotFound},
 		{name: "invalid message json", method: http.MethodPost, path: "/v1/messages", body: `{"target":{}}`, status: http.StatusUnprocessableEntity},
+		{name: "invalid wake failed json", method: http.MethodPost, path: "/v1/agents/wake-failed", body: `{"agent_id":1}`, status: http.StatusBadRequest},
+		{name: "wake failed missing agent id", method: http.MethodPost, path: "/v1/agents/wake-failed", body: `{"event":{"id":"evt_1","message":{"id":"msg_1"}}}`, status: http.StatusBadRequest},
+		{name: "wake failed missing event message", method: http.MethodPost, path: "/v1/agents/wake-failed", body: `{"agent_id":"orchestrator","event":{"id":"evt_1"}}`, status: http.StatusBadRequest},
 	}
 
 	for _, test := range tests {

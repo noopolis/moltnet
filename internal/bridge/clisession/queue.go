@@ -50,6 +50,13 @@ func (r *Runner) enqueueEventDelivery(ctx context.Context, event protocol.Event)
 		message:  cloneMessage(event.Message),
 	})
 	if queue.running {
+		r.emit(RunnerEventWakeQueued, RunnerEvent{
+			ContextKey:      contextKey,
+			MessageID:       delivery.MessageID,
+			QueuedCount:     len(queue.pending),
+			Bootstrap:       delivery.Bootstrap,
+			ExistingSession: false,
+		})
 		return nil
 	}
 

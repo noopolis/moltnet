@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/internal/events"
 	"github.com/noopolis/moltnet/internal/observability"
 	"github.com/noopolis/moltnet/internal/pairings"
+	"github.com/noopolis/moltnet/internal/pairings/relay"
 	"github.com/noopolis/moltnet/internal/rooms"
 	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/internal/transport"
@@ -24,9 +29,11 @@ const (
 )
 
 type App struct {
-	config  Config
-	server  *http.Server
-	closers []io.Closer
+	config       Config
+	server       *http.Server
+	relayClients []*relay.Client
+	relayWG      sync.WaitGroup
+	closers      []io.Closer
 }
 
 type serviceStore interface {
@@ -35,26 +42,49 @@ type serviceStore interface {
 }
 
 func New(config Config) (*App, error) {
+	if err := validateRoomCredentials(config.Rooms, config.Auth.Mode); err != nil {
+		return nil, err
+	}
 	broker := events.NewBroker()
 	roomStore, err := buildStore(config)
 	if err != nil {
 		return nil, err
 	}
 
+	var causalWriter *observability.CausalWriter
+	var transcriptWriter *observability.TranscriptWriter
+	if path := strings.TrimSpace(config.CausalEventsPath); path != "" {
+		causalWriter, err = observability.NewCausalFileWriter(path)
+		if err != nil {
+			return nil, err
+		}
+		transcriptWriter, err = observability.NewTranscriptFileWriter(filepath.Join(filepath.Dir(path), "transcript.json"), config.NetworkID)
+		if err != nil {
+			_ = causalWriter.Close()
+			return nil, err
+		}
+	}
+
+	pairingClient := pairings.NewClient()
+	relayClients := newRelayClients(config, pairingClient)
 	service := rooms.NewService(rooms.ServiceConfig{
-		AllowHumanIngress:     config.AllowHumanIngress,
-		DebugEvents:           config.DebugEvents,
-		DisableDirectMessages: config.DisableDirectMessages,
-		NetworkID:             config.NetworkID,
-		NetworkName:           config.NetworkName,
-		Pairings:              config.Pairings,
-		Version:               config.Version,
-		Store:                 roomStore,
-		Messages:              roomStore,
-		Broker:                broker,
-		PairingClient:         pairings.NewClient(),
+		AllowHumanIngress:         config.AllowHumanIngress,
+		CausalWriter:              causalWriter,
+		TranscriptWriter:          transcriptWriter,
+		DebugEvents:               config.DebugEvents,
+		DisableDirectMessages:     config.DisableDirectMessages,
+		RequirePairNetworkBinding: config.Auth.RequirePairNetworkBinding,
+		NetworkID:                 config.NetworkID,
+		NetworkName:               config.NetworkName,
+		Pairings:                  config.Pairings,
+		Version:                   config.Version,
+		Store:                     roomStore,
+		Messages:                  roomStore,
+		Broker:                    broker,
+		PairingClient:             pairingClient,
 	})
 
+	config.Auth.Tokens = bindPairingNetworks(config.Auth.Tokens, config.Pairings)
 	policy, err := authn.NewPolicy(config.Auth)
 	if err != nil {
 		return nil, fmt.Errorf("build auth policy: %w", err)
@@ -68,6 +98,9 @@ func New(config Config) (*App, error) {
 			},
 		},
 	})
+	for _, relayClient := range relayClients {
+		relayClient.SetHandler(handler)
+	}
 
 	server := &http.Server{
 		Addr:              config.ListenAddr,
@@ -79,8 +112,9 @@ func New(config Config) (*App, error) {
 	}
 
 	instance := &App{
-		config: config,
-		server: server,
+		config:       config,
+		server:       server,
+		relayClients: relayClients,
 	}
 	if closer, ok := roomStore.(io.Closer); ok {
 		instance.closers = append(instance.closers, closer)
@@ -88,16 +122,45 @@ func New(config Config) (*App, error) {
 	if closer, ok := any(service).(io.Closer); ok {
 		instance.closers = append(instance.closers, closer)
 	}
+	if causalWriter != nil {
+		instance.closers = append(instance.closers, causalWriter)
+	}
+	if transcriptWriter != nil {
+		instance.closers = append(instance.closers, transcriptWriter)
+	}
 
 	applyRequest, err := applyRequestFromConfig(config)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := service.ApplyConfigContext(context.Background(), applyRequest); err != nil {
+	applyContext := authn.WithMode(context.Background(), config.Auth.Mode)
+	if _, err := service.ApplyConfigContext(applyContext, applyRequest); err != nil {
 		return nil, err
 	}
 
 	return instance, nil
+}
+
+func newRelayClients(config Config, pairingClient *pairings.Client) []*relay.Client {
+	clients := make([]*relay.Client, 0, len(config.Pairings))
+	for _, pairing := range config.Pairings {
+		if pairing.Relay == nil || strings.TrimSpace(pairing.Relay.URL) == "" {
+			continue
+		}
+		relayToken := strings.TrimSpace(pairing.Relay.Token.Reveal())
+		if relayToken == "" {
+			relayToken = pairing.Token.Reveal()
+		}
+		client := relay.NewClient(relayEndpoint(pairing.Relay.URL, pairing.Relay.Room), relayToken, pairing.Token.Reveal(), config.NetworkID)
+		pairingClient.RegisterRelay(pairing.ID, client)
+		clients = append(clients, client)
+	}
+	return clients
+}
+
+func relayEndpoint(baseURL string, room string) string {
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/") +
+		"/parties/relay-room/" + url.PathEscape(strings.TrimSpace(room))
 }
 
 func (a *App) Handler() http.Handler {
@@ -126,6 +189,18 @@ func buildStore(config Config) (serviceStore, error) {
 
 func (a *App) Run(ctx context.Context) error {
 	defer a.close()
+	for _, relayClient := range a.relayClients {
+		if relayClient == nil {
+			continue
+		}
+		a.relayWG.Add(1)
+		go func(client *relay.Client) {
+			defer a.relayWG.Done()
+			if err := client.Run(ctx); err != nil && ctx.Err() == nil {
+				observability.Logger(ctx, "app", "error", err).Error("run relay client")
+			}
+		}(relayClient)
+	}
 
 	errorCh := make(chan error, 1)
 
@@ -155,6 +230,12 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) close() {
+	for _, relayClient := range a.relayClients {
+		if relayClient != nil {
+			relayClient.Close()
+		}
+	}
+	a.relayWG.Wait()
 	if len(a.closers) == 0 {
 		return
 	}

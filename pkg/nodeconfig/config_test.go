@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 func TestLoadFileYAML(t *testing.T) {
@@ -27,6 +28,7 @@ attachments:
     dms:
       enabled: true
       wake: all
+      allowed_wake_senders: [world]
 `)
 
 	config, err := LoadFile(path)
@@ -42,6 +44,9 @@ attachments:
 	bridgeConfigs := config.BridgeConfigs()
 	if bridgeConfigs[0].Runtime.GatewayURL != bridgeconfig.DefaultOpenClawGatewayURL {
 		t.Fatalf("expected default gateway URL, got %#v", bridgeConfigs[0].Runtime)
+	}
+	if got := bridgeConfigs[0].DMs.AllowedWakeSenders; len(got) != 1 || got[0] != "world" {
+		t.Fatalf("allowed wake senders did not round-trip: %#v", bridgeConfigs[0].DMs)
 	}
 }
 
@@ -199,6 +204,30 @@ func TestValidateErrors(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsInvalidAllowedWakeSenders(t *testing.T) {
+	invalid := [][]string{
+		{""},
+		{" world "},
+		{"remote:world"},
+		{"molt://remote/agents/world"},
+		{"world", " world "},
+		make([]string, protocol.MaxMembersPerRequest+1),
+	}
+	for _, senders := range invalid {
+		config := Config{
+			Moltnet: bridgeconfig.MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+			Attachments: []AttachmentConfig{{
+				Agent:   bridgeconfig.AgentConfig{ID: "alpha"},
+				Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeOpenClaw},
+				DMs:     &bridgeconfig.DMConfig{Enabled: true, AllowedWakeSenders: senders},
+			}},
+		}
+		if err := config.Validate(); err == nil {
+			t.Fatalf("expected invalid allowed wake senders error for %#v", senders)
+		}
+	}
+}
+
 func TestBridgeConfigs(t *testing.T) {
 	config := Config{
 		Moltnet: bridgeconfig.MoltnetConfig{
@@ -211,6 +240,10 @@ func TestBridgeConfigs(t *testing.T) {
 				Agent: bridgeconfig.AgentConfig{ID: "alpha"},
 				Runtime: bridgeconfig.RuntimeConfig{
 					Kind: bridgeconfig.RuntimeOpenClaw,
+				},
+				DMs: &bridgeconfig.DMConfig{
+					Enabled:            true,
+					AllowedWakeSenders: []string{"world"},
 				},
 			},
 		},
@@ -225,6 +258,9 @@ func TestBridgeConfigs(t *testing.T) {
 	}
 	if configs[0].Runtime.GatewayURL != bridgeconfig.DefaultOpenClawGatewayURL {
 		t.Fatalf("expected normalized runtime defaults, got %#v", configs[0].Runtime)
+	}
+	if configs[0].DMs == nil || len(configs[0].DMs.AllowedWakeSenders) != 1 || configs[0].DMs.AllowedWakeSenders[0] != "world" {
+		t.Fatalf("expected allowed wake sender policy to survive bridge lowering, got %#v", configs[0].DMs)
 	}
 }
 

@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -173,9 +174,26 @@ func TestRunControlLoop(t *testing.T) {
 		}
 		if strings.Contains(body, "\"from\":\"Moltnet Bootstrap\"") {
 			sawBootstrap = true
+			// Gap 3: bootstrap sends have no inbound moltnet message to
+			// derive an event id from, so event_id must stay absent
+			// (omitempty), never a synthesized value.
+			if strings.Contains(body, "\"event_id\"") {
+				t.Fatalf("expected no event_id on the bootstrap control request, got %#v", body)
+			}
 		}
-		if strings.Contains(body, "\"from\":\"Writer\"") {
+		if strings.Contains(body, "\"from\":\"writer\"") {
 			sawInbound = true
+			// Gap 3: an inbound wake's control POST must carry the real
+			// moltnet causal event id for its triggering message
+			// (protocol.MessageEventID(event.Message.ID)) so daimon and
+			// mneme chain off it instead of formatControlEventId's
+			// context_id+timestamp synthesized fallback.
+			if !strings.Contains(body, "\"event_id\":\"moltnet:msg_1\"") {
+				t.Fatalf("expected inbound control request to carry the real moltnet event id, got %#v", body)
+			}
+			if !strings.Contains(body, "\"transport_text\":\"hello @reviewer\"") {
+				t.Fatalf("expected inbound control request to preserve the exact message body, got %#v", body)
+			}
 		}
 	}
 	if !sawBootstrap || !sawInbound {
@@ -184,6 +202,55 @@ func TestRunControlLoop(t *testing.T) {
 	if publishedSnapshot != 0 {
 		t.Fatalf("expected control loop responses to stay off Moltnet, got %d sends", publishedSnapshot)
 	}
+}
+
+func TestSendControlMessageUsesCredentialBoundActorID(t *testing.T) {
+	var request controlRequest
+	controlClient := &http.Client{Transport: roundTripFunc(func(requestHTTP *http.Request) (*http.Response, error) {
+		defer requestHTTP.Body.Close()
+		if err := json.NewDecoder(requestHTTP.Body).Decode(&request); err != nil {
+			t.Fatalf("decode control request: %v", err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(`{"from":"researcher","message":""}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	_, err := sendControlMessage(context.Background(), controlClient, bridgeconfig.Config{
+		Agent:   bridgeconfig.AgentConfig{ID: "researcher"},
+		Runtime: bridgeconfig.RuntimeConfig{ControlURL: "http://control.invalid"},
+		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "pitch"},
+	}, protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
+		Message: &protocol.Message{
+			ID:     "message-1",
+			Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "room"},
+			From: protocol.Actor{
+				Type:            "agent",
+				ID:              "red",
+				Name:            "operator",
+				NetworkID:       "pitch",
+				FQID:            protocol.AgentFQID("pitch", "red"),
+				CredentialBound: true,
+			},
+			Parts: []protocol.Part{{Kind: protocol.PartKindText, Text: "hello"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("sendControlMessage() error = %v", err)
+	}
+	if request.From != "red" {
+		t.Fatalf("control attribution = %q, want credential-bound actor ID %q", request.From, "red")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
 }
 
 func TestRunControlLoopReconnectsAfterAttachFailure(t *testing.T) {
@@ -324,6 +391,7 @@ func TestSendControlMessageErrors(t *testing.T) {
 		},
 		Runtime: bridgeconfig.RuntimeConfig{ControlURL: controlServer.URL},
 	}, protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			ID:        "msg_1",
 			NetworkID: "local",
@@ -336,7 +404,21 @@ func TestSendControlMessageErrors(t *testing.T) {
 		t.Fatalf("expected control url error, got %v", err)
 	}
 
-	_, err = sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{}, protocol.Event{})
+	_, err = sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{}, protocol.Event{
+		Type: protocol.EventTypeAgentConnected,
+		Message: &protocol.Message{
+			ID:        "msg_1",
+			NetworkID: "local",
+			Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+			From:      protocol.Actor{Type: "agent", ID: "writer"},
+			CreatedAt: time.Now().UTC(),
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "control wake requires message.created event") {
+		t.Fatalf("expected unsupported control event error, got %v", err)
+	}
+
+	_, err = sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{}, protocol.Event{Type: protocol.EventTypeMessageCreated})
 	if err == nil || !strings.Contains(err.Error(), "event has no message") {
 		t.Fatalf("expected missing message error, got %v", err)
 	}
@@ -352,6 +434,7 @@ func TestSendControlMessageErrors(t *testing.T) {
 		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
 		Runtime: bridgeconfig.RuntimeConfig{ControlURL: invalidResponseServer.URL},
 	}, protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			ID:        "msg_1",
 			NetworkID: "local",
@@ -369,18 +452,17 @@ func TestSendControlMessageErrors(t *testing.T) {
 func TestSendControlMessageUsesStableDMContextID(t *testing.T) {
 	t.Parallel()
 
-	var requestBody string
+	var requestBody controlRequest
 	controlServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		defer request.Body.Close()
-		body, err := io.ReadAll(request.Body)
-		if err != nil {
-			t.Fatalf("read control body: %v", err)
+		if err := json.NewDecoder(request.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("decode control body: %v", err)
 		}
-		requestBody = string(body)
 		response.Header().Set("Content-Type", "application/json")
 		_, _ = response.Write([]byte(`{"from":"researcher","message":"ok"}`))
 	}))
 	defer controlServer.Close()
+	const envelope = `{"decision_token":"opaque","run_id":"run-1","tick":7,"version":"simfile.world-nudge.v1"}`
 
 	_, err := sendControlMessage(context.Background(), &http.Client{Timeout: time.Second}, bridgeconfig.Config{
 		Agent: bridgeconfig.AgentConfig{ID: "researcher"},
@@ -389,6 +471,7 @@ func TestSendControlMessageUsesStableDMContextID(t *testing.T) {
 		},
 		Runtime: bridgeconfig.RuntimeConfig{ControlURL: controlServer.URL},
 	}, protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			ID:        "msg_1",
 			NetworkID: "local",
@@ -398,7 +481,7 @@ func TestSendControlMessageUsesStableDMContextID(t *testing.T) {
 				ParticipantIDs: []string{"orchestrator", "researcher"},
 			},
 			From:      protocol.Actor{Type: "agent", ID: "writer"},
-			Parts:     []protocol.Part{{Kind: "text", Text: "hello"}},
+			Parts:     []protocol.Part{{Kind: "text", Text: envelope}},
 			CreatedAt: time.Now().UTC(),
 		},
 	})
@@ -406,8 +489,14 @@ func TestSendControlMessageUsesStableDMContextID(t *testing.T) {
 		t.Fatalf("sendControlMessage() error = %v", err)
 	}
 
-	if !strings.Contains(requestBody, "\"context_id\":\"moltnet:local:dm:dm-orchestrator-researcher\"") {
-		t.Fatalf("expected stable dm context id, got %q", requestBody)
+	if requestBody.ContextID != "moltnet:local:dm:dm-orchestrator-researcher" {
+		t.Fatalf("expected stable dm context id, got %q", requestBody.ContextID)
+	}
+	if requestBody.Message != "[dm] writer\n"+envelope {
+		t.Fatalf("expected human-facing rendered DM, got %q", requestBody.Message)
+	}
+	if requestBody.TransportText != envelope {
+		t.Fatalf("expected machine envelope without display prefix, got %q", requestBody.TransportText)
 	}
 }
 
@@ -427,6 +516,7 @@ func TestSendControlMessageIncludesRuntimeAuthToken(t *testing.T) {
 		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
 		Runtime: bridgeconfig.RuntimeConfig{ControlURL: controlServer.URL, Token: "runtime-secret"},
 	}, protocol.Event{
+		Type: protocol.EventTypeMessageCreated,
 		Message: &protocol.Message{
 			ID:        "msg_1",
 			NetworkID: "local",

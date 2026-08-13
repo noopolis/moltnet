@@ -25,7 +25,8 @@ func (s *SQLStore) CreateRoomContext(ctx context.Context, room protocol.Room) er
 	}
 	defer rollback(tx)
 
-	query := bindQuery(s.dialect, `INSERT INTO rooms (id, network_id, fqid, name, visibility, write_policy, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+	federation := protocol.NormalizeRoomFederation(room.Federation)
+	query := bindQuery(s.dialect, `INSERT INTO rooms (id, network_id, fqid, name, visibility, write_policy, federation, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
 	if _, err := tx.ExecContext(
 		ctx,
 		query,
@@ -35,6 +36,7 @@ func (s *SQLStore) CreateRoomContext(ctx context.Context, room protocol.Room) er
 		room.Name,
 		protocol.NormalizeRoomVisibility(room.Visibility),
 		protocol.NormalizeRoomWritePolicy(room.WritePolicy),
+		marshalJSON(federation),
 		formatTime(room.CreatedAt),
 	); err != nil {
 		if isDuplicateRoomError(err) {
@@ -58,7 +60,7 @@ func (s *SQLStore) GetRoom(id string) (protocol.Room, bool, error) {
 
 func (s *SQLStore) GetRoomContext(ctx context.Context, id string) (protocol.Room, bool, error) {
 	query := bindQuery(s.dialect, `
-		SELECT r.id, r.network_id, r.fqid, r.name, r.visibility, r.write_policy, r.created_at, rm.member_id
+		SELECT r.id, r.network_id, r.fqid, r.name, r.visibility, r.write_policy, r.federation, r.created_at, rm.member_id
 		FROM rooms r
 		LEFT JOIN room_members rm ON rm.room_id = r.id
 		WHERE r.id = ? AND r.deleted_at IS NULL
@@ -78,13 +80,18 @@ func (s *SQLStore) GetRoomContext(ctx context.Context, id string) (protocol.Room
 		var (
 			roomID, networkID, fqid, name string
 			visibility, writePolicy       string
+			federation                    sql.NullString
 			createdAt                     any
 			memberID                      sql.NullString
 		)
-		if err := rows.Scan(&roomID, &networkID, &fqid, &name, &visibility, &writePolicy, &createdAt, &memberID); err != nil {
+		if err := rows.Scan(&roomID, &networkID, &fqid, &name, &visibility, &writePolicy, &federation, &createdAt, &memberID); err != nil {
 			return protocol.Room{}, false, fmt.Errorf("scan room %q: %w", id, err)
 		}
 		if !found {
+			parsedFederation, err := protocol.ParseRoomFederation([]byte(federation.String))
+			if err != nil {
+				return protocol.Room{}, false, fmt.Errorf("parse room federation %q: %w", id, err)
+			}
 			found = true
 			room = protocol.Room{
 				ID:          roomID,
@@ -93,6 +100,7 @@ func (s *SQLStore) GetRoomContext(ctx context.Context, id string) (protocol.Room
 				Name:        name,
 				Visibility:  protocol.NormalizeRoomVisibility(visibility),
 				WritePolicy: protocol.NormalizeRoomWritePolicy(writePolicy),
+				Federation:  parsedFederation,
 				CreatedAt:   parseTime(createdAt),
 			}
 		}
@@ -143,7 +151,7 @@ func (s *SQLStore) ListRooms() ([]protocol.Room, error) {
 
 func (s *SQLStore) ListRoomsContext(ctx context.Context) ([]protocol.Room, error) {
 	query := bindQuery(s.dialect, `
-		SELECT r.id, r.network_id, r.fqid, r.name, r.visibility, r.write_policy, r.created_at, rm.member_id
+		SELECT r.id, r.network_id, r.fqid, r.name, r.visibility, r.write_policy, r.federation, r.created_at, rm.member_id
 		FROM rooms r
 		LEFT JOIN room_members rm ON rm.room_id = r.id
 		WHERE r.deleted_at IS NULL
@@ -161,14 +169,19 @@ func (s *SQLStore) ListRoomsContext(ctx context.Context) ([]protocol.Room, error
 		var (
 			roomID, networkID, fqid, name string
 			visibility, writePolicy       string
+			federation                    sql.NullString
 			createdAt                     any
 			memberID                      sql.NullString
 		)
-		if err := rows.Scan(&roomID, &networkID, &fqid, &name, &visibility, &writePolicy, &createdAt, &memberID); err != nil {
+		if err := rows.Scan(&roomID, &networkID, &fqid, &name, &visibility, &writePolicy, &federation, &createdAt, &memberID); err != nil {
 			return nil, fmt.Errorf("scan room: %w", err)
 		}
 		room, ok := roomsByID[roomID]
 		if !ok {
+			parsedFederation, err := protocol.ParseRoomFederation([]byte(federation.String))
+			if err != nil {
+				return nil, fmt.Errorf("parse room federation %q: %w", roomID, err)
+			}
 			room = &protocol.Room{
 				ID:          roomID,
 				NetworkID:   networkID,
@@ -176,6 +189,7 @@ func (s *SQLStore) ListRoomsContext(ctx context.Context) ([]protocol.Room, error
 				Name:        name,
 				Visibility:  protocol.NormalizeRoomVisibility(visibility),
 				WritePolicy: protocol.NormalizeRoomWritePolicy(writePolicy),
+				Federation:  parsedFederation,
 				CreatedAt:   parseTime(createdAt),
 			}
 			roomsByID[roomID] = room
@@ -219,13 +233,15 @@ func (s *SQLStore) ReconcileRoomContext(ctx context.Context, room protocol.Room)
 		return protocol.Room{}, fmt.Errorf("%w: %q", ErrRoomNotFound, room.ID)
 	}
 
-	updateQuery := bindQuery(s.dialect, `UPDATE rooms SET name = ?, visibility = ?, write_policy = ? WHERE id = ?`)
+	federation := protocol.NormalizeRoomFederation(room.Federation)
+	updateQuery := bindQuery(s.dialect, `UPDATE rooms SET name = ?, visibility = ?, write_policy = ?, federation = ? WHERE id = ?`)
 	if _, err := tx.ExecContext(
 		ctx,
 		updateQuery,
 		room.Name,
 		protocol.NormalizeRoomVisibility(room.Visibility),
 		protocol.NormalizeRoomWritePolicy(room.WritePolicy),
+		marshalJSON(federation),
 		room.ID,
 	); err != nil {
 		return protocol.Room{}, fmt.Errorf("update room: %w", err)

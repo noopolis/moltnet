@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -75,6 +74,24 @@ func handleAttachment(
 		_ = writeAttachmentError(writer, fmt.Sprintf("attachment agent.id %q is not allowed for this token", agent.ID))
 		return
 	}
+	// Establish the broker subscription BEFORE RegisterAgentContext makes this
+	// agent observable (it then appears, with its rooms, in /v1/agents, and
+	// shortly after as connected). A room message published in the window
+	// between registration and a later SubscribeFrom would otherwise be
+	// delivered to no subscriber, and — on a first attach, whose resume cursor
+	// is empty and thus replays nothing ("from now") — lost with no recovery.
+	// Subscribing here guarantees the subscription is already live by the time
+	// the agent is visible/connected, so no post-visibility message slips
+	// through. Placed after the claims check so an unauthorized caller never
+	// gets even a transient subscription; the brief subscription before
+	// attachments.acquire on a rejected duplicate is harmless (defer cancel
+	// tears it down). Empty-cursor "from now" semantics are unchanged — we do
+	// not replay history on first attach.
+	ctx, cancel := context.WithCancel(request.Context())
+	defer cancel()
+	session := newAttachmentSession(strings.TrimSpace(frame.Cursor))
+	stream := service.SubscribeFrom(ctx, session.ResumeCursor())
+
 	registration, err := service.RegisterAgentContext(request.Context(), protocol.RegisterAgentRequest{
 		RequestedAgentID: agent.ID,
 		Name:             agent.Name,
@@ -104,7 +121,6 @@ func handleAttachment(
 		return
 	}
 	defer release()
-	session := newAttachmentSession(strings.TrimSpace(frame.Cursor))
 
 	if err := writer.write(protocol.AttachmentFrame{
 		Op:         protocol.AttachmentOpReady,
@@ -124,9 +140,6 @@ func handleAttachment(
 		service.AgentDisconnected(context.Background(), agent, disconnectReason, disconnectErr)
 	}()
 
-	ctx, cancel := context.WithCancel(request.Context())
-	defer cancel()
-
 	readErrCh := make(chan error, 1)
 	go func() {
 		readErrCh <- consumeAttachmentFrames(ctx, connection, writer, session, attachmentReadTimeout(), func(event protocol.Event) {
@@ -138,7 +151,6 @@ func handleAttachment(
 	defer heartbeatTicker.Stop()
 
 	filter := attachmentEventFilter(policy, request.Context(), service, service.Network().ID, agent.ID)
-	stream := service.SubscribeFrom(ctx, session.ResumeCursor())
 	for {
 		select {
 		case <-ctx.Done():
@@ -168,7 +180,10 @@ func handleAttachment(
 				disconnectReason = "event_stream_closed"
 				return
 			}
-			if attachmentRemovedEvent(event, service.Network().ID, agent.ID) {
+			if event.Type == protocol.EventTypeAgentRemoved {
+				if !attachmentRemovedEvent(event, service.Network().ID, agent.ID) {
+					continue
+				}
 				disconnectReason = "agent_removed"
 				disconnectErr = writeAttachmentError(writer, "agent was removed from the network")
 				return
@@ -220,7 +235,7 @@ func attachmentDisconnectCause(err error) (string, error) {
 
 func publishPendingWakeFailures(service Service, agent protocol.Actor, session *attachmentSession, err error) {
 	for _, event := range session.PendingWakes() {
-		service.AgentWakeFailed(context.Background(), agent, event, err)
+		service.AgentWakeFailed(context.Background(), agent, event, err, protocol.WakeFailureDetails{})
 	}
 }
 
@@ -326,71 +341,4 @@ func consumeAttachmentFrames(
 			return fmt.Errorf("unexpected attachment frame op %q", frame.Op)
 		}
 	}
-}
-
-func readAttachmentFrame(connection *websocket.Conn, readTimeout time.Duration) (protocol.AttachmentFrame, error) {
-	if err := connection.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
-		return protocol.AttachmentFrame{}, fmt.Errorf("set attachment read deadline: %w", err)
-	}
-
-	messageType, payload, err := connection.ReadMessage()
-	if err != nil {
-		return protocol.AttachmentFrame{}, err
-	}
-	if messageType != websocket.TextMessage {
-		return protocol.AttachmentFrame{}, invalidAttachmentFrameError("attachment protocol only accepts text JSON frames", nil)
-	}
-
-	var frame protocol.AttachmentFrame
-	if err := json.Unmarshal(payload, &frame); err != nil {
-		return protocol.AttachmentFrame{}, invalidAttachmentFrameError("attachment frame must be valid JSON", err)
-	}
-
-	return frame, nil
-}
-
-func attachmentHeartbeatInterval() time.Duration {
-	return time.Duration(attachmentHeartbeatIntervalMS) * time.Millisecond
-}
-
-func attachmentReadTimeout() time.Duration {
-	return attachmentHeartbeatInterval() * 2
-}
-
-type attachmentFrameError struct {
-	message string
-	err     error
-}
-
-func (e *attachmentFrameError) Error() string {
-	return e.message
-}
-
-func (e *attachmentFrameError) Unwrap() error {
-	return e.err
-}
-
-func invalidAttachmentFrameError(message string, err error) error {
-	return &attachmentFrameError{
-		message: strings.TrimSpace(message),
-		err:     err,
-	}
-}
-
-type attachmentClientError string
-
-func (e attachmentClientError) Error() string {
-	message := strings.TrimSpace(string(e))
-	if message == "" {
-		return "attachment client error"
-	}
-	return "attachment client error: " + message
-}
-
-func attachmentFrameErrorMessage(err error) (string, bool) {
-	var frameErr *attachmentFrameError
-	if !errors.As(err, &frameErr) || strings.TrimSpace(frameErr.message) == "" {
-		return "", false
-	}
-	return frameErr.message, true
 }

@@ -113,6 +113,46 @@ storage:
 	}
 }
 
+func TestDecodeStrictConfigWithPairingRelay(t *testing.T) {
+	t.Parallel()
+
+	fixtures := []struct {
+		name string
+		path string
+		data []byte
+	}{
+		{
+			name: "yaml",
+			path: "moltnet.yaml",
+			data: []byte("version: moltnet.v1\npairings:\n  - id: pair_relay\n    relay:\n      url: wss://relay.example.com\n      room: lobby\n      token: relay-connect-token\n"),
+		},
+		{
+			name: "json",
+			path: "moltnet.json",
+			data: []byte(`{"version":"moltnet.v1","pairings":[{"id":"pair_relay","relay":{"url":"wss://relay.example.com","room":"lobby","token":"relay-connect-token"}}]}`),
+		},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			var config rawConfigFile
+			if err := decodeConfigBytes(fixture.path, fixture.data, &config); err != nil {
+				t.Fatalf("decodeConfigBytes() error = %v", err)
+			}
+			if err := validateConfigFile(config); err != nil {
+				t.Fatalf("validateConfigFile() error = %v", err)
+			}
+			if config.Pairings[0].Relay == nil || config.Pairings[0].Relay.Room != "lobby" || config.Pairings[0].Relay.Token != "relay-connect-token" {
+				t.Fatalf("unexpected relay %#v", config.Pairings[0].Relay)
+			}
+		})
+	}
+
+	var strictJSON rawConfigFile
+	if err := decodeJSONConfig([]byte(`{"pairings":[{"id":"pair","relay":{"url":"wss://relay.example.com","unknown":true}}]}`), &strictJSON); err == nil {
+		t.Fatal("decodeJSONConfig accepted unknown relay field")
+	}
+}
+
 func TestValidateAuthConfig(t *testing.T) {
 	t.Parallel()
 
@@ -158,6 +198,24 @@ func TestValidateRoomPolicyConfig(t *testing.T) {
 	}
 	if err := validateRooms([]RoomConfig{{ID: "bad", WritePolicy: "public"}}); err == nil {
 		t.Fatal("expected invalid write_policy error")
+	}
+}
+
+func TestPairedConfigurationsRequireAnExplicitRoomFederationStance(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "Moltnet")
+	writeConfigFile(t, path, `
+version: moltnet.v1
+pairings:
+  - id: pair_remote
+    remote_network_id: remote
+    remote_base_url: https://remote.example
+rooms:
+  - id: private
+`)
+	if _, err := LoadFile(path, "test"); err == nil {
+		t.Fatal("LoadFile accepted paired room without an explicit federation stance")
 	}
 }
 
@@ -227,5 +285,69 @@ server:
 	}
 	if !config.Server.TrustForwardedProto {
 		t.Fatal("expected trust_forwarded_proto to load")
+	}
+}
+
+func TestRoomCredentialConfigRequiresPrivateModeOnlyForPlaintext(t *testing.T) {
+	directory := t.TempDir()
+	plaintextPath := filepath.Join(directory, "plaintext.yaml")
+	writeConfigFile(t, plaintextPath, `
+version: moltnet.v1
+auth:
+  mode: open
+rooms:
+  - id: research
+    credential:
+      token: room-secret
+`)
+	if err := os.Chmod(plaintextPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadFileConfig(plaintextPath); err == nil {
+		t.Fatal("expected plaintext room credential to require 0600")
+	}
+	if _, err := loadApplyFileConfig(plaintextPath); err == nil {
+		t.Fatal("expected apply plaintext room credential to require 0600")
+	}
+	if err := os.Chmod(plaintextPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadFileConfig(plaintextPath); err != nil {
+		t.Fatalf("private plaintext room credential config error = %v", err)
+	}
+	if _, err := loadApplyFileConfig(plaintextPath); err != nil {
+		t.Fatalf("private apply plaintext room credential config error = %v", err)
+	}
+
+	for name, source := range map[string]string{
+		"environment": "token_env: MOLTNET_ROOM_TOKEN",
+		"path":        "token_path: secrets/room-token",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "indirect.yaml")
+			writeConfigFile(t, path, "version: moltnet.v1\nauth:\n  mode: open\nrooms:\n  - id: research\n    credential:\n      "+source+"\n")
+			if err := os.Chmod(path, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loadFileConfig(path); err != nil {
+				t.Fatalf("indirect credential should not require 0600: %v", err)
+			}
+			if _, err := loadApplyFileConfig(path); err != nil {
+				t.Fatalf("indirect apply credential should not require 0600: %v", err)
+			}
+		})
+	}
+}
+
+func TestRoomCredentialIsRejectedWhenAuthIsNone(t *testing.T) {
+	config := rawConfigFile{Rooms: []RoomConfig{{
+		ID:         "research",
+		Credential: &RoomCredentialConfig{Token: protocol.NewSecretString("room-secret")},
+	}}}
+	if err := validateConfigFile(config); err == nil {
+		t.Fatal("expected auth none room credential validation error")
+	}
+	if err := validateApplyConfigFile(config); err == nil {
+		t.Fatal("expected apply auth none room credential validation error")
 	}
 }

@@ -15,12 +15,45 @@ func validatePairings(pairings []protocol.Pairing) error {
 		if strings.TrimSpace(pairing.ID) == "" {
 			return fmt.Errorf("%s.id is required", name)
 		}
-		if strings.TrimSpace(pairing.RemoteBaseURL) == "" {
-			return fmt.Errorf("%s.remote_base_url is required", name)
+		hasRemoteBaseURL := strings.TrimSpace(pairing.RemoteBaseURL) != ""
+		hasRelayURL := pairing.Relay != nil && strings.TrimSpace(pairing.Relay.URL) != ""
+		if hasRemoteBaseURL && hasRelayURL {
+			return fmt.Errorf("%s has conflicting remote_base_url and relay.url; exactly one is allowed", name)
 		}
-		if err := validateRemoteURL(name+".remote_base_url", pairing.RemoteBaseURL); err != nil {
-			return err
+		if !hasRemoteBaseURL && !hasRelayURL {
+			return fmt.Errorf("%s requires exactly one of remote_base_url or relay.url", name)
 		}
+		if hasRemoteBaseURL {
+			if err := validateRemoteURL(name+".remote_base_url", pairing.RemoteBaseURL); err != nil {
+				return err
+			}
+		} else {
+			if err := validateRelayURL(name+".relay.url", pairing.Relay.URL); err != nil {
+				return err
+			}
+			if strings.TrimSpace(pairing.Relay.Room) == "" {
+				return fmt.Errorf("%s must specify relay.room as a non-empty rendezvous name", name)
+			}
+		}
+	}
+
+	return nil
+}
+
+func validateRelayURL(name string, value string) error {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("%s is invalid: %w", name, err)
+	}
+
+	switch parsed.Scheme {
+	case "ws", "wss":
+	default:
+		return fmt.Errorf("%s scheme %q is unsupported", name, parsed.Scheme)
+	}
+
+	if parsed.Host == "" {
+		return fmt.Errorf("%s host is required", name)
 	}
 
 	return nil
@@ -45,9 +78,19 @@ func validateRemoteURL(name string, value string) error {
 	return nil
 }
 
+func hasPlaintextConfigSecrets(config rawConfigFile) bool {
+	return hasPlaintextPairingTokens(config.Pairings) ||
+		hasPlaintextRoomSecrets(config.Rooms) ||
+		hasPlaintextAuthTokens(config.Auth) ||
+		hasSensitivePostgresConfig(config.Storage)
+}
+
 func hasPlaintextPairingTokens(pairings []protocol.Pairing) bool {
 	for _, pairing := range pairings {
-		if strings.TrimSpace(pairing.Token) != "" {
+		if strings.TrimSpace(pairing.Token.Reveal()) != "" {
+			return true
+		}
+		if pairing.Relay != nil && strings.TrimSpace(pairing.Relay.Token.Reveal()) != "" {
 			return true
 		}
 	}
@@ -55,9 +98,18 @@ func hasPlaintextPairingTokens(pairings []protocol.Pairing) bool {
 	return false
 }
 
+func hasPlaintextRoomSecrets(rooms []RoomConfig) bool {
+	for _, room := range rooms {
+		if room.Credential != nil && strings.TrimSpace(room.Credential.Token.Reveal()) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func hasPlaintextAuthTokens(config rawAuthConfig) bool {
 	for _, token := range config.Tokens {
-		if strings.TrimSpace(token.Value) != "" {
+		if strings.TrimSpace(token.Value.Reveal()) != "" {
 			return true
 		}
 	}

@@ -271,4 +271,11 @@ var sqlMigrations = []migration{
 			`ALTER TABLE rooms ADD COLUMN write_policy TEXT NOT NULL DEFAULT 'members'`,
 		},
 	},
+	{
+		Version: 9,
+		Name:    "room_federation",
+		Statements: []string{
+			`ALTER TABLE rooms ADD COLUMN federation TEXT NOT NULL DEFAULT '"none"'`,
+		},
+	},
 }

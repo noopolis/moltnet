@@ -31,6 +31,7 @@ const (
 
 type Config struct {
 	AllowHumanIngress     bool
+	CausalEventsPath      string
 	Console               ConsoleConfig
 	DebugEvents           bool
 	DisableDirectMessages bool
@@ -42,6 +43,7 @@ type Config struct {
 	Rooms                 []RoomConfig
 	Storage               StorageConfig
 	Version               string
+	roomCredentialBaseDir string
 }
 
 type ConsoleConfig struct {
@@ -54,11 +56,19 @@ type ConsoleAnalyticsConfig struct {
 }
 
 type RoomConfig struct {
-	ID          string   `json:"id" yaml:"id"`
-	Name        string   `json:"name,omitempty" yaml:"name,omitempty"`
-	Members     []string `json:"members,omitempty" yaml:"members,omitempty"`
-	Visibility  string   `json:"visibility,omitempty" yaml:"visibility,omitempty"`
-	WritePolicy string   `json:"write_policy,omitempty" yaml:"write_policy,omitempty"`
+	ID          string                   `json:"id" yaml:"id"`
+	Name        string                   `json:"name,omitempty" yaml:"name,omitempty"`
+	Members     []string                 `json:"members,omitempty" yaml:"members,omitempty"`
+	Visibility  string                   `json:"visibility,omitempty" yaml:"visibility,omitempty"`
+	WritePolicy string                   `json:"write_policy,omitempty" yaml:"write_policy,omitempty"`
+	Federation  *protocol.RoomFederation `json:"federation,omitempty" yaml:"federation,omitempty"`
+	Credential  *RoomCredentialConfig    `json:"credential,omitempty" yaml:"credential,omitempty"`
+}
+
+type RoomCredentialConfig struct {
+	Token     protocol.SecretString `json:"token,omitempty" yaml:"token,omitempty"`
+	TokenEnv  string                `json:"token_env,omitempty" yaml:"token_env,omitempty"`
+	TokenPath string                `json:"token_path,omitempty" yaml:"token_path,omitempty"`
 }
 
 type StorageConfig struct {

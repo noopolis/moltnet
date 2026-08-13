@@ -17,6 +17,9 @@ func (s *Service) enforceTargetWritePolicy(ctx context.Context, target protocol.
 	if room.ID == "" {
 		return nil
 	}
+	if !s.pairScopedWriteAllowed(ctx, room) {
+		return writeForbiddenError(room.ID)
+	}
 	if s.canWriteRoom(ctx, room, actor) {
 		return nil
 	}
@@ -122,6 +125,28 @@ func (s *Service) canReadRoom(ctx context.Context, room protocol.Room) bool {
 	if mode == authn.ModeNone && !authn.PublicReadFromContext(ctx) {
 		return true
 	}
+	// Pair-scoped credentials discover rooms only through the federation
+	// filter applied by ListRoomsContext. Treat the pairing as a reader here
+	// so private federated rooms are available to that subsequent filter.
+	if _, paired := s.pairingForPairScopedContext(ctx); paired {
+		return true
+	}
+	if hasClaims && claims.HasAgentRestriction() {
+		if protocol.NormalizeRoomVisibility(room.Visibility) == protocol.RoomVisibilityPublic {
+			return true
+		}
+		for _, agentID := range claims.AgentIDs() {
+			if !claims.AllowsAgent(agentID) {
+				continue
+			}
+			for _, memberID := range room.Members {
+				if allowedAgentMatches(s.networkID, agentID, room.NetworkID, memberID) {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	if hasClaims && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}) {
 		return true
 	}
@@ -129,15 +154,56 @@ func (s *Service) canReadRoom(ctx context.Context, room protocol.Room) bool {
 		protocol.NormalizeRoomVisibility(room.Visibility) == protocol.RoomVisibilityPublic
 }
 
-func actorFromClaims(ctx context.Context) protocol.Actor {
+func (s *Service) canReadDirectConversation(ctx context.Context, conversation protocol.DirectConversation) bool {
 	claims, ok := authn.ClaimsFromContext(ctx)
-	if !ok || !claims.AgentToken() {
-		return protocol.Actor{}
+	if !ok || !claims.HasAgentRestriction() {
+		return true
 	}
 	for _, agentID := range claims.AgentIDs() {
-		return protocol.Actor{Type: "agent", ID: agentID}
+		if !claims.AllowsAgent(agentID) {
+			continue
+		}
+		for _, participantID := range conversation.ParticipantIDs {
+			if allowedAgentMatches(s.networkID, agentID, conversation.NetworkID, participantID) {
+				return true
+			}
+		}
 	}
-	return protocol.Actor{}
+	return false
+}
+
+func AgentIdentityMatches(credentialNetwork, credentialID, parentNetwork, parentID string) bool {
+	allowedNetwork, allowedAgent := normalizedAgentIdentity(credentialNetwork, credentialID)
+	candidateNetwork, candidateAgent := normalizedAgentIdentity(parentNetwork, parentID)
+	return allowedNetwork != "" && allowedAgent != "" &&
+		allowedNetwork == candidateNetwork && allowedAgent == candidateAgent
+}
+
+func allowedAgentMatches(credentialNetwork, credentialID, parentNetwork, parentID string) bool {
+	return AgentIdentityMatches(credentialNetwork, credentialID, parentNetwork, parentID)
+}
+
+func normalizedAgentIdentity(defaultNetworkID, value string) (string, string) {
+	trimmed := strings.TrimSpace(value)
+	if networkID, agentID, ok := protocol.ParseScopedAgentID(trimmed); ok {
+		return strings.TrimSpace(networkID), strings.TrimSpace(agentID)
+	}
+	if networkID, agentID, ok := protocol.ParseAgentFQID(trimmed); ok {
+		return strings.TrimSpace(networkID), strings.TrimSpace(agentID)
+	}
+	return strings.TrimSpace(defaultNetworkID), trimmed
+}
+
+func actorFromClaims(ctx context.Context) protocol.Actor {
+	claims, ok := authn.ClaimsFromContext(ctx)
+	if !ok || !claims.Allows(authn.ScopeWrite) {
+		return protocol.Actor{}
+	}
+	agentIDs := claims.AgentIDs()
+	if len(agentIDs) != 1 {
+		return protocol.Actor{}
+	}
+	return protocol.Actor{Type: "agent", ID: agentIDs[0]}
 }
 
 func roomAccessReason(ctx context.Context, room protocol.Room) string {

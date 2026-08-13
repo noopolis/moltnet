@@ -50,11 +50,12 @@ type NetworkCapabilities struct {
 }
 
 type Actor struct {
-	Type      string `json:"type"`
-	ID        string `json:"id"`
-	Name      string `json:"name,omitempty"`
-	NetworkID string `json:"network_id,omitempty"`
-	FQID      string `json:"fqid,omitempty"`
+	Type            string `json:"type"`
+	ID              string `json:"id"`
+	Name            string `json:"name,omitempty"`
+	NetworkID       string `json:"network_id,omitempty"`
+	FQID            string `json:"fqid,omitempty"`
+	CredentialBound bool   `json:"credential_bound,omitempty"`
 }
 
 type MessageOrigin struct {
@@ -106,15 +107,16 @@ type Event struct {
 }
 
 type Room struct {
-	ID          string      `json:"id"`
-	NetworkID   string      `json:"network_id,omitempty"`
-	FQID        string      `json:"fqid,omitempty"`
-	Name        string      `json:"name"`
-	Members     []string    `json:"members,omitempty"`
-	Visibility  string      `json:"visibility,omitempty"`
-	WritePolicy string      `json:"write_policy,omitempty"`
-	Access      *RoomAccess `json:"access,omitempty"`
-	CreatedAt   time.Time   `json:"created_at"`
+	ID          string          `json:"id"`
+	NetworkID   string          `json:"network_id,omitempty"`
+	FQID        string          `json:"fqid,omitempty"`
+	Name        string          `json:"name"`
+	Members     []string        `json:"members,omitempty"`
+	Visibility  string          `json:"visibility,omitempty"`
+	WritePolicy string          `json:"write_policy,omitempty"`
+	Federation  *RoomFederation `json:"federation,omitempty" yaml:"federation,omitempty"`
+	Access      *RoomAccess     `json:"access,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
 }
 
 type RoomAccess struct {
@@ -164,17 +166,25 @@ type Pairing struct {
 	RemoteNetworkID   string              `json:"remote_network_id" yaml:"remote_network_id"`
 	RemoteNetworkName string              `json:"remote_network_name,omitempty" yaml:"remote_network_name,omitempty"`
 	RemoteBaseURL     string              `json:"remote_base_url,omitempty" yaml:"remote_base_url,omitempty"`
+	Relay             *PairingRelay       `json:"relay,omitempty" yaml:"relay,omitempty"`
 	Status            string              `json:"status,omitempty" yaml:"status,omitempty"`
 	Diagnostics       *PairingDiagnostics `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
-	Token             string              `json:"token,omitempty" yaml:"token,omitempty"`
+	Token             SecretString        `json:"token,omitempty" yaml:"token,omitempty"`
 }
 
 type CreateRoomRequest struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name,omitempty"`
-	Members     []string `json:"members,omitempty"`
-	Visibility  string   `json:"visibility,omitempty"`
-	WritePolicy string   `json:"write_policy,omitempty"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name,omitempty"`
+	Members     []string        `json:"members,omitempty"`
+	Visibility  string          `json:"visibility,omitempty"`
+	WritePolicy string          `json:"write_policy,omitempty"`
+	Federation  *RoomFederation `json:"federation,omitempty" yaml:"federation,omitempty"`
+	Credential  SecretString    `json:"credential,omitempty"`
+}
+
+type JoinRoomRequest struct {
+	From       Actor        `json:"from"`
+	Credential SecretString `json:"credential"`
 }
 
 type UpdateRoomMembersRequest struct {
@@ -196,6 +206,12 @@ type SendMessageRequest struct {
 	From     Actor         `json:"from"`
 	Parts    []Part        `json:"parts"`
 	Mentions []string      `json:"mentions,omitempty"`
+	// CauseEventIDs additively threads causal-event parentage (see
+	// pkg/protocol/causal.go) through to the message.accepted event stamped
+	// once this request durably lands. It is caller-supplied context, never
+	// derived from it: harnesses such as daimon's turn harness set this, the
+	// model never does.
+	CauseEventIDs []string `json:"cause_event_ids,omitempty"`
 }
 
 type MessageAccepted struct {

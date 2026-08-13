@@ -92,7 +92,7 @@ func shouldDeliver(config bridgeconfig.Config, event protocol.Event) bool {
 	case protocol.TargetKindRoom:
 		return shouldDeliverRoom(config, message)
 	case protocol.TargetKindDM:
-		return shouldDeliverDirectMessage(config, message)
+		return bridgeutil.ShouldWakeDirectMessage(config.DMs, config.Moltnet.NetworkID, config.Agent, message)
 	default:
 		return false
 	}
@@ -109,24 +109,6 @@ func shouldDeliverRoom(config bridgeconfig.Config, message *protocol.Message) bo
 		}
 
 		return bridgeutil.ShouldWakeForNetwork(binding.Wake, message.Target, message.Mentions, config.Moltnet.NetworkID, config.Agent)
-	}
-
-	return false
-}
-
-func shouldDeliverDirectMessage(config bridgeconfig.Config, message *protocol.Message) bool {
-	if message == nil || config.DMs == nil || !config.DMs.Enabled {
-		return false
-	}
-	if !bridgeutil.ShouldWakeDirect(config.DMs.Wake) {
-		return false
-	}
-
-	for _, participantID := range message.Target.ParticipantIDs {
-		if protocol.ActorMatches(config.Moltnet.NetworkID, config.Agent.ID, participantID) ||
-			participantID == config.Agent.Name {
-			return true
-		}
 	}
 
 	return false

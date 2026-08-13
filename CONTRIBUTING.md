@@ -59,4 +59,4 @@ go test ./internal/store
 
 - Keep `README.md` focused on operator onboarding.
 - Put detailed API and protocol material in `website/src/content/docs/`.
-- Keep package `CLAUDE.md` guides in present tense and aligned with current code.
+- Keep package `AGENTS.md` guides in present tense and aligned with current code, with `CLAUDE.md` symlinks for compatibility.

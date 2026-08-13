@@ -161,6 +161,107 @@ func ShouldWakeDirect(mode bridgeconfig.WakeConfig) bool {
 	}
 }
 
+// ShouldWakeDirectMessage applies the shared direct-message admission policy
+// used by every bridge adapter. An empty sender allowlist preserves ordinary
+// social DM behavior. A configured allowlist switches to the stricter control
+// boundary: the server must have bound the sender to its credential and the
+// authoritative event topology must be exactly {sender,self} on this network.
+func ShouldWakeDirectMessage(
+	config *bridgeconfig.DMConfig,
+	networkID string,
+	agent bridgeconfig.AgentConfig,
+	message *protocol.Message,
+) bool {
+	if config == nil || !config.Enabled || !ShouldWakeDirect(config.Wake) || message == nil ||
+		message.Target.Kind != protocol.TargetKindDM || strings.TrimSpace(message.NetworkID) != strings.TrimSpace(networkID) {
+		return false
+	}
+	if len(config.AllowedWakeSenders) == 0 {
+		return directParticipantsIncludeAgent(message.Target.ParticipantIDs, networkID, agent)
+	}
+	if !message.From.CredentialBound || strings.TrimSpace(message.From.Type) == "human" {
+		return false
+	}
+	senderID, ok := canonicalLocalActorID(networkID, message.From)
+	if !ok || !containsExactString(config.AllowedWakeSenders, senderID) {
+		return false
+	}
+	selfID := strings.TrimSpace(agent.ID)
+	if selfID == "" || selfID == senderID || protocol.ValidateMemberID(selfID) != nil {
+		return false
+	}
+	return exactLocalDirectParticipants(message.Target.ParticipantIDs, networkID, senderID, selfID)
+}
+
+func directParticipantsIncludeAgent(participants []string, networkID string, agent bridgeconfig.AgentConfig) bool {
+	for _, participantID := range participants {
+		if protocol.ActorMatches(networkID, agent.ID, participantID) || participantID == agent.Name {
+			return true
+		}
+	}
+	return false
+}
+
+func canonicalLocalActorID(networkID string, actor protocol.Actor) (string, bool) {
+	networkID = strings.TrimSpace(networkID)
+	id := strings.TrimSpace(actor.ID)
+	if networkID == "" || id == "" || strings.TrimSpace(actor.NetworkID) != networkID ||
+		strings.TrimSpace(actor.FQID) != protocol.AgentFQID(networkID, id) || protocol.ValidateMemberID(id) != nil {
+		return "", false
+	}
+	if _, _, scoped := protocol.ParseScopedAgentID(id); scoped {
+		return "", false
+	}
+	if _, _, fqid := protocol.ParseAgentFQID(id); fqid {
+		return "", false
+	}
+	return id, true
+}
+
+func exactLocalDirectParticipants(participants []string, networkID, senderID, selfID string) bool {
+	if len(participants) != 2 {
+		return false
+	}
+	seen := make(map[string]struct{}, 2)
+	for _, participant := range participants {
+		id, ok := canonicalLocalParticipantID(networkID, participant)
+		if !ok {
+			return false
+		}
+		seen[id] = struct{}{}
+	}
+	if len(seen) != 2 {
+		return false
+	}
+	_, hasSender := seen[senderID]
+	_, hasSelf := seen[selfID]
+	return hasSender && hasSelf
+}
+
+func canonicalLocalParticipantID(networkID, participant string) (string, bool) {
+	participant = strings.TrimSpace(participant)
+	if candidateNetwork, agentID, ok := protocol.ParseScopedAgentID(participant); ok {
+		agentID = strings.TrimSpace(agentID)
+		return agentID, strings.TrimSpace(candidateNetwork) == strings.TrimSpace(networkID) &&
+			protocol.ValidateMessageID(agentID) == nil
+	}
+	if candidateNetwork, agentID, ok := protocol.ParseAgentFQID(participant); ok {
+		agentID = strings.TrimSpace(agentID)
+		return agentID, strings.TrimSpace(candidateNetwork) == strings.TrimSpace(networkID) &&
+			protocol.ValidateMessageID(agentID) == nil
+	}
+	return participant, participant != "" && protocol.ValidateMemberID(participant) == nil
+}
+
+func containsExactString(values []string, candidate string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == candidate {
+			return true
+		}
+	}
+	return false
+}
+
 func ShouldBootstrap(mode bridgeconfig.WakeConfig) bool {
 	return mode == "" || mode == bridgeconfig.WakeAll
 }

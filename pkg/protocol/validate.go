@@ -52,6 +52,9 @@ func ValidateCreateRoomRequest(request CreateRoomRequest) error {
 	if err := ValidateRoomWritePolicy(request.WritePolicy); err != nil {
 		return err
 	}
+	if err := ValidateRoomFederation(request.Federation); err != nil {
+		return err
+	}
 	return nil
 }
 

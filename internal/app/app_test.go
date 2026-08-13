@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -42,6 +43,37 @@ func TestNew(t *testing.T) {
 	}
 	if instance.server.IdleTimeout != defaultIdleTimeout {
 		t.Fatalf("unexpected idle timeout %s", instance.server.IdleTimeout)
+	}
+}
+
+func TestNewBuildsRelayClients(t *testing.T) {
+	t.Parallel()
+
+	instance, err := New(Config{
+		ListenAddr:  ":0",
+		NetworkID:   "local",
+		NetworkName: "Local",
+		Version:     "test",
+		Pairings: []protocol.Pairing{{
+			ID:    "relay-remote",
+			Relay: &protocol.PairingRelay{URL: "wss://relay.example.com", Room: "research"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer instance.Close()
+
+	if len(instance.relayClients) != 1 {
+		t.Fatalf("relay clients = %d, want 1", len(instance.relayClients))
+	}
+}
+
+func TestRelayEndpoint(t *testing.T) {
+	t.Parallel()
+
+	if got, want := relayEndpoint("wss://relay.example.com/worker/", "research/alpha"), "wss://relay.example.com/worker/parties/relay-room/research%2Falpha"; got != want {
+		t.Fatalf("relayEndpoint() = %q, want %q", got, want)
 	}
 }
 
@@ -183,6 +215,23 @@ func TestNewRejectsInvalidSeedRoom(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected invalid seed room error")
+	}
+}
+
+func TestNewRejectsRoomCredentialWhenAuthIsNone(t *testing.T) {
+	_, err := New(Config{
+		ListenAddr:  ":0",
+		NetworkID:   "local",
+		NetworkName: "Local",
+		Version:     "test",
+		Auth:        authn.Config{Mode: authn.ModeNone},
+		Rooms: []RoomConfig{{
+			ID:         "research",
+			Credential: &RoomCredentialConfig{Token: protocol.NewSecretString("room-secret")},
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected auth none room credential validation error")
 	}
 }
 

@@ -297,6 +297,8 @@ func (s *MemoryStore) ReconcileRoomContext(_ context.Context, room protocol.Room
 	existing.Members = protocol.SortedUniqueTrimmedStrings(room.Members)
 	existing.Visibility = protocol.NormalizeRoomVisibility(room.Visibility)
 	existing.WritePolicy = protocol.NormalizeRoomWritePolicy(room.WritePolicy)
+	federation := protocol.NormalizeRoomFederation(room.Federation)
+	existing.Federation = &federation
 	s.rooms[room.ID] = existing
 	return existing, nil
 }
