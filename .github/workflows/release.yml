@@ -42,6 +42,9 @@ jobs:
       - name: Check embedded console assets
         run: git diff --exit-code web/dist
 
+      - name: Verify published Stele corpus
+        run: ./scripts/verify-stele-corpus.sh
+
       - name: Go vet
         run: go vet ./...
 

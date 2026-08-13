@@ -1,0 +1,366 @@
+[
+  {
+    "name": "accept-normative-event",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept\",\"event_id\":\"moltnet:event-1\",\"emitter\":{\"seq\":1,\"stream_id\":\"network:room-1\",\"system\":\"moltnet\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[\"simfile:root\"],\"payload\":{\"content_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"message_id\":\"m1\"}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b2273696d66696c653a726f6f74225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a226e6574776f726b3a726f6f6d2d31222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a6576656e742d31222c227061796c6f6164223a7b22636f6e74656e745f736861323536223a226161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226d6573736167655f6964223a226d31227d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d30395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d616363657074222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "e9fcf0b64990e37759ad280d162a10dd903807cade2189f61d85567f0e136d9f"
+  },
+  {
+    "name": "accept-nested-reordering-and-unicode",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept\",\"event_id\":\"moltnet:event-2\",\"emitter\":{\"seq\":1,\"stream_id\":\"network:room-2\",\"system\":\"moltnet\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-2\",\"recorded_at\":\"2026-07-09T00:00:00.001Z\",\"cause_event_ids\":[\"moltnet:event-1\"],\"payload\":{\"a\":{\"\\u0061bc\":\"ok\",\"a\":\"first\",\"zeta\":\"ω\",\"😀\":\"smile\"},\"nested\":{\"arr\":[{\"a\":1,\"b\":2},{\"c\":3,\"ℤ\":\"unicode\"}],\"emoji\":\"cafe\\u0301\"},\"z\":1}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b226d6f6c746e65743a6576656e742d31225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a226e6574776f726b3a726f6f6d2d32222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a6576656e742d32222c227061796c6f6164223a7b2261223a7b2261223a226669727374222c22616263223a226f6b222c227a657461223a22cf89222c22f09f9880223a22736d696c65227d2c226e6573746564223a7b22617272223a5b7b2261223a312c2262223a327d2c7b2263223a332c22e284a4223a22756e69636f6465227d5d2c22656d6f6a69223a2263616665cc81227d2c227a223a317d2c227072696e636970616c5f6964223a226167656e743a6167656e742d32222c227265636f726465645f6174223a22323032362d30372d30395430303a30303a30302e3030315a222c2272756e5f6964223a2272756e2d616363657074222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "b1a2a08326288b1e8d03344864e2639fb9d8979b548a8c079a2944e49b67e74d"
+  },
+  {
+    "name": "accept-empty-payload",
+    "accept": true,
+    "raw_jsonl": "{\"principal_id\":\"agent:agent-3\",\"recorded_at\":\"2026-07-09T00:00:00.002Z\",\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept\",\"event_id\":\"moltnet:event-3\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"network:room-1\",\"seq\":2},\"type\":\"message.accepted\",\"cause_event_ids\":[],\"payload\":{}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b5d2c22656d6974746572223a7b22736571223a322c2273747265616d5f6964223a226e6574776f726b3a726f6f6d2d31222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a6576656e742d33222c227061796c6f6164223a7b7d2c227072696e636970616c5f6964223a226167656e743a6167656e742d33222c227265636f726465645f6174223a22323032362d30372d30395430303a30303a30302e3030325a222c2272756e5f6964223a2272756e2d616363657074222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "69b023e2e8f53274d83d0b56c0e5a149a40771391d6acf2f1602133b4cb1f076"
+  },
+  {
+    "name": "accept-finite-fraction",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept\",\"event_id\":\"moltnet:event-4\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"network:room-1\",\"seq\":3},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-4\",\"recorded_at\":\"2026-07-09T00:00:00.003Z\",\"cause_event_ids\":[\"moltnet:event-1\"],\"payload\":{\"score\":0.125,\"ratio\":1.25,\"delta\":2e-3}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b226d6f6c746e65743a6576656e742d31225d2c22656d6974746572223a7b22736571223a332c2273747265616d5f6964223a226e6574776f726b3a726f6f6d2d31222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a6576656e742d34222c227061796c6f6164223a7b2264656c7461223a302e3030322c22726174696f223a312e32352c2273636f7265223a302e3132357d2c227072696e636970616c5f6964223a226167656e743a6167656e742d34222c227265636f726465645f6174223a22323032362d30372d30395430303a30303a30302e3030335a222c2272756e5f6964223a2272756e2d616363657074222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "ed1057d164cf48298f8b8ff21701de7d07d342f22a236a3569b681ae5753d1f2"
+  },
+  {
+    "name": "accept-positive-1e-6-fixed",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept-numbers\",\"event_id\":\"moltnet:boundary-pos-fixed-1e-6\",\"emitter\":{\"seq\":1,\"stream_id\":\"network:boundary\",\"system\":\"moltnet\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-19T00:00:00.000Z\",\"cause_event_ids\":[\"simfile:root-accept-pos-fixed-1e-6\"],\"payload\":{\"v\":0.000001}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b2273696d66696c653a726f6f742d6163636570742d706f732d66697865642d31652d36225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a226e6574776f726b3a626f756e64617279222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a626f756e646172792d706f732d66697865642d31652d36222c227061796c6f6164223a7b2276223a302e3030303030317d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d31395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d6163636570742d6e756d62657273222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "3a872a312f3b29e53833f1c9be9803dfd32395e3ddde19886f276bfa0d751c94"
+  },
+  {
+    "name": "accept-negative-1e-6-fixed",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept-numbers\",\"event_id\":\"moltnet:boundary-neg-fixed-1e-6\",\"emitter\":{\"seq\":1,\"stream_id\":\"network:boundary\",\"system\":\"moltnet\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-19T00:00:00.000Z\",\"cause_event_ids\":[\"simfile:root-neg-fixed-1e-6\"],\"payload\":{\"v\":-0.000001}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b2273696d66696c653a726f6f742d6e65672d66697865642d31652d36225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a226e6574776f726b3a626f756e64617279222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a626f756e646172792d6e65672d66697865642d31652d36222c227061796c6f6164223a7b2276223a2d302e3030303030317d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d31395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d6163636570742d6e756d62657273222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "c924426c7bcc579d480edc9c9cf2408ae234dde63d06fa779ceab939812f5ec6"
+  },
+  {
+    "name": "accept-positive-1e-7-exponent",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept-numbers\",\"event_id\":\"moltnet:boundary-pos-exp-1e-7\",\"emitter\":{\"seq\":1,\"stream_id\":\"network:boundary\",\"system\":\"moltnet\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-19T00:00:00.000Z\",\"cause_event_ids\":[\"simfile:root-pos-exp-1e-7\"],\"payload\":{\"v\":1e-7}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b2273696d66696c653a726f6f742d706f732d6578702d31652d37225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a226e6574776f726b3a626f756e64617279222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a626f756e646172792d706f732d6578702d31652d37222c227061796c6f6164223a7b2276223a31652d377d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d31395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d6163636570742d6e756d62657273222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "8575afbf675a29137f85520b55f88e93cb23c21790536f5d69667a39bbf35698"
+  },
+  {
+    "name": "accept-negative-1e-7-exponent",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept-numbers\",\"event_id\":\"moltnet:boundary-neg-exp-1e-7\",\"emitter\":{\"seq\":1,\"stream_id\":\"network:boundary\",\"system\":\"moltnet\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-19T00:00:00.000Z\",\"cause_event_ids\":[\"simfile:root-neg-exp-1e-7\"],\"payload\":{\"v\":-1e-7}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b2273696d66696c653a726f6f742d6e65672d6578702d31652d37225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a226e6574776f726b3a626f756e64617279222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a626f756e646172792d6e65672d6578702d31652d37222c227061796c6f6164223a7b2276223a2d31652d377d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d31395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d6163636570742d6e756d62657273222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "944e872cfb2e884df955914381044a558ad5affbf20739efb2dd681a4911a36a"
+  },
+  {
+    "name": "accept-positive-below-1e-6",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept-numbers\",\"event_id\":\"moltnet:boundary-pos-below-1e-6\",\"emitter\":{\"seq\":1,\"stream_id\":\"network:boundary\",\"system\":\"moltnet\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-19T00:00:00.000Z\",\"cause_event_ids\":[\"simfile:root-pos-below-1e-6\"],\"payload\":{\"v\":9.5e-7}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b2273696d66696c653a726f6f742d706f732d62656c6f772d31652d36225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a226e6574776f726b3a626f756e64617279222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a626f756e646172792d706f732d62656c6f772d31652d36222c227061796c6f6164223a7b2276223a392e35652d377d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d31395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d6163636570742d6e756d62657273222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "9c02f58cf3bc7da804f24e51621eb6dbcb9dc52265cfd8e13d293dfa99f20615"
+  },
+  {
+    "name": "accept-negative-below-1e-6",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept-numbers\",\"event_id\":\"moltnet:boundary-neg-below-1e-6\",\"emitter\":{\"seq\":1,\"stream_id\":\"network:boundary\",\"system\":\"moltnet\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-19T00:00:00.000Z\",\"cause_event_ids\":[\"simfile:root-neg-below-1e-6\"],\"payload\":{\"v\":-9.5e-7}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b2273696d66696c653a726f6f742d6e65672d62656c6f772d31652d36225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a226e6574776f726b3a626f756e64617279222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a626f756e646172792d6e65672d62656c6f772d31652d36222c227061796c6f6164223a7b2276223a2d392e35652d377d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d31395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d6163636570742d6e756d62657273222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "d2c77b99fcaa3082bd43346466a67dd9269d2cd735825aa84dbc35bd18ce5d18"
+  },
+  {
+    "name": "accept-positive-above-1e-6",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept-numbers\",\"event_id\":\"moltnet:boundary-pos-above-1e-6\",\"emitter\":{\"seq\":1,\"stream_id\":\"network:boundary\",\"system\":\"moltnet\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-19T00:00:00.000Z\",\"cause_event_ids\":[\"simfile:root-pos-above-1e-6\"],\"payload\":{\"v\":0.0000015}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b2273696d66696c653a726f6f742d706f732d61626f76652d31652d36225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a226e6574776f726b3a626f756e64617279222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a626f756e646172792d706f732d61626f76652d31652d36222c227061796c6f6164223a7b2276223a302e303030303031357d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d31395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d6163636570742d6e756d62657273222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "5c185c73ce330a2c280b42cfed4e86067c26a4cb0e533086d25a667bbe084bff"
+  },
+  {
+    "name": "accept-negative-above-1e-6",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-accept-numbers\",\"event_id\":\"moltnet:boundary-neg-above-1e-6\",\"emitter\":{\"seq\":1,\"stream_id\":\"network:boundary\",\"system\":\"moltnet\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-19T00:00:00.000Z\",\"cause_event_ids\":[\"simfile:root-neg-above-1e-6\"],\"payload\":{\"v\":-0.0000015}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b2273696d66696c653a726f6f742d6e65672d61626f76652d31652d36225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a226e6574776f726b3a626f756e64617279222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a626f756e646172792d6e65672d61626f76652d31652d36222c227061796c6f6164223a7b2276223a2d302e303030303031357d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d31395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d6163636570742d6e756d62657273222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "6a6df6976dc9a8a818b0392e78599b16c91ef61b20810f89932d8b55e857585d"
+  },
+  {
+    "name": "accept-digest-domain-causal-event",
+    "accept": true,
+    "raw_jsonl": "{\"label\":\"causal-event/canonical-json\",\"hash\":\"sha-256\",\"subject_bytes\":\"noopolis.canonical-json.v1:utf-8\",\"output\":\"lowercase-hex\",\"version\":\"noopolis.causal-digest-domain.v1\"}",
+    "canonical_hex": "7b2268617368223a227368612d323536222c226c6162656c223a2263617573616c2d6576656e742f63616e6f6e6963616c2d6a736f6e222c226f7574707574223a226c6f776572636173652d686578222c227375626a6563745f6279746573223a226e6f6f706f6c69732e63616e6f6e6963616c2d6a736f6e2e76313a7574662d38222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6469676573742d646f6d61696e2e7631227d",
+    "sha256": "50964c23088aff04be2e4909db59f9a0b8c23f32f42a74c6027eebf9f3f2ddf6"
+  },
+  {
+    "name": "accept-digest-domain-exact-utf8",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-digest-domain.v1\",\"label\":\"content/exact-utf8\",\"hash\":\"sha-256\",\"subject_bytes\":\"exact-utf8\",\"output\":\"lowercase-hex\"}",
+    "canonical_hex": "7b2268617368223a227368612d323536222c226c6162656c223a22636f6e74656e742f65786163742d75746638222c226f7574707574223a226c6f776572636173652d686578222c227375626a6563745f6279746573223a2265786163742d75746638222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6469676573742d646f6d61696e2e7631227d",
+    "sha256": "81bcfaa404e253d79364235277981a48a458d45b7788e75571419586ee3a68d0"
+  },
+  {
+    "name": "accept-digest-domain-exact-bytes",
+    "accept": true,
+    "raw_jsonl": "{\"output\":\"lowercase-hex\",\"hash\":\"sha-256\",\"subject_bytes\":\"exact-bytes\",\"label\":\"content/exact-bytes\",\"version\":\"noopolis.causal-digest-domain.v1\"}",
+    "canonical_hex": "7b2268617368223a227368612d323536222c226c6162656c223a22636f6e74656e742f65786163742d6279746573222c226f7574707574223a226c6f776572636173652d686578222c227375626a6563745f6279746573223a2265786163742d6279746573222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6469676573742d646f6d61696e2e7631227d",
+    "sha256": "2013da6c378bd7800e4c5d338bc0955f281222fa6ba35c4c6de19ee765f6a5da"
+  },
+  {
+    "name": "accept-final-seq-zero",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-stream-final.v1\",\"run_id\":\"run-empty\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"network:empty\"},\"final_seq\":0}",
+    "canonical_hex": "7b22656d6974746572223a7b2273747265616d5f6964223a226e6574776f726b3a656d707479222c2273797374656d223a226d6f6c746e6574227d2c2266696e616c5f736571223a302c2272756e5f6964223a2272756e2d656d707479222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d73747265616d2d66696e616c2e7631227d",
+    "sha256": "4fa5f02f6f4596b9cb23b1491afcb55de4bf8cb099547ba1e0c522ad5df387fb"
+  },
+  {
+    "name": "accept-non-empty-final",
+    "accept": true,
+    "raw_jsonl": "{\"run_id\":\"run-final\",\"version\":\"noopolis.causal-stream-final.v1\",\"final_seq\":4,\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"network:final\"}}",
+    "canonical_hex": "7b22656d6974746572223a7b2273747265616d5f6964223a226e6574776f726b3a66696e616c222c2273797374656d223a226d6f6c746e6574227d2c2266696e616c5f736571223a342c2272756e5f6964223a2272756e2d66696e616c222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d73747265616d2d66696e616c2e7631227d",
+    "sha256": "d9c2f89c380160ed68287124d23e4bca79141627e4df0917ba6308078ef99177"
+  },
+  {
+    "name": "accept-multi-stream",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-bundle\",\"event_id\":\"moltnet:bundle-1\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream-a\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{\"v\":1}}\n{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-bundle\",\"event_id\":\"simfile:bundle-2\",\"emitter\":{\"system\":\"simfile\",\"stream_id\":\"stream-b\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.001Z\",\"cause_event_ids\":[\"moltnet:bundle-1\"],\"payload\":{\"v\":2}}\n{\"version\":\"noopolis.causal-stream-final.v1\",\"run_id\":\"run-bundle\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream-a\"},\"final_seq\":1}\n{\"version\":\"noopolis.causal-stream-final.v1\",\"run_id\":\"run-bundle\",\"final_seq\":1,\"emitter\":{\"system\":\"simfile\",\"stream_id\":\"stream-b\"}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b5d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a2273747265616d2d61222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a62756e646c652d31222c227061796c6f6164223a7b2276223a317d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d30395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d62756e646c65222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d0a7b2263617573655f6576656e745f696473223a5b226d6f6c746e65743a62756e646c652d31225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a2273747265616d2d62222c2273797374656d223a2273696d66696c65227d2c226576656e745f6964223a2273696d66696c653a62756e646c652d32222c227061796c6f6164223a7b2276223a327d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d30395430303a30303a30302e3030315a222c2272756e5f6964223a2272756e2d62756e646c65222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d0a7b22656d6974746572223a7b2273747265616d5f6964223a2273747265616d2d61222c2273797374656d223a226d6f6c746e6574227d2c2266696e616c5f736571223a312c2272756e5f6964223a2272756e2d62756e646c65222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d73747265616d2d66696e616c2e7631227d0a7b22656d6974746572223a7b2273747265616d5f6964223a2273747265616d2d62222c2273797374656d223a2273696d66696c65227d2c2266696e616c5f736571223a312c2272756e5f6964223a2272756e2d62756e646c65222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d73747265616d2d66696e616c2e7631227d",
+    "sha256": "331c92c26092623856acb4e69167c727337a1d9bd1803864edcbf013a4a7a5ad"
+  },
+  {
+    "name": "accept-nested-numeric-key-order",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-nested-numeric-keys\",\"event_id\":\"moltnet:order-1\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:order\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.100Z\",\"cause_event_ids\":[\"simfile:root\"],\"payload\":{\"a\":{\"10\":\"ten\",\"2\":\"two\",\"z\":\"zig\"},\"10\":\"ten\",\"2\":\"two\",\"emoji\":\"smile\\u2665\"}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b2273696d66696c653a726f6f74225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a2273747265616d3a6f72646572222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a6f726465722d31222c227061796c6f6164223a7b223130223a2274656e222c2232223a2274776f222c2261223a7b223130223a2274656e222c2232223a2274776f222c227a223a227a6967227d2c22656d6f6a69223a22736d696c65e299a5227d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d30395430303a30303a30302e3130305a222c2272756e5f6964223a2272756e2d6e65737465642d6e756d657269632d6b657973222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "10105a0f835ee611c46312811485cd450a02fdbf947da3c8fa804613c9b11449"
+  },
+  {
+    "name": "accept-foreign-cause-namespace",
+    "accept": true,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj4\",\"event_id\":\"moltnet:rj5\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:bad\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[\"x:rj6\",\"moltnet:rj6\"],\"payload\":{}}",
+    "canonical_hex": "7b2263617573655f6576656e745f696473223a5b22783a726a36222c226d6f6c746e65743a726a36225d2c22656d6974746572223a7b22736571223a312c2273747265616d5f6964223a2273747265616d3a626164222c2273797374656d223a226d6f6c746e6574227d2c226576656e745f6964223a226d6f6c746e65743a726a35222c227061796c6f6164223a7b7d2c227072696e636970616c5f6964223a226167656e743a6167656e742d31222c227265636f726465645f6174223a22323032362d30372d30395430303a30303a30302e3030305a222c2272756e5f6964223a2272756e2d726a34222c2274797065223a226d6573736167652e6163636570746564222c2276657273696f6e223a226e6f6f706f6c69732e63617573616c2d6576656e742e7631227d",
+    "sha256": "62da8b529d17f0dcb78d8a2207f57d5f6bf79b0f8cc9777a13b77bfaf9d1053a"
+  },
+  {
+    "name": "reject-bare-cause-id",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-bare-cause-seal\",\"event_id\":\"moltnet:bare-cause-seal-1\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:bare-cause\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[\"fixture-turn-1\"],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-lone-high-surrogate-runtime-key",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj18\",\"event_id\":\"moltnet:rj18\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:key-bad\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.002Z\",\"cause_event_ids\":[\"simfile:root\"],\"payload\":{\"\\uD800\":1}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-lone-low-surrogate-runtime-key",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj19\",\"event_id\":\"moltnet:rj19\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:key-bad\",\"seq\":2},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.003Z\",\"cause_event_ids\":[\"simfile:root\"],\"payload\":{\"\\uDC00\":1}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-unknown-event-top-level",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj1\",\"event_id\":\"moltnet:rj1\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:unknown\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{},\"extra\":true}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-unknown-event-emitter-field",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj1\",\"event_id\":\"moltnet:rj2\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:unknown\",\"seq\":1,\"unexpected\":\"bad\"},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-unknown-final-top-level",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-stream-final.v1\",\"run_id\":\"run-rj2\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:final\",\"seq\":1},\"final_seq\":1,\"extra\":true}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-unknown-final-emitter-field",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-stream-final.v1\",\"run_id\":\"run-rj2\",\"final_seq\":1,\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:final\",\"unexpected\":true}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-unknown-digest-top-level",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-digest-domain.v1\",\"label\":\"content/exact-bytes\",\"hash\":\"sha-256\",\"subject_bytes\":\"exact-bytes\",\"output\":\"lowercase-hex\",\"extra\":true}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-wrong-version-event",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v0\",\"run_id\":\"run-rj3\",\"event_id\":\"moltnet:rj3\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:v0\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-wrong-version-final",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-stream-final.v0\",\"run_id\":\"run-rj3\",\"final_seq\":1,\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:v0\"}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-wrong-version-digest",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-digest-domain.v0\",\"label\":\"content/exact-bytes\",\"hash\":\"sha-256\",\"subject_bytes\":\"exact-bytes\",\"output\":\"lowercase-hex\"}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-malformed-event-id",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj4\",\"event_id\":\"moltnet\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:bad\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-unrecognized-event-id-system",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj4\",\"event_id\":\"unknown:rj4\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:bad\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-mismatched-event-id-prefix",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj4\",\"event_id\":\"simfile:rj4\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:bad\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-repeated-causes",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj5\",\"event_id\":\"moltnet:rj7\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:bad\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[\"simfile:rj\",\"simfile:rj\"],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-duplicate-event-id",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj6\",\"event_id\":\"moltnet:dup\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:dup\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{}}\n{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj6\",\"event_id\":\"moltnet:dup\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:dup2\",\"seq\":2},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:01.000Z\",\"cause_event_ids\":[],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-duplicate-stream-slot",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj7\",\"event_id\":\"moltnet:slot1\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:slot\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{}}\n{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj7\",\"event_id\":\"moltnet:slot2\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:slot\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:01.000Z\",\"cause_event_ids\":[],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-present-cross-run-cause",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-a\",\"event_id\":\"moltnet:origin\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:run-a\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{}}\n{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-b\",\"event_id\":\"simfile:cross-run\",\"emitter\":{\"system\":\"simfile\",\"stream_id\":\"stream:run-b\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:01.000Z\",\"cause_event_ids\":[\"moltnet:origin\"],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-duplicate-final",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-stream-final.v1\",\"run_id\":\"run-rj8\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:dup-final\"},\"final_seq\":1}\n{\"version\":\"noopolis.causal-stream-final.v1\",\"run_id\":\"run-rj8\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:dup-final\"},\"final_seq\":2}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-below-observed-final",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj9\",\"event_id\":\"moltnet:late\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:late\",\"seq\":2},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:02.000Z\",\"cause_event_ids\":[],\"payload\":{}}\n{\"version\":\"noopolis.causal-stream-final.v1\",\"run_id\":\"run-rj9\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:late\"},\"final_seq\":1}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-empty-final-contradiction",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj10\",\"event_id\":\"moltnet:empty\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:empty\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:01.000Z\",\"cause_event_ids\":[],\"payload\":{}}\n{\"version\":\"noopolis.causal-stream-final.v1\",\"run_id\":\"run-rj10\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:empty\"},\"final_seq\":0}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-unknown-digest-domain",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-digest-domain.v1\",\"label\":\"content/unknown\",\"hash\":\"sha-256\",\"subject_bytes\":\"exact-bytes\",\"output\":\"lowercase-hex\"}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-altered-digest-hash",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-digest-domain.v1\",\"label\":\"content/exact-bytes\",\"hash\":\"sha-1\",\"subject_bytes\":\"exact-bytes\",\"output\":\"lowercase-hex\"}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-altered-digest-subject-bytes",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-digest-domain.v1\",\"label\":\"content/exact-bytes\",\"hash\":\"sha-256\",\"subject_bytes\":\"exact-bytes-v2\",\"output\":\"lowercase-hex\"}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-altered-digest-output",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-digest-domain.v1\",\"label\":\"content/exact-bytes\",\"hash\":\"sha-256\",\"subject_bytes\":\"exact-bytes\",\"output\":\"base64\"}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-duplicate-decoded-key",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj11\",\"event_id\":\"moltnet:rj11\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:dup-key\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{\"a\":1,\"a\":2}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-escaped-equivalent-keys",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj11\",\"event_id\":\"moltnet:rj12\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:dup-key\",\"seq\":2},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.001Z\",\"cause_event_ids\":[],\"payload\":{\"\\u0061\":1,\"a\":2}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-negative-zero",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj12\",\"event_id\":\"moltnet:rj13\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:negzero\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{\"value\":-0}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-unsafe-integer",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj13\",\"event_id\":\"moltnet:rj14\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:unsafe\",\"seq\":9007199254740992},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-invalid-unicode",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj14\",\"event_id\":\"moltnet:rj15\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:unicode\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{\"value\":\"\\uD800\"}}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-invalid-json-spelling",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj15\",\"event_id\":\"moltnet:rj16\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:bad-json\",\"seq\":1},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.000Z\",\"cause_event_ids\":[],\"payload\":{}",
+    "canonical_hex": null,
+    "sha256": null
+  },
+  {
+    "name": "reject-non-finite-json-spelling",
+    "accept": false,
+    "raw_jsonl": "{\"version\":\"noopolis.causal-event.v1\",\"run_id\":\"run-rj16\",\"event_id\":\"moltnet:rj17\",\"emitter\":{\"system\":\"moltnet\",\"stream_id\":\"stream:bad-json\",\"seq\":2},\"type\":\"message.accepted\",\"principal_id\":\"agent:agent-1\",\"recorded_at\":\"2026-07-09T00:00:00.001Z\",\"cause_event_ids\":[],\"payload\":{\"value\":Infinity}}",
+    "canonical_hex": null,
+    "sha256": null
+  }
+]

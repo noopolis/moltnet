@@ -18,7 +18,7 @@ type goldenCase struct {
 }
 
 func TestCausalContractGoldens(t *testing.T) {
-	manifestPath := "../../../stele/src/contracts/goldens/causal-contract.v1.json"
+	manifestPath := "testdata/stele.causal-contract.v1.json"
 	rawManifest, err := os.ReadFile(manifestPath)
 	if err != nil {
 		t.Fatalf("read golden manifest: %v", err)

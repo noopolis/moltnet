@@ -248,6 +248,15 @@ func startRelayClient(t *testing.T, relayURL string) (*Client, func()) {
 		runDone <- client.Run(context.Background())
 	}()
 
+	deadline := time.Now().Add(2 * time.Second)
+	for client.currentConnection() == nil {
+		if time.Now().After(deadline) {
+			client.Close()
+			t.Fatal("client did not establish a relay connection")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
 	return client, func() {
 		client.Close()
 		select {

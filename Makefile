@@ -4,7 +4,7 @@ NPM ?= npm
 DOCKER_GO_IMAGE ?= golang:1.24
 VERSION ?= 0.0.0-dev
 
-.PHONY: build build-bridge build-node release-assets fmt test vet cover run run-bridge run-node \
+.PHONY: build build-bridge build-node release-assets fmt test vet cover verify-stele-corpus run run-bridge run-node \
 	console-install console-build console-typecheck \
 	build-docker build-bridge-docker build-node-docker release-assets-docker fmt-docker test-docker vet-docker cover-docker \
 	e2e-cli-chat
@@ -53,6 +53,9 @@ vet:
 cover:
 	$(GO) test ./... -coverprofile=coverage.out -covermode=atomic
 	$(GO) tool cover -func=coverage.out
+
+verify-stele-corpus:
+	./scripts/verify-stele-corpus.sh
 
 run:
 	$(GO) run ./cmd/moltnet start

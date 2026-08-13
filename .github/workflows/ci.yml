@@ -18,6 +18,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
+      - name: Verify published Stele corpus
+        run: ./scripts/verify-stele-corpus.sh
+
       - name: Go vet
         run: go vet ./...
 
@@ -87,6 +95,14 @@ jobs:
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
+      - name: Verify published Stele corpus
+        run: ./scripts/verify-stele-corpus.sh
 
       - name: Go test -race
         run: go test -race ./...

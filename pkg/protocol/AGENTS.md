@@ -61,5 +61,8 @@ both stamped from `internal/rooms/causal.go`:
 - `causal_contract_test.go` — direct contract and bundle validation tests.
 - `causal_bundle.go` — mixed JSONL preflight, structural tuple identity, and
   event/final association rules.
-- `causal_golden_test.go` — test-only reader for Stele's frozen causal corpus
-  and its canonical-byte/SHA-256 assertions.
+- `causal_golden_test.go` — test-only reader for the pinned Stele causal corpus
+  snapshot and its canonical-byte/SHA-256 assertions.
+- `testdata/stele.causal-contract.v1.json` — immutable cross-language corpus
+  snapshot; `scripts/verify-stele-corpus.sh` checks it against the published
+  `@noopolis/stele` package before CI and release.
