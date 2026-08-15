@@ -12,3 +12,8 @@ response body. Tests must use raw WebSocket clients against `wrangler dev`.
 Keep Durable Object hibernation disabled. Each PartyServer room accepts exactly
 two authenticated peers. Configure the `RELAY_TOKEN` Worker secret outside this
 repository; tests provide their own local value.
+
+`embed.go` is the one deliberate exception to "no Go here": it only
+`go:embed`s the committed `dist/` bundle so `internal/relaydeploy` can reach
+it without Node, and imports nothing else from this directory. Delete it
+before extracting `relay/` into its own repository.

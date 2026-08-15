@@ -5,12 +5,14 @@
   "description": "Opaque two-party WebSocket relay for Moltnet networks.",
   "type": "module",
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/*.test.mjs"
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "bundle": "node build.mjs"
   },
   "dependencies": {
     "partyserver": "0.5.9"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "wrangler": "4.118.0"
   },
   "engines": {

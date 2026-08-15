@@ -1,0 +1,17 @@
+{
+  "main_module": "worker.js",
+  "compatibility_date": "2025-01-01",
+  "bindings": [
+    {
+      "type": "durable_object_namespace",
+      "name": "RelayRoom",
+      "class_name": "RelayRoom"
+    }
+  ],
+  "migrations": {
+    "new_tag": "v1",
+    "new_sqlite_classes": [
+      "RelayRoom"
+    ]
+  }
+}
