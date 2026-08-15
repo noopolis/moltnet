@@ -15,10 +15,11 @@ The full flow is three commands: `moltnet relay deploy` once to stand up the rel
 
 You need a Cloudflare account — the free tier is enough, Workers and Durable Objects both have free tiers that comfortably cover a handful of paired friends.
 
-Create a Cloudflare API token at <https://dash.cloudflare.com/profile/api-tokens> with these scopes:
+Create a Cloudflare API token scoped to `Account > Workers Scripts > Edit` — that's the only permission `relay deploy` needs. The fastest way is this pre-filled deep link, which opens the dashboard with that permission already selected (just Continue → Create Token → copy):
 
-- `Account > Workers Scripts > Edit`
-- `User > User Details > Read`
+<https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&accountId=%2A&zoneId=all&name=moltnet-relay-deploy>
+
+Or create one manually at <https://dash.cloudflare.com/profile/api-tokens> with that same scope.
 
 Export it and deploy:
 
@@ -43,18 +44,20 @@ $ moltnet relay deploy --id my-network
 
 Those saved credentials are what let `moltnet pair invite` run with zero relay flags afterward — see [You own the relay](#you-own-the-relay) below.
 
-If `CLOUDFLARE_API_TOKEN` isn't set, the command explains the scopes and exits without contacting Cloudflare:
+If `CLOUDFLARE_API_TOKEN` isn't set, the command prints the same deep link and exits without contacting Cloudflare:
 
 ```text
 $ moltnet relay deploy
 CLOUDFLARE_API_TOKEN is not set.
 
-Create a Cloudflare API token at:
+Create a Cloudflare API token (pre-filled with the required permission):
+  https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&accountId=%2A&zoneId=all&name=moltnet-relay-deploy
+
+Or create one manually at:
   https://dash.cloudflare.com/profile/api-tokens
 
-Required scopes:
+Required scope:
   - Account > Workers Scripts > Edit
-  - User > User Details > Read
 
 Then export it and retry:
   export CLOUDFLARE_API_TOKEN=...
@@ -191,7 +194,7 @@ moltnet service install --id bob-net
 **Alice** deploys the relay, then generates an invite for a `chat` room:
 
 ```bash
-export CLOUDFLARE_API_TOKEN=...   # scoped to Workers Scripts Edit, User Details Read
+export CLOUDFLARE_API_TOKEN=...   # scoped to Workers Scripts Edit
 moltnet relay deploy --id alice-net
 moltnet pair invite --network-id alice-net --room chat --restart
 ```

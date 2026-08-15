@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -13,6 +14,38 @@ import (
 )
 
 const cloudflareDashboardTokenURL = "https://dash.cloudflare.com/profile/api-tokens"
+
+// cloudflareTokenTemplateName pre-fills the "Token name" field on the
+// Cloudflare API-token-creation deep link below.
+const cloudflareTokenTemplateName = "moltnet-relay-deploy"
+
+// cloudflareTokenDeepLinkPermissions is the permissionGroupKeys JSON for
+// Account > Workers Scripts > Edit — the one permission group
+// `moltnet relay deploy` actually needs (script upload, RELAY_TOKEN secret,
+// workers.dev route; see internal/relaydeploy/client.go and deploy.go). It
+// matches Cloudflare's own minimal "Workers development" token-template deep
+// link verbatim:
+// https://developers.cloudflare.com/fundamentals/api/how-to/account-owned-token-template/
+const cloudflareTokenDeepLinkPermissions = `[{"key":"workers_scripts","type":"edit"}]`
+
+// buildCloudflareTokenDeepLink returns a Cloudflare API-token-creation URL
+// that pre-selects the Account > Workers Scripts > Edit permission group and
+// pre-fills the token name, following Cloudflare's documented user-token
+// template URL format (same reference as above):
+//
+//	https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=<url-encoded JSON>&accountId=*&zoneId=all&name=<name>
+//
+// A pure function, kept separate from buildMissingCloudflareTokenGuidance so
+// its exact encoded output can be pinned by a unit test.
+func buildCloudflareTokenDeepLink(name string) string {
+	return fmt.Sprintf("%s?permissionGroupKeys=%s&accountId=%s&zoneId=%s&name=%s",
+		cloudflareDashboardTokenURL,
+		url.QueryEscape(cloudflareTokenDeepLinkPermissions),
+		url.QueryEscape("*"),
+		url.QueryEscape("all"),
+		url.QueryEscape(name),
+	)
+}
 
 // runRelayDeploy implements `moltnet relay deploy`: it deploys the embedded,
 // pre-bundled relay Worker (see relay/dist and relay/embed.go) via the
@@ -139,20 +172,29 @@ func printRelayDeployNextSteps(networkID string) {
 	})
 }
 
+// buildMissingCloudflareTokenGuidance is what `relay deploy` prints when
+// CLOUDFLARE_API_TOKEN is not set: a Cloudflare token-creation deep link
+// that pre-selects the one permission group the deploy flow needs (Account >
+// Workers Scripts > Edit — see cloudflareTokenDeepLinkPermissions above),
+// with the plain dashboard URL kept as a manual fallback. On a TTY, an extra
+// dim hint line explains what the pre-filled page looks like; piped output
+// (tests, scripts, CI logs) skips it.
 func buildMissingCloudflareTokenGuidance(id string) string {
-	return fmt.Sprintf(`CLOUDFLARE_API_TOKEN is not set.
-
-Create a Cloudflare API token at:
-  %s
-
-Required scopes:
-  - Account > Workers Scripts > Edit
-  - User > User Details > Read
-
-Then export it and retry:
-  export CLOUDFLARE_API_TOKEN=...
-  moltnet relay deploy --id %s
-`, cloudflareDashboardTokenURL, id)
+	var b strings.Builder
+	b.WriteString("CLOUDFLARE_API_TOKEN is not set.\n\n")
+	b.WriteString("Create a Cloudflare API token (pre-filled with the required permission):\n")
+	fmt.Fprintf(&b, "  %s\n", buildCloudflareTokenDeepLink(cloudflareTokenTemplateName))
+	if isOutputTerminal() {
+		fmt.Fprintf(&b, "  %s\n", dim("(opens pre-filled — just Continue → Create Token → copy)"))
+	}
+	b.WriteString("\nOr create one manually at:\n")
+	fmt.Fprintf(&b, "  %s\n\n", cloudflareDashboardTokenURL)
+	b.WriteString("Required scope:\n")
+	b.WriteString("  - Account > Workers Scripts > Edit\n\n")
+	b.WriteString("Then export it and retry:\n")
+	b.WriteString("  export CLOUDFLARE_API_TOKEN=...\n")
+	fmt.Fprintf(&b, "  moltnet relay deploy --id %s\n", id)
+	return b.String()
 }
 
 func buildWorkersDevSubdomainGuidance(id string) string {

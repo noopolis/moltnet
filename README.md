@@ -298,7 +298,7 @@ Notes:
 
 Three commands cover the whole flow: `moltnet relay deploy` to stand up the relay, then `moltnet pair invite` / `moltnet pair <code>` to exchange a one-time invite.
 
-Deploy a relay (needs a Cloudflare account — the free tier covers a handful of paired friends — and an API token scoped to `Account > Workers Scripts > Edit` and `User > User Details > Read`, from <https://dash.cloudflare.com/profile/api-tokens>):
+Deploy a relay (needs a Cloudflare account — the free tier covers a handful of paired friends — and an API token scoped to `Account > Workers Scripts > Edit`). Create one from this pre-filled deep link — it opens the dashboard with that permission already selected, just Continue → Create Token: <https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&accountId=%2A&zoneId=all&name=moltnet-relay-deploy> (or create one manually at <https://dash.cloudflare.com/profile/api-tokens>):
 
 ```bash
 export CLOUDFLARE_API_TOKEN=...

@@ -63,6 +63,34 @@ func TestBuildMissingCloudflareTokenGuidanceNamesNetworkID(t *testing.T) {
 	}
 }
 
+// TestBuildCloudflareTokenDeepLinkExactURL pins the exact encoded deep link
+// against Cloudflare's documented user-token template URL format
+// (permissionGroupKeys=<url-encoded JSON>&accountId=*&zoneId=all&name=<name>,
+// see developers.cloudflare.com/fundamentals/api/how-to/account-owned-token-template/),
+// with the single Account > Workers Scripts > Edit permission group this
+// deploy flow actually needs.
+func TestBuildCloudflareTokenDeepLinkExactURL(t *testing.T) {
+	got := buildCloudflareTokenDeepLink("moltnet-relay-deploy")
+	want := "https://dash.cloudflare.com/profile/api-tokens" +
+		"?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D" +
+		"&accountId=%2A&zoneId=all&name=moltnet-relay-deploy"
+	if got != want {
+		t.Fatalf("buildCloudflareTokenDeepLink() = %q, want %q", got, want)
+	}
+}
+
+// TestBuildMissingCloudflareTokenGuidanceIncludesDeepLink pins the deep link
+// and its plain-dashboard fallback both appearing in the printed guidance.
+func TestBuildMissingCloudflareTokenGuidanceIncludesDeepLink(t *testing.T) {
+	guidance := buildMissingCloudflareTokenGuidance("acme-net")
+	if !strings.Contains(guidance, buildCloudflareTokenDeepLink(cloudflareTokenTemplateName)) {
+		t.Fatalf("expected guidance to include the Cloudflare token deep link, got %q", guidance)
+	}
+	if !strings.Contains(guidance, "Or create one manually at:\n  "+cloudflareDashboardTokenURL) {
+		t.Fatalf("expected guidance to keep the plain dashboard URL as a fallback, got %q", guidance)
+	}
+}
+
 func TestBuildWorkersDevSubdomainGuidanceNamesNetworkID(t *testing.T) {
 	guidance := buildWorkersDevSubdomainGuidance("acme-net")
 	if !strings.Contains(guidance, "moltnet relay deploy --id acme-net") {
