@@ -15,6 +15,22 @@ import (
 
 const cloudflareDashboardTokenURL = "https://dash.cloudflare.com/profile/api-tokens"
 
+// newRelayDeployClient constructs the Cloudflare API client `relay deploy`
+// deploys through. It's a var, not a direct relaydeploy.NewClient call, so
+// tests can point deploys at a net/http/httptest fake Cloudflare server
+// (relaydeploy.NewClientForTesting) instead of the real API.
+var newRelayDeployClient = func(token string) *relaydeploy.Client {
+	return relaydeploy.NewClient(token)
+}
+
+// resolveRelayDeployHostname is plumbed through to Deploy's
+// Options.ResolveHostname. Nil (the default) leaves Deploy to fall back to
+// its own real DNS lookup; it's a var, like newRelayDeployClient above, so
+// cmd/moltnet tests can stub post-deploy DNS resolution instead of making a
+// live lookup against a hostname (script.acme.workers.dev in the fake
+// tests) that was never actually deployed.
+var resolveRelayDeployHostname func(ctx context.Context, hostname string) bool
+
 // cloudflareTokenTemplateName pre-fills the "Token name" field on the
 // Cloudflare API-token-creation deep link below.
 const cloudflareTokenTemplateName = "moltnet-relay-deploy"
@@ -59,6 +75,8 @@ func runRelayDeploy(args []string) error {
 		name        = flags.String("name", relaydeploy.DefaultScriptName, "Cloudflare Worker script name")
 		tokenEnv    = flags.String("token-env", "", "environment variable holding an existing RELAY_TOKEN to reuse instead of generating one")
 		printManual = flags.Bool("print-manual", false, "print the equivalent wrangler steps and exit without contacting Cloudflare")
+		saveToken   = flags.Bool("save-token", false, "save the Cloudflare API token used for this deploy to .moltnet/cloudflare.json for future deploys")
+		forgetToken = flags.Bool("forget-token", false, "delete the Cloudflare API token stored at .moltnet/cloudflare.json and exit without deploying")
 		configPath  = flags.String("config", "", "Moltnet config path")
 		id          = flags.String("id", "", "network id to select under ~/.moltnet when several exist")
 	)
@@ -67,6 +85,9 @@ func runRelayDeploy(args []string) error {
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("relay deploy does not accept positional arguments")
+	}
+	if *saveToken && *forgetToken {
+		return fmt.Errorf("--save-token and --forget-token cannot be used together")
 	}
 
 	scriptName := strings.TrimSpace(*name)
@@ -88,11 +109,10 @@ func runRelayDeploy(args []string) error {
 		return err
 	}
 	credentialsPath := relaydeploy.CredentialsPath(path)
+	tokenPath := relaydeploy.CloudflareTokenPath(path)
 
-	apiToken := strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN"))
-	if apiToken == "" {
-		fmt.Fprint(stdout, buildMissingCloudflareTokenGuidance(config.NetworkID))
-		return errors.New("CLOUDFLARE_API_TOKEN is not set")
+	if *forgetToken {
+		return runRelayDeployForgetToken(tokenPath)
 	}
 
 	var existingToken string
@@ -103,7 +123,35 @@ func runRelayDeploy(args []string) error {
 		}
 	}
 
-	// Only reuse a stored token when it belongs to this same --name: a
+	envToken := strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN"))
+
+	storedToken, storedTokenOK, loadErr := relaydeploy.LoadCloudflareToken(tokenPath)
+	if loadErr != nil {
+		// A corrupt/unreadable stored token file must not block a deploy
+		// that has a working CLOUDFLARE_API_TOKEN env override: warn and
+		// fall back to treating nothing as stored. Only surface the load
+		// error itself when there is no env token to fall back to, since in
+		// that case it is the only explanation for why the deploy cannot
+		// proceed.
+		if envToken == "" {
+			return fmt.Errorf("%w; run `moltnet relay deploy --forget-token` to remove it", loadErr)
+		}
+		fmt.Fprintln(stdout, yellow(fmt.Sprintf("warning: %v", loadErr)))
+		storedToken, storedTokenOK = "", false
+	}
+	apiToken, tokenSource := resolveCloudflareAPIToken(envToken, storedToken, storedTokenOK)
+	if apiToken == "" {
+		fmt.Fprint(stdout, buildMissingCloudflareTokenGuidance(config.NetworkID))
+		return errors.New("CLOUDFLARE_API_TOKEN is not set")
+	}
+
+	var storedTokenPathForDeploy string
+	if tokenSource == cloudflareTokenSourceStored {
+		storedTokenPathForDeploy = tokenPath
+		fmt.Fprintln(stdout, dim(fmt.Sprintf("  using stored Cloudflare API token from %s", tokenPath)))
+	}
+
+	// Only reuse a stored relay token when it belongs to this same --name: a
 	// different script name means a different (soon to be deployed) Worker,
 	// which must get its own fresh RELAY_TOKEN rather than inheriting
 	// whichever relay was deployed most recently.
@@ -114,11 +162,13 @@ func runRelayDeploy(args []string) error {
 		priorToken = existing.Token
 	}
 
-	client := relaydeploy.NewClient(apiToken)
+	client := newRelayDeployClient(apiToken)
 	result, err := relaydeploy.Deploy(context.Background(), client, relaydeploy.Options{
-		ScriptName:    scriptName,
-		ExistingToken: existingToken,
-		PriorToken:    priorToken,
+		ScriptName:      scriptName,
+		ExistingToken:   existingToken,
+		PriorToken:      priorToken,
+		ResolveHostname: resolveRelayDeployHostname,
+		StoredTokenPath: storedTokenPathForDeploy,
 	})
 	if err != nil {
 		if errors.Is(err, relaydeploy.ErrWorkersDevSubdomainUnclaimed) {
@@ -142,7 +192,95 @@ func runRelayDeploy(args []string) error {
 	fmt.Fprintln(stdout, dim(fmt.Sprintf("  saved relay credentials to %s", credentialsPath)))
 	fmt.Fprintf(stdout, "  %s rotating RELAY_TOKEN (redeploying with a new --token-env value) breaks every pairing on this relay at once\n", yellow("warning:"))
 
+	switch tokenSource {
+	case cloudflareTokenSourceEnv:
+		if err := maybeSaveCloudflareToken(tokenPath, apiToken, *saveToken, storedTokenOK); err != nil {
+			return fmt.Errorf("deployed relay Worker %q but failed to save the Cloudflare API token: %w", result.ScriptName, err)
+		}
+	case cloudflareTokenSourceStored:
+		// The token this deploy used already lives at tokenPath (that's what
+		// "stored" means); --save-token has nothing new to persist. Say so
+		// instead of silently doing nothing, so the flag never looks like it
+		// was ignored.
+		if *saveToken {
+			fmt.Fprintf(stdout, "  token already stored at %s; nothing to save\n", tokenPath)
+		}
+	}
+
 	printRelayDeployNextSteps(config.NetworkID)
+	return nil
+}
+
+// Cloudflare API token resolution order for `relay deploy`: CLOUDFLARE_API_TOKEN
+// env always wins (unchanged, so a caller overriding it for one run never
+// silently gets a stale stored token instead); a per-network stored token
+// (.moltnet/cloudflare.json, saved by --save-token or the save prompt) is
+// next; missing both prints the token-creation guidance.
+const (
+	cloudflareTokenSourceEnv    = "env"
+	cloudflareTokenSourceStored = "stored"
+)
+
+// resolveCloudflareAPIToken picks the Cloudflare API token `relay deploy`
+// uses and names where it came from, in the resolution order documented on
+// the cloudflareTokenSource constants above. A pure function so the
+// precedence itself is unit-testable without a Cloudflare client or
+// filesystem.
+func resolveCloudflareAPIToken(envToken, storedToken string, storedTokenOK bool) (token, source string) {
+	envToken = strings.TrimSpace(envToken)
+	if envToken != "" {
+		return envToken, cloudflareTokenSourceEnv
+	}
+	if storedTokenOK {
+		return storedToken, cloudflareTokenSourceStored
+	}
+	return "", ""
+}
+
+// maybeSaveCloudflareToken persists apiToken to tokenPath after a
+// successful deploy that used the CLOUDFLARE_API_TOKEN env token (never
+// called for an already-stored token, which needs no re-saving). With
+// --save-token it saves unconditionally. Otherwise, only on an interactive
+// terminal and only when nothing is stored yet, it offers the save once via
+// promptYesNo; declining or running non-interactively leaves the token
+// unsaved. Never prints apiToken itself.
+func maybeSaveCloudflareToken(tokenPath, apiToken string, saveToken, storedTokenOK bool) error {
+	switch {
+	case saveToken:
+		// fall through to save below
+	case !storedTokenOK && isInteractive():
+		confirmed, err := promptYesNo(fmt.Sprintf("  save this token to %s (0600) for future deploys? [y/N] ", tokenPath))
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return nil
+		}
+	default:
+		return nil
+	}
+
+	if err := relaydeploy.SaveCloudflareToken(tokenPath, apiToken); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, dim(fmt.Sprintf("  saved Cloudflare API token to %s", tokenPath)))
+	return nil
+}
+
+// runRelayDeployForgetToken implements `relay deploy --forget-token`: delete
+// the stored per-network Cloudflare API token and exit without deploying,
+// mirroring --print-manual's early-return shape. Missing-file is reported,
+// not treated as an error — there is simply nothing to forget.
+func runRelayDeployForgetToken(tokenPath string) error {
+	removed, err := relaydeploy.DeleteCloudflareToken(tokenPath)
+	if err != nil {
+		return err
+	}
+	if removed {
+		fmt.Fprintf(stdout, "  removed stored Cloudflare API token %s\n", tokenPath)
+	} else {
+		fmt.Fprintf(stdout, "  no stored Cloudflare API token at %s\n", tokenPath)
+	}
 	return nil
 }
 

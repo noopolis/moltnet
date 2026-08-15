@@ -74,40 +74,52 @@ func LoadCredentials(path string) (creds RelayCredentials, ok bool, err error) {
 // SaveCredentials writes creds to path atomically (temp file + rename),
 // mode 0600, creating the parent .moltnet/ directory if needed.
 func SaveCredentials(path string, creds RelayCredentials) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create %q: %w", dir, err)
-	}
-
 	contents, err := json.MarshalIndent(creds, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode relay credentials: %w", err)
 	}
 	contents = append(contents, '\n')
 
-	temp, err := os.CreateTemp(dir, ".relay-credentials-*")
+	if err := writeSecretFileAtomic(path, contents); err != nil {
+		return fmt.Errorf("save relay credentials %q: %w", path, err)
+	}
+	return nil
+}
+
+// writeSecretFileAtomic writes contents to path atomically (temp file in the
+// same directory, then rename), mode 0600, creating the parent directory
+// (mode 0700) first if needed. Shared by SaveCredentials and
+// SaveCloudflareToken (cloudflare_token.go) so both credential files get the
+// same atomic-write and permission guarantees from one implementation.
+func writeSecretFileAtomic(path string, contents []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create %q: %w", dir, err)
+	}
+
+	temp, err := os.CreateTemp(dir, ".secret-*")
 	if err != nil {
-		return fmt.Errorf("create temporary relay credentials file: %w", err)
+		return fmt.Errorf("create temporary file in %q: %w", dir, err)
 	}
 	tempPath := temp.Name()
 	defer func() { _ = os.Remove(tempPath) }()
 
 	if err := temp.Chmod(0o600); err != nil {
 		_ = temp.Close()
-		return fmt.Errorf("chmod temporary relay credentials file: %w", err)
+		return fmt.Errorf("chmod temporary file %q: %w", tempPath, err)
 	}
 	if _, err := temp.Write(contents); err != nil {
 		_ = temp.Close()
-		return fmt.Errorf("write temporary relay credentials file: %w", err)
+		return fmt.Errorf("write temporary file %q: %w", tempPath, err)
 	}
 	if err := temp.Close(); err != nil {
-		return fmt.Errorf("close temporary relay credentials file: %w", err)
+		return fmt.Errorf("close temporary file %q: %w", tempPath, err)
 	}
 	if err := os.Rename(tempPath, path); err != nil {
-		return fmt.Errorf("replace relay credentials file: %w", err)
+		return fmt.Errorf("replace %q: %w", path, err)
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		return fmt.Errorf("chmod relay credentials file: %w", err)
+		return fmt.Errorf("chmod %q: %w", path, err)
 	}
 
 	return nil

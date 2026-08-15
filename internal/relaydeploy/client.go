@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -43,6 +44,39 @@ func NewClient(token string) *Client {
 		token:   token,
 		http:    &http.Client{Timeout: defaultTimeout},
 	}
+}
+
+// NewClientForTesting returns a Client pointed at baseURL using httpClient,
+// instead of the real Cloudflare API host. It exists so tests in other
+// packages (e.g. cmd/moltnet, which cannot reach Client's unexported
+// fields directly) can exercise a real end-to-end Deploy call against a
+// net/http/httptest fake Cloudflare server. Production code never calls
+// this; only NewClient does. baseURL's host must be loopback
+// (127.0.0.1/::1/localhost, as net/http/httptest.Server always is) — this
+// panics otherwise, so a baseURL pointed at a real host (production misuse,
+// or a typo'd test) fails immediately instead of silently working.
+func NewClientForTesting(token, baseURL string, httpClient *http.Client) *Client {
+	if !isLoopbackBaseURL(baseURL) {
+		panic(fmt.Sprintf("relaydeploy.NewClientForTesting: baseURL %q is not loopback (127.0.0.1/::1/localhost); this constructor is test-only", baseURL))
+	}
+	return &Client{baseURL: baseURL, token: token, http: httpClient}
+}
+
+// isLoopbackBaseURL reports whether baseURL's host is a loopback address or
+// "localhost", the only hosts NewClientForTesting accepts.
+func isLoopbackBaseURL(baseURL string) bool {
+	parsed, err := url.Parse(baseURL)
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 func (c *Client) httpClient() *http.Client {

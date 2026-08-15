@@ -137,3 +137,39 @@ func TestClientResolveAccountIDNoAccounts(t *testing.T) {
 		t.Fatalf("ResolveAccountID() error = %v, want no-accounts error", err)
 	}
 }
+
+func TestNewClientForTestingAcceptsLoopbackHosts(t *testing.T) {
+	t.Parallel()
+	for _, baseURL := range []string{
+		"http://127.0.0.1:8080",
+		"http://localhost:8080",
+		"http://[::1]:8080",
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("NewClientForTesting(%q) panicked: %v", baseURL, r)
+				}
+			}()
+			NewClientForTesting("token", baseURL, nil)
+		}()
+	}
+}
+
+func TestNewClientForTestingPanicsOnNonLoopbackHost(t *testing.T) {
+	t.Parallel()
+	for _, baseURL := range []string{
+		"https://api.cloudflare.com/client/v4",
+		"https://example.com",
+		"http://8.8.8.8",
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Fatalf("NewClientForTesting(%q) did not panic, want a panic for a non-loopback baseURL", baseURL)
+				}
+			}()
+			NewClientForTesting("token", baseURL, nil)
+		}()
+	}
+}

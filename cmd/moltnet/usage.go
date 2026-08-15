@@ -180,13 +180,21 @@ errors clearly if no service is installed for this network. Without
 
 func buildRelayUsage() string {
 	return `Usage:
-  moltnet relay deploy [--name <script-name>] [--token-env <env>] [--print-manual] [--config <path>] [--id <network-id>]
+  moltnet relay deploy [--name <script-name>] [--token-env <env>] [--save-token] [--forget-token] [--print-manual] [--config <path>] [--id <network-id>]
 
 "relay deploy" deploys the embedded relay Worker to Cloudflare via the
-Workers REST API, using CLOUDFLARE_API_TOKEN for auth. It resolves the
-account, uploads the RelayRoom Durable Object worker, sets a RELAY_TOKEN
-secret, enables the script's workers.dev route, and saves {url, token} to
-.moltnet/relay.json for "moltnet pair invite" to reuse.
+Workers REST API. It resolves the account, uploads the RelayRoom Durable
+Object worker, sets a RELAY_TOKEN secret, enables the script's workers.dev
+route, and saves {url, token} to .moltnet/relay.json for "moltnet pair
+invite" to reuse.
+
+The Cloudflare API token itself is resolved in this order: CLOUDFLARE_API_TOKEN
+env (always wins) > a per-network token stored at .moltnet/cloudflare.json >
+missing-token guidance. --save-token saves the env token used by a
+successful deploy to .moltnet/cloudflare.json (mode 0600) so future deploys
+need no env var; on a terminal, a successful deploy that used the env token
+also offers to save it once when nothing is stored yet. --forget-token
+deletes the stored token and exits without deploying.
 
 Re-running "relay deploy" is idempotent: it updates the deployed script and
 keeps the existing RELAY_TOKEN unless --token-env supplies a new one.

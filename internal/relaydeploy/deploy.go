@@ -43,6 +43,16 @@ type Options struct {
 	// inject their own stub here instead of mutating shared package state,
 	// which keeps parallel tests independent of each other.
 	ResolveHostname func(ctx context.Context, hostname string) bool
+	// StoredTokenPath, when non-empty, names the per-network stored
+	// Cloudflare API token file (CloudflareTokenPath) that supplied the
+	// token this deploy is using. It carries no auth behavior of its own —
+	// it only lets Deploy recognize a rejected/insufficiently-scoped token
+	// (CloudflareAPIError.Unauthorized()) as coming from that stored file,
+	// so the returned error can name it and suggest --forget-token or the
+	// CLOUDFLARE_API_TOKEN env override instead of a generic auth failure.
+	// Leave empty when the token came from CLOUDFLARE_API_TOKEN or
+	// --token-env.
+	StoredTokenPath string
 }
 
 // Result is what a successful Deploy learned, for the CLI to print and the
@@ -61,7 +71,37 @@ type Result struct {
 // wss:// URL. It is safe to call repeatedly: re-uploading an existing
 // script name updates the code, and the RELAY_TOKEN secret is only
 // regenerated when neither opts.ExistingToken nor opts.PriorToken is set.
+//
+// A rejected/insufficiently-scoped Cloudflare API token error is enriched
+// with opts.StoredTokenPath guidance, when set, via wrapStoredTokenError.
 func Deploy(ctx context.Context, client *Client, opts Options) (Result, error) {
+	result, err := deploy(ctx, client, opts)
+	if err != nil {
+		return result, wrapStoredTokenError(err, opts.StoredTokenPath)
+	}
+	return result, nil
+}
+
+// wrapStoredTokenError appends guidance naming storedTokenPath and
+// suggesting `relay deploy --forget-token` or the CLOUDFLARE_API_TOKEN env
+// override, when err is a rejected/insufficiently-scoped Cloudflare API
+// token (CloudflareAPIError.Unauthorized()) and storedTokenPath is
+// non-empty (the deploy was using a stored per-network token, not one from
+// the environment). Any other error, or a deploy that was not using a
+// stored token, passes through unchanged.
+func wrapStoredTokenError(err error, storedTokenPath string) error {
+	if storedTokenPath == "" {
+		return err
+	}
+	var apiErr *CloudflareAPIError
+	if !errors.As(err, &apiErr) || !apiErr.Unauthorized() {
+		return err
+	}
+	return fmt.Errorf("%w\n\nstored Cloudflare API token %s was rejected; run `moltnet relay deploy --forget-token` and re-export CLOUDFLARE_API_TOKEN, or set CLOUDFLARE_API_TOKEN to override it", err, storedTokenPath)
+}
+
+// deploy is Deploy's unwrapped implementation.
+func deploy(ctx context.Context, client *Client, opts Options) (Result, error) {
 	scriptName := strings.TrimSpace(opts.ScriptName)
 	if scriptName == "" {
 		scriptName = DefaultScriptName

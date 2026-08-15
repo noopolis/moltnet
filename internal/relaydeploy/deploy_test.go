@@ -167,6 +167,58 @@ func TestDeployAuthFailureShortCircuits(t *testing.T) {
 	}
 }
 
+func TestDeployAuthFailureWithStoredTokenNamesFileAndSuggestsForgetToken(t *testing.T) {
+	t.Parallel()
+
+	// A 401/403 while deploying with a stored per-network token
+	// (Options.StoredTokenPath set) must name the stored file and suggest
+	// --forget-token or the env override, not just a raw Cloudflare error.
+	fake := newFakeCloudflareServer(t, fakeCloudflareConfig{authOK: false, authStatus: 401})
+	_, err := Deploy(context.Background(), fake.client(), Options{StoredTokenPath: "/home/alice/.moltnet/acme-net/.moltnet/cloudflare.json"})
+	if err == nil {
+		t.Fatal("Deploy() error = nil, want auth failure")
+	}
+	if !strings.Contains(err.Error(), "/home/alice/.moltnet/acme-net/.moltnet/cloudflare.json") {
+		t.Fatalf("Deploy() error = %v, want it to name the stored token file", err)
+	}
+	if !strings.Contains(err.Error(), "--forget-token") {
+		t.Fatalf("Deploy() error = %v, want it to suggest --forget-token", err)
+	}
+	if !strings.Contains(err.Error(), "CLOUDFLARE_API_TOKEN") {
+		t.Fatalf("Deploy() error = %v, want it to suggest the CLOUDFLARE_API_TOKEN env override", err)
+	}
+	var apiErr *CloudflareAPIError
+	if !errors.As(err, &apiErr) {
+		t.Fatal("expected the wrapped error to still unwrap to a *CloudflareAPIError via errors.As")
+	}
+}
+
+func TestDeployAuthFailureWithoutStoredTokenPathIsUnwrapped(t *testing.T) {
+	t.Parallel()
+
+	// Options.StoredTokenPath empty (the common case: env/--token-env
+	// supplied the token) must leave the error exactly as the unwrapped
+	// deploy would have returned it — no stored-file guidance appended.
+	fake := newFakeCloudflareServer(t, fakeCloudflareConfig{authOK: false, authStatus: 403})
+	_, err := Deploy(context.Background(), fake.client(), Options{})
+	if err == nil {
+		t.Fatal("Deploy() error = nil, want auth failure")
+	}
+	if strings.Contains(err.Error(), "--forget-token") {
+		t.Fatalf("Deploy() error = %v, want no --forget-token guidance when no stored token was used", err)
+	}
+}
+
+func TestWrapStoredTokenErrorPassesThroughNonAuthErrors(t *testing.T) {
+	t.Parallel()
+
+	original := errors.New("some other cloudflare failure")
+	got := wrapStoredTokenError(original, "/home/alice/.moltnet/acme-net/.moltnet/cloudflare.json")
+	if got != original {
+		t.Fatalf("wrapStoredTokenError() = %v, want the original error unchanged for a non-auth error", got)
+	}
+}
+
 func TestWorkerMainModuleFallsBackWhenMissing(t *testing.T) {
 	t.Parallel()
 	if got := workerMainModule([]byte(`{}`)); got != "worker.js" {
