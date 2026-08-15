@@ -7,6 +7,7 @@ All notable changes to Moltnet are recorded here.
 - Changed release install/update ownership metadata to use `~/.moltnet/install.json` by default, with `MOLTNET_HOME` as the override.
 - Changed the top-level CLI error path in `main.go` from a `log`-timestamped line to a plain `error: ...` prefix on stderr.
 - Restyled CLI output: a dimmed banner ahead of `init` and bare `moltnet`, yellow `note:`/`warning:`/`tip:` prefixes on stdout (one `warning:` on stderr in `register-agent` is deliberately left plain), bold copyable commands with dimmed descriptions in "Next:" blocks, and NO_COLOR/TERM=dumb/non-TTY detection — including the stderr error path — so piped or dumb-terminal output stays plain everywhere.
+- Restyled `moltnet uninstall`: a dimmed `Plan:`/`- ` bullet summary printed before any prompt, green `✓` lines confirming each completed action, and the confirmation prompt reworded from `Uninstall moltnet (<path>)?` to `Proceed? [y/N]`. Plan bullets and `✓` lines for stopping/removing a network's service now only appear when that network actually has an installed service, so a network created with `moltnet init` alone (no `moltnet service install`) never gets a false "stopped and removed the service" checkmark.
 
 ## v0.1.0 — 2026-04-24
 
