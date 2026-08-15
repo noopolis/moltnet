@@ -116,6 +116,57 @@ func TestRunUninstallCommandPurgePromptNoLeavesHomeDirIntact(t *testing.T) {
 	}
 }
 
+// TestRunUninstallCommandPurgePromptNoServicesHasSingleBlankLine is a
+// spacing regression test: with zero installed services, the unconditional
+// blank line printed right after "Proceed? [y/N]" (runUninstallCommand) and
+// the leading blank line runUninstallPurge used to print unconditionally
+// before its own warning prompt used to collide with nothing in between —
+// two Fprintln(stdout) calls back to back — producing a doubled blank line
+// once a real terminal's own echoed newline is added on top (visible as
+// "\n\n\n" between the answered prompt and the purge warning). With services
+// installed, the ✓ line(s) printed by the uninstall loop sit between those
+// two blanks and the spacing is correct as-is; this test pins the
+// zero-services case, where hadServiceOutput now suppresses the second,
+// redundant blank.
+func TestRunUninstallCommandPurgePromptNoServicesHasSingleBlankLine(t *testing.T) {
+	withFakeServiceManager(t, "linux")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", "")
+	withScratchExecutable(t)
+
+	withPromptAnswers(t, "y", "y")
+
+	output := captureStdout(t, func() {
+		if err := run(context.Background(), []string{"uninstall", "--purge"}, "test"); err != nil {
+			t.Fatalf("uninstall error = %v", err)
+		}
+	})
+
+	const promptMarker = "Proceed? [y/N] "
+	promptIdx := strings.Index(output, promptMarker)
+	if promptIdx < 0 {
+		t.Fatalf("output = %q, want it to contain the main confirmation prompt", output)
+	}
+	after := output[promptIdx+len(promptMarker):]
+	warningIdx := strings.Index(after, "warning:")
+	if warningIdx < 0 {
+		t.Fatalf("output = %q, want it to contain the purge warning prompt", output)
+	}
+	between := after[:warningIdx]
+
+	// The literal regression this test guards: no doubled blank line between
+	// the main prompt and the purge warning.
+	if strings.Contains(between, "\n\n\n") {
+		t.Fatalf("output between the main prompt and purge warning = %q, want no doubled blank line (no \"\\n\\n\\n\")", between)
+	}
+	// Stronger pin: in this zero-services case the two sections are adjacent
+	// with no blank line at all between them — any blank line here at all
+	// would mean the redundant Fprintln crept back in.
+	if strings.Contains(between, "\n\n") {
+		t.Fatalf("output between the main prompt and purge warning = %q, want no blank line at all when no services were printed", between)
+	}
+}
+
 // TestRunUninstallCommandPrintsPlanBeforeMutating is the P2-3 regression
 // test for ordering: the plan text must appear in stdout before any
 // mutation output, so an operator reading along never sees an action
@@ -148,8 +199,8 @@ func TestRunUninstallCommandPrintsPlanBeforeMutating(t *testing.T) {
 		}
 	})
 
-	planIdx := strings.Index(output, "moltnet uninstall will:")
-	mutationIdx := strings.Index(output, `stopped and removed the moltnet service for network "acme"`)
+	planIdx := strings.Index(output, "Plan:")
+	mutationIdx := strings.Index(output, `stopped and removed the service for network "acme"`)
 	if planIdx < 0 || mutationIdx < 0 {
 		t.Fatalf("output = %q, want both plan text and mutation output present", output)
 	}

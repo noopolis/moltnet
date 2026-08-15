@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/noopolis/moltnet/internal/uninstall"
 )
 
 // TestRunUninstallCommandPurgeSymlinkedHomeReportsLinkRemoved is the P2-2
@@ -140,5 +142,60 @@ func TestRunUninstallCommandPlanMentionsMoltnetHomeOverrideWithoutPurge(t *testi
 	}
 	if _, err := os.Stat(overrideHome); err != nil {
 		t.Fatalf("expected MOLTNET_HOME override %q to survive without --purge: %v", overrideHome, err)
+	}
+}
+
+// TestBuildPurgeConfirmationPromptListsNetworkIDs and its siblings below
+// exercise buildPurgeConfirmationPrompt directly; moved here (alongside the
+// rest of the --purge test coverage) to keep uninstall_test.go under the
+// 400-line file guideline.
+func TestBuildPurgeConfirmationPromptListsNetworkIDs(t *testing.T) {
+	root := "/home/example/.moltnet"
+	got := buildPurgeConfirmationPrompt([]string{"acme", "beta"}, root, uninstall.HomeState{Existed: true}, "", false)
+	if !strings.Contains(got, "acme, beta") {
+		t.Fatalf("buildPurgeConfirmationPrompt() = %q, want it to list network ids", got)
+	}
+
+	empty := buildPurgeConfirmationPrompt(nil, root, uninstall.HomeState{Existed: true}, "", false)
+	if !strings.Contains(empty, "no network data found under it") || !strings.Contains(empty, "the directory itself will be removed") {
+		t.Fatalf("buildPurgeConfirmationPrompt(nil) = %q, want the no-network-data wording", empty)
+	}
+	// P3-3: the first line names root once, not twice.
+	firstLine, _, _ := strings.Cut(empty, "\n")
+	if strings.Count(firstLine, root) != 1 {
+		t.Fatalf("buildPurgeConfirmationPrompt(nil) first line = %q, want %q to appear exactly once (no repeated root)", firstLine, root)
+	}
+
+	// When the directory does not exist at all, the prompt must not promise
+	// to remove it — it should say plainly that there is nothing there yet.
+	missing := buildPurgeConfirmationPrompt(nil, root, uninstall.HomeState{}, "", false)
+	if !strings.Contains(missing, "no network data found under it") || !strings.Contains(missing, "nothing exists there yet") {
+		t.Fatalf("buildPurgeConfirmationPrompt(nil) = %q, want the nothing-exists-yet wording", missing)
+	}
+	if strings.Contains(missing, "the directory itself will be removed") {
+		t.Fatalf("buildPurgeConfirmationPrompt(nil) = %q, want it not to promise removal of a directory that does not exist", missing)
+	}
+}
+
+// TestBuildPurgeConfirmationPromptNamesSymlinkTarget is the P2-2 regression
+// test: when ~/.moltnet is itself a symlink, the confirmation prompt must
+// name the resolved target and say plainly that --purge only removes the
+// link, before the operator answers.
+func TestBuildPurgeConfirmationPromptNamesSymlinkTarget(t *testing.T) {
+	root := "/home/example/.moltnet"
+	state := uninstall.HomeState{Existed: true, IsSymlink: true, SymlinkTarget: "/mnt/data/moltnet-home"}
+	got := buildPurgeConfirmationPrompt(nil, root, state, "", false)
+	if !strings.Contains(got, "is a symlink to /mnt/data/moltnet-home") || !strings.Contains(got, "only removes the link") {
+		t.Fatalf("buildPurgeConfirmationPrompt() = %q, want it to name the symlink target", got)
+	}
+}
+
+// TestBuildPurgeConfirmationPromptMentionsMoltnetHomeOverride is the P2-4
+// regression test: when MOLTNET_HOME points install state outside
+// ~/.moltnet, the purge confirmation must name that path too.
+func TestBuildPurgeConfirmationPromptMentionsMoltnetHomeOverride(t *testing.T) {
+	got := buildPurgeConfirmationPrompt(nil, "/home/example/.moltnet", uninstall.HomeState{}, "/mnt/state/moltnet", true)
+	if !strings.Contains(got, "MOLTNET_HOME is set") || !strings.Contains(got, "/mnt/state/moltnet") {
+		t.Fatalf("buildPurgeConfirmationPrompt() = %q, want it to mention the MOLTNET_HOME override", got)
 	}
 }

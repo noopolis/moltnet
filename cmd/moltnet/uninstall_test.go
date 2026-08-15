@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -63,7 +64,10 @@ func TestRunUninstallCommandYesRemovesServicesAndBinary(t *testing.T) {
 	binaryPath := withScratchExecutable(t)
 
 	// "acme" has an installed service; "beta" only a network directory
-	// (service never installed) — uninstall must catch both.
+	// (service never installed) — uninstall must catch both, but P1 means
+	// only "acme" gets a truthful ✓; see
+	// TestRunUninstallCommandNoServiceNetworkGetsNoFalseCheck for the
+	// dedicated no-service-at-all regression.
 	acmeDir := filepath.Join(home, ".moltnet", "acme")
 	if err := os.MkdirAll(acmeDir, 0o700); err != nil {
 		t.Fatalf("mkdir acme: %v", err)
@@ -89,12 +93,22 @@ func TestRunUninstallCommandYesRemovesServicesAndBinary(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		`stopped and removed the moltnet service for network "acme"`,
-		`stopped and removed the moltnet service for network "beta"`,
+		`stopped and removed the service for network "acme"`,
 		"removed " + binaryPath,
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output = %q, want it to contain %q", output, want)
+		}
+	}
+	// P1: "beta" never had a service installed, so it must get neither a
+	// plan bullet nor a completion ✓ — manager.Uninstall is a truthful
+	// no-op for it, and the output must agree.
+	for _, notWant := range []string{
+		`stop and remove the service for network "beta"`,
+		`stopped and removed the service for network "beta"`,
+	} {
+		if strings.Contains(output, notWant) {
+			t.Fatalf("output = %q, want it to not contain %q (beta never had an installed service)", output, notWant)
 		}
 	}
 
@@ -111,6 +125,54 @@ func TestRunUninstallCommandYesRemovesServicesAndBinary(t *testing.T) {
 	// Data survives by default.
 	if _, err := os.Stat(acmeDir); err != nil {
 		t.Fatalf("expected %q to still exist without --purge: %v", acmeDir, err)
+	}
+}
+
+// TestRunUninstallCommandNoServiceNetworkGetsNoFalseCheck is the P1
+// regression test for the common `moltnet init` (without `service install`)
+// path: a network with only a ~/.moltnet/<id>/ directory and no installed
+// unit/plist must get neither a "stop and remove the service" plan bullet
+// nor a "stopped and removed" ✓ line — both would be untruthful, since
+// manager.Uninstall is a no-op for it. The plan must instead fall back to
+// the same "no installed services found" note the fully-empty case prints,
+// because zero of the networks it lists have an actual service to stop.
+func TestRunUninstallCommandNoServiceNetworkGetsNoFalseCheck(t *testing.T) {
+	withFakeServiceManager(t, "linux")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "")
+	binaryPath := withScratchExecutable(t)
+
+	// "beta" has a network directory but its service was never installed —
+	// e.g. `moltnet init` ran without a follow-up `moltnet service install`.
+	betaDir := filepath.Join(home, ".moltnet", "beta")
+	if err := os.MkdirAll(betaDir, 0o700); err != nil {
+		t.Fatalf("mkdir beta: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run(context.Background(), []string{"uninstall", "--yes"}, "test"); err != nil {
+			t.Fatalf("uninstall error = %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "no installed services found") {
+		t.Fatalf("output = %q, want a no-installed-services note even though a network directory exists", output)
+	}
+	for _, notWant := range []string{
+		`stop and remove the service for network "beta"`,
+		`stopped and removed the service for network "beta"`,
+	} {
+		if strings.Contains(output, notWant) {
+			t.Fatalf("output = %q, want it to not contain %q (beta never had an installed service)", output, notWant)
+		}
+	}
+	if _, err := os.Stat(binaryPath); !os.IsNotExist(err) {
+		t.Fatalf("expected %q to be removed, stat err = %v", binaryPath, err)
+	}
+	// Data survives by default.
+	if _, err := os.Stat(betaDir); err != nil {
+		t.Fatalf("expected %q to still exist without --purge: %v", betaDir, err)
 	}
 }
 
@@ -199,57 +261,6 @@ func TestRunUninstallCommandWithoutPurgeLeavesHomeDir(t *testing.T) {
 	}
 }
 
-func TestBuildPurgeConfirmationPromptListsNetworkIDs(t *testing.T) {
-	root := "/home/example/.moltnet"
-	got := buildPurgeConfirmationPrompt([]string{"acme", "beta"}, root, uninstall.HomeState{Existed: true}, "", false)
-	if !strings.Contains(got, "acme, beta") {
-		t.Fatalf("buildPurgeConfirmationPrompt() = %q, want it to list network ids", got)
-	}
-
-	empty := buildPurgeConfirmationPrompt(nil, root, uninstall.HomeState{Existed: true}, "", false)
-	if !strings.Contains(empty, "no network data found under it") || !strings.Contains(empty, "the directory itself will be removed") {
-		t.Fatalf("buildPurgeConfirmationPrompt(nil) = %q, want the no-network-data wording", empty)
-	}
-	// P3-3: the first line names root once, not twice.
-	firstLine, _, _ := strings.Cut(empty, "\n")
-	if strings.Count(firstLine, root) != 1 {
-		t.Fatalf("buildPurgeConfirmationPrompt(nil) first line = %q, want %q to appear exactly once (no repeated root)", firstLine, root)
-	}
-
-	// When the directory does not exist at all, the prompt must not promise
-	// to remove it — it should say plainly that there is nothing there yet.
-	missing := buildPurgeConfirmationPrompt(nil, root, uninstall.HomeState{}, "", false)
-	if !strings.Contains(missing, "no network data found under it") || !strings.Contains(missing, "nothing exists there yet") {
-		t.Fatalf("buildPurgeConfirmationPrompt(nil) = %q, want the nothing-exists-yet wording", missing)
-	}
-	if strings.Contains(missing, "the directory itself will be removed") {
-		t.Fatalf("buildPurgeConfirmationPrompt(nil) = %q, want it not to promise removal of a directory that does not exist", missing)
-	}
-}
-
-// TestBuildPurgeConfirmationPromptNamesSymlinkTarget is the P2-2 regression
-// test: when ~/.moltnet is itself a symlink, the confirmation prompt must
-// name the resolved target and say plainly that --purge only removes the
-// link, before the operator answers.
-func TestBuildPurgeConfirmationPromptNamesSymlinkTarget(t *testing.T) {
-	root := "/home/example/.moltnet"
-	state := uninstall.HomeState{Existed: true, IsSymlink: true, SymlinkTarget: "/mnt/data/moltnet-home"}
-	got := buildPurgeConfirmationPrompt(nil, root, state, "", false)
-	if !strings.Contains(got, "is a symlink to /mnt/data/moltnet-home") || !strings.Contains(got, "only removes the link") {
-		t.Fatalf("buildPurgeConfirmationPrompt() = %q, want it to name the symlink target", got)
-	}
-}
-
-// TestBuildPurgeConfirmationPromptMentionsMoltnetHomeOverride is the P2-4
-// regression test: when MOLTNET_HOME points install state outside
-// ~/.moltnet, the purge confirmation must name that path too.
-func TestBuildPurgeConfirmationPromptMentionsMoltnetHomeOverride(t *testing.T) {
-	got := buildPurgeConfirmationPrompt(nil, "/home/example/.moltnet", uninstall.HomeState{}, "/mnt/state/moltnet", true)
-	if !strings.Contains(got, "MOLTNET_HOME is set") || !strings.Contains(got, "/mnt/state/moltnet") {
-		t.Fatalf("buildPurgeConfirmationPrompt() = %q, want it to mention the MOLTNET_HOME override", got)
-	}
-}
-
 func TestRunUninstallCommandPermissionDeniedFallback(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses directory write permission checks")
@@ -321,5 +332,69 @@ func TestRunUninstallCommandRejectsPositionalArgs(t *testing.T) {
 	err := run(context.Background(), []string{"uninstall", "extra"}, "test")
 	if err == nil {
 		t.Fatal("expected an error for a positional argument")
+	}
+}
+
+// uninstallSummaryInvariantCase renders the full `moltnet uninstall
+// --purge` aftercare sequence — plan, service checkmark, purge warning
+// block, purge result, and binary checkmark — against fixed fake data via
+// the same pure print/build helpers production code calls, so the case is
+// identical on every invocation regardless of isOutputTerminal. It mirrors
+// style_test.go's alignmentInvariantCase, adapted to the uninstall summary
+// path (printUninstallPlan, printUninstallCheck, buildPurgeConfirmationPrompt,
+// printPurgeResult) instead of printInitSummary/printNextSteps.
+func uninstallSummaryInvariantCase(t *testing.T) string {
+	t.Helper()
+	return captureStdout(t, func() {
+		fmt.Fprint(stdout, "  Uninstalling moltnet\n\n")
+		printUninstallPlan([]string{"acme-friends"}, map[string]bool{"acme-friends": true}, "/home/example/.local/bin/moltnet", true, "", false)
+		fmt.Fprintln(stdout)
+		printUninstallCheck("stopped and removed the service for network %q", "acme-friends")
+		fmt.Fprintln(stdout)
+		fmt.Fprint(stdout, buildPurgeConfirmationPrompt([]string{"acme-friends"}, "/home/example/.moltnet", uninstall.HomeState{Existed: true}, "", false))
+		fmt.Fprintln(stdout)
+		printPurgeResult("/home/example/.moltnet", uninstall.PurgeResult{HomeState: uninstall.HomeState{Existed: true}})
+		printUninstallCheck("removed %s", "/home/example/.local/bin/moltnet")
+	})
+}
+
+// TestUninstallSummaryIsPlainWidthInvariant is the uninstall counterpart to
+// style_test.go's TestAlignmentIsPlainWidthInvariant: it forces the
+// isOutputTerminal seam to true (NO_COLOR unset, TERM color-capable),
+// captures the uninstall summary's styled output, strips every ANSI escape
+// code, and asserts the result is byte-identical to the same calls' plain
+// (non-TTY) output — i.e. the new Plan:/✓/warning: structure adds only
+// color on a terminal, never a text-content change.
+func TestUninstallSummaryIsPlainWidthInvariant(t *testing.T) {
+	previousNoColor, hadNoColor := os.LookupEnv("NO_COLOR")
+	if err := os.Unsetenv("NO_COLOR"); err != nil {
+		t.Fatalf("unset NO_COLOR: %v", err)
+	}
+	t.Cleanup(func() {
+		if hadNoColor {
+			os.Setenv("NO_COLOR", previousNoColor)
+		} else {
+			os.Unsetenv("NO_COLOR")
+		}
+	})
+	t.Setenv("TERM", "xterm-256color")
+
+	previousTerminal := isOutputTerminal
+	isOutputTerminal = func() bool { return true }
+	styledOutput := uninstallSummaryInvariantCase(t)
+	isOutputTerminal = previousTerminal
+
+	if !strings.ContainsRune(styledOutput, '\x1b') {
+		t.Fatalf("styledOutput = %q, want at least one ANSI escape code from the TTY-styled path", styledOutput)
+	}
+
+	plainOutput := uninstallSummaryInvariantCase(t)
+	if strings.ContainsRune(plainOutput, '\x1b') {
+		t.Fatalf("plainOutput = %q, want no ANSI escape codes from the non-TTY default path", plainOutput)
+	}
+
+	strippedStyled := ansiEscapePattern.ReplaceAllString(styledOutput, "")
+	if strippedStyled != plainOutput {
+		t.Fatalf("ANSI-stripped styled output does not byte-match plain output:\nstripped styled = %q\nplain           = %q", strippedStyled, plainOutput)
 	}
 }
