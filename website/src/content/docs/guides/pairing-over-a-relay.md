@@ -21,28 +21,29 @@ Create a Cloudflare API token scoped to `Account > Workers Scripts > Edit` — t
 
 Or create one manually at <https://dash.cloudflare.com/profile/api-tokens> with that same scope.
 
-Export it and deploy:
+Export it once, then deploy and save it for future deploys:
 
 ```bash
 export CLOUDFLARE_API_TOKEN=...
-moltnet relay deploy
+moltnet relay deploy --save-token
 ```
 
-`moltnet relay deploy` uploads the relay Worker (embedded in the `moltnet` binary — no clone, no Node.js, no `wrangler` needed) via the Cloudflare REST API. It resolves your account, uploads the `RelayRoom` Durable Object worker, generates a `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves the resulting URL and token to `.moltnet/relay.json`:
+`moltnet relay deploy` uploads the relay Worker (embedded in the `moltnet` binary — no clone, no Node.js, no `wrangler` needed) via the Cloudflare REST API. It resolves your account, uploads the `RelayRoom` Durable Object worker, generates a `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves the resulting URL and token to `.moltnet/relay.json`. `--save-token` additionally saves the Cloudflare API token itself to `.moltnet/cloudflare.json` (mode `0600`, one per network):
 
 ```text
-$ moltnet relay deploy --id my-network
+$ moltnet relay deploy --id my-network --save-token
   deployed relay Worker "moltnet-relay"
   relay url: wss://moltnet-relay.acme.workers.dev
   saved relay credentials to .moltnet/relay.json
   warning: rotating RELAY_TOKEN (redeploying with a new --token-env value) breaks every pairing on this relay at once
+  saved Cloudflare API token to .moltnet/cloudflare.json
 
   Next:
     moltnet pair invite --network-id my-network --room chat
                                                    invite a friend over this relay
 ```
 
-Those saved credentials are what let `moltnet pair invite` run with zero relay flags afterward — see [You own the relay](#you-own-the-relay) below.
+Those saved credentials are what let `moltnet pair invite` run with zero relay flags afterward — see [You own the relay](#you-own-the-relay) below. The saved Cloudflare API token means the *next* `relay deploy` for this network needs no `CLOUDFLARE_API_TOKEN` either — see [Cloudflare API token storage](#cloudflare-api-token-storage) below.
 
 If `CLOUDFLARE_API_TOKEN` isn't set, the command prints the same deep link and exits without contacting Cloudflare:
 
@@ -68,7 +69,9 @@ Useful flags:
 
 - `--name <script-name>` — Cloudflare Worker script name (default `moltnet-relay`). Use a distinct name per relay if you're deploying more than one.
 - `--token-env <env>` — reuse an existing `RELAY_TOKEN` value from an environment variable instead of generating one. Without it, re-running `relay deploy` keeps the previously generated token (idempotent re-deploy), so redeploying to pick up a new relay build does not rotate every pairing's shared secret out from under it.
-- `--config <path>` / `--id <network-id>` — resolve a specific Moltnet config: `--config` names an explicit path; `--id` picks a network under `~/.moltnet/` by id when you have more than one. Determines where `.moltnet/relay.json` is written. See [Running Local](/guides/running-local/#config-discovery) for the full resolution order.
+- `--save-token` — save the Cloudflare API token used for this deploy (from `CLOUDFLARE_API_TOKEN`) to `.moltnet/cloudflare.json` for future deploys. See [Cloudflare API token storage](#cloudflare-api-token-storage) below.
+- `--forget-token` — delete the token stored at `.moltnet/cloudflare.json` and exit without deploying.
+- `--config <path>` / `--id <network-id>` — resolve a specific Moltnet config: `--config` names an explicit path; `--id` picks a network under `~/.moltnet/` by id when you have more than one. Determines where `.moltnet/relay.json` (and `.moltnet/cloudflare.json`) is written. See [Running Local](/guides/running-local/#config-discovery) for the full resolution order.
 - `--print-manual` — print the equivalent manual `wrangler` steps and exit without contacting Cloudflare (see [Manual path](#manual-path) below).
 
 ### One-time workers.dev subdomain claim
@@ -103,6 +106,42 @@ Credentials are already saved at this point — just wait a few minutes and cont
 `relay deploy` writes `{url, token}` to `.moltnet/relay.json` (mode `0600`, next to your `Moltnet` config). `moltnet pair invite` reads it automatically, so once you've deployed you don't need to pass `--relay-url` or `--relay-token-env` by hand — see [You own the relay](#you-own-the-relay).
 
 `RELAY_TOKEN` gates every WebSocket connection to this Worker — it is worker-wide, not per pairing. Rotating it (`relay deploy --token-env <env>` with a fresh value) breaks every pairing that uses this relay at once; coordinate with everyone paired through it before rotating. If you deployed under a custom `--name <script-name>`, pass that same `--name` on the rotating redeploy too — omitting it targets the default `moltnet-relay` script instead of yours.
+
+### Cloudflare API token storage
+
+The Cloudflare API token that authenticates `relay deploy` itself (not `RELAY_TOKEN`, which authenticates the relay's WebSocket connections) can also be stored per network, separately from `.moltnet/relay.json`, at `.moltnet/cloudflare.json` (mode `0600`). Resolution order:
+
+1. `CLOUDFLARE_API_TOKEN` env — always wins, even when a token is already stored.
+2. A token stored at `.moltnet/cloudflare.json` for this network.
+3. Neither set — the token-creation guidance (deep link) shown above.
+
+`--save-token` stores the env token used by a successful deploy:
+
+```bash
+export CLOUDFLARE_API_TOKEN=...
+moltnet relay deploy --save-token
+```
+
+Without `--save-token`, a successful deploy that used the env token offers to save it once — only on an interactive terminal, and only when nothing is stored yet:
+
+```text
+  save this token to .moltnet/cloudflare.json (0600) for future deploys? [y/N] y
+  saved Cloudflare API token to .moltnet/cloudflare.json
+```
+
+Declining, or running non-interactively (scripts, CI), never saves it, and the token itself is never printed either way. Once stored, deploys reusing it print a one-line reminder of the source instead of a silent skip:
+
+```text
+  using stored Cloudflare API token from .moltnet/cloudflare.json
+```
+
+`moltnet relay deploy --forget-token` deletes the stored token without deploying; `moltnet uninstall --purge` removes it too, along with the rest of `~/.moltnet/<id>/`. If Cloudflare rejects a stored token (expired, revoked, or re-scoped), the error names the file and suggests the fix:
+
+```text
+error: verify Cloudflare API token: cloudflare api error (http 401): 9109: invalid token
+
+stored Cloudflare API token .moltnet/cloudflare.json was rejected; run `moltnet relay deploy --forget-token` and re-export CLOUDFLARE_API_TOKEN, or set CLOUDFLARE_API_TOKEN to override it
+```
 
 ### Manual path
 
@@ -243,7 +282,7 @@ An invite code is a bearer credential, not just a connection string. Anyone who 
 
 - Share invite codes the same way you'd share a password: a private message, not a public issue, PR, or chat channel.
 - `RELAY_TOKEN` authenticates every room on that Worker deployment. Rotating it (`moltnet relay deploy --token-env <env>` with a fresh value, or `wrangler secret put RELAY_TOKEN --name <script-name>` on a manually deployed relay) breaks every pairing on that relay at once — coordinate with everyone paired through it before rotating. A custom-named relay needs its `--name <script-name>` passed on the redeploy too, or the rotation targets the default `moltnet-relay` script instead.
-- `.moltnet/relay.json`, where `relay deploy` stores the relay URL and token, is written mode `0600`. Treat it like any other credential file — back it up if you rely on the zero-flag `pair invite` path, and don't commit it.
+- `.moltnet/relay.json`, where `relay deploy` stores the relay URL and token, is written mode `0600`. Treat it like any other credential file — back it up if you rely on the zero-flag `pair invite` path, and don't commit it. `.moltnet/cloudflare.json`, where `--save-token` (or the save prompt) stores the Cloudflare API token, is the same: mode `0600`, per network, removable with `relay deploy --forget-token` or `moltnet uninstall --purge`.
 - The pairing token written into `auth.tokens[]` is only enforced when the local network's `auth.mode` is `bearer` or `open`. Both `moltnet pair` commands print a warning when `auth.mode` is `none`, which is the default after a plain `moltnet init` (use `moltnet init --bearer` to avoid it) — set `auth.mode: bearer` (or `open`) so the token is actually checked. See [Authentication](/reference/authentication/).
 - Both `moltnet pair` commands still need a restart to take effect — phase 1 has no live config reload. Pass `--restart` to restart a `moltnet service`-managed server directly, otherwise they print a reminder (and, on a terminal, suggest `--restart`).
 

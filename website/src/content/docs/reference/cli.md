@@ -360,11 +360,14 @@ See the [Pairing Over a Relay](/guides/pairing-over-a-relay/) guide for the full
 Deploy the embedded relay Worker to Cloudflare, so `moltnet pair invite` has a relay to pair through.
 
 ```bash
-moltnet relay deploy --id alice-net
+moltnet relay deploy --id alice-net --save-token
+moltnet relay deploy --forget-token
 moltnet relay deploy --print-manual
 ```
 
-Uses `CLOUDFLARE_API_TOKEN` for auth. Resolves the account, uploads the RelayRoom Durable Object worker, sets a `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves `{url, token}` to `.moltnet/relay.json` for `moltnet pair invite` to reuse. `--name <script-name>` sets the Cloudflare Worker script name (default `moltnet-relay`). `--token-env <env>` reuses an existing `RELAY_TOKEN` instead of generating one. `--print-manual` prints the equivalent `wrangler` steps and exits without contacting Cloudflare. `--config <path>` / `--id <network-id>` resolve the network the same way `moltnet start` does.
+Resolves the account, uploads the RelayRoom Durable Object worker, sets a `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves `{url, token}` to `.moltnet/relay.json` for `moltnet pair invite` to reuse. `--name <script-name>` sets the Cloudflare Worker script name (default `moltnet-relay`). `--token-env <env>` reuses an existing `RELAY_TOKEN` instead of generating one. `--print-manual` prints the equivalent `wrangler` steps and exits without contacting Cloudflare. `--config <path>` / `--id <network-id>` resolve the network the same way `moltnet start` does.
+
+The Cloudflare API token used to authenticate the deploy itself is resolved in this order: `CLOUDFLARE_API_TOKEN` env (always wins) > a per-network token stored at `.moltnet/cloudflare.json` > the token-creation guidance (deep link) when neither is set. `--save-token` saves the env token used by a successful deploy to `.moltnet/cloudflare.json` (mode `0600`), so later deploys for this network need no env var; without `--save-token`, a successful deploy that used the env token offers to save it once on an interactive terminal, when nothing is stored yet (declining, or running non-interactively, never saves it — the token itself is never printed). `--forget-token` deletes the stored token and exits without deploying. A stored token Cloudflare rejects (401/403) produces an error naming the stored file and suggesting `--forget-token` or the `CLOUDFLARE_API_TOKEN` env override.
 
 Re-running `relay deploy` is idempotent: it updates the deployed script and keeps the existing `RELAY_TOKEN` unless `--token-env` supplies a new one. Rotating `RELAY_TOKEN` breaks every pairing already using this relay at once.
 
