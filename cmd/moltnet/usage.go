@@ -60,10 +60,14 @@ Commands:
   help             Show this help
 
 Config resolution (start, pair, relay, admin, node, service): an explicit
---config path wins outright; otherwise ./Moltnet (or ./MoltnetNode for
-node) in the current directory; otherwise the sole network directory under
-~/.moltnet/ (the default "moltnet init" home). When several networks exist
-there, pass --id (--network for admin) to choose one.
+--config path wins outright; otherwise, when --id (--network for admin) is
+given, ~/.moltnet/<id>/Moltnet (or MoltnetNode for node) is resolved first,
+falling back to the current directory only when its config self-identifies
+as network id <id> -- never by cwd precedence; otherwise the
+current-directory discovery order (./Moltnet, or ./MoltnetNode for node) is
+tried, then the sole network directory under ~/.moltnet/ (the default
+"moltnet init" home). When several networks exist there and no --id was
+given, the command lists the candidates and asks you to pass one.
 `
 }
 
@@ -95,8 +99,11 @@ func buildNodeUsage() string {
   moltnet node [--id <network-id>] [path]
 
 The node loads MoltnetNode config from the provided path, or discovers it:
-explicit path > ./MoltnetNode in cwd > the sole network under ~/.moltnet/,
-disambiguated by --id when several exist.
+an explicit path (or MOLTNET_NODE_CONFIG) wins outright; otherwise, with
+--id given, ~/.moltnet/<id>/MoltnetNode is resolved first, falling back to
+cwd only when its config self-identifies as network id <id>; otherwise
+./MoltnetNode in cwd, then the sole network under ~/.moltnet/, disambiguated
+by --id when several exist.
 `
 }
 
@@ -155,8 +162,10 @@ round trip has happened), so its printed command also carries a
 operator's "(remote? ...)" hint on that command adds --base-url and
 --token-env and drops --network, which only resolves a local config.
 
-Both commands resolve the Moltnet server config the same way "moltnet
-start" does: --config > ./Moltnet in cwd > the sole network under
+Both commands resolve the Moltnet server config the same way "moltnet start"
+does: --config wins outright; with an id given, ~/.moltnet/<id>/Moltnet is
+resolved first, falling back to cwd only when its config self-identifies as
+that network id; otherwise ./Moltnet in cwd, then the sole network under
 ~/.moltnet/. "pair invite" takes --network-id to disambiguate several
 networks there (--id already names the pairing); "pair <invite-code>" takes
 --id for the same purpose, since it has no other use for --id. Run "moltnet
@@ -186,9 +195,11 @@ Rotating RELAY_TOKEN breaks every pairing already using this relay at once.
 --print-manual prints the equivalent wrangler steps and exits without
 contacting Cloudflare.
 
-Config resolution matches "moltnet start": --config > ./Moltnet in cwd >
-the sole network under ~/.moltnet/, disambiguated by --id when several
-exist.
+Config resolution matches "moltnet start": --config wins outright; with
+--id given, ~/.moltnet/<id>/Moltnet is resolved first, falling back to cwd
+only when its config self-identifies as that network id; otherwise
+./Moltnet in cwd, then the sole network under ~/.moltnet/, disambiguated by
+--id when several exist.
 `
 }
 
@@ -213,9 +224,11 @@ reloads it. "uninstall" stops the service and removes the unit file.
 "start"/"stop" control an already-installed service without touching the
 unit file. "status" reports whether it is installed and running.
 
-Config resolution matches "moltnet start": --config > ./Moltnet in cwd >
-the sole network under ~/.moltnet/, disambiguated by --id when several
-exist. Unsupported on any OS other than macOS and Linux.
+Config resolution matches "moltnet start": --config wins outright; with
+--id given, ~/.moltnet/<id>/Moltnet is resolved first, falling back to cwd
+only when its config self-identifies as that network id; otherwise
+./Moltnet in cwd, then the sole network under ~/.moltnet/, disambiguated by
+--id when several exist. Unsupported on any OS other than macOS and Linux.
 `
 }
 

@@ -118,8 +118,10 @@ func runServiceStatus(ctx context.Context, manager *service.Manager, networkID s
 }
 
 // resolveServiceSpec resolves the network config the same way
-// start/pair/relay do (app.ResolveConfigPath via resolvePairConfigPath),
-// then derives the rest of service.Spec from it: NetworkID from the loaded
+// start/pair/relay do (app.ResolveConfigPath via resolvePairConfigPath —
+// with --id given, ~/.moltnet/<id>/Moltnet is resolved first, falling back
+// to cwd only when its config self-identifies as network id id), then
+// derives the rest of service.Spec from it: NetworkID from the loaded
 // config (not the directory name, since --dir installs are not necessarily
 // named after the network id), BinaryPath from the currently running
 // executable (symlink-resolved so a re-exec later still finds the real

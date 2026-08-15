@@ -12,10 +12,12 @@ import (
 )
 
 // runNode implements `moltnet node [path]` / `moltnet node start [path]`.
-// Config resolution follows the same shared explicit > ./MoltnetNode in cwd
-// > sole network under ~/.moltnet/ order as the server config
-// (app.ResolveNodeConfigPath), disambiguated by --id when several networks
-// exist.
+// Config resolution follows the same shared tier as the server config
+// (app.ResolveNodeConfigPath): explicit (path argument or
+// MOLTNET_NODE_CONFIG) wins outright; with --id given,
+// ~/.moltnet/<id>/MoltnetNode is resolved first, falling back to cwd only
+// when its config self-identifies as network id <id>; with neither,
+// ./MoltnetNode in cwd, then the sole network under ~/.moltnet/.
 func runNode(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("moltnet node", flag.ContinueOnError)
 	flags.SetOutput(stdout)

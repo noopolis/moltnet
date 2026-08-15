@@ -270,21 +270,60 @@ func mergeEnvStorage(storage StorageConfig) StorageConfig {
 }
 
 func DiscoverPath(explicit string) (string, bool, error) {
+	path, found, hasExplicit, err := discoverExplicitConfigPath(explicit)
+	if hasExplicit {
+		return path, found, err
+	}
+	return discoverCwdConfigPath()
+}
+
+// discoverExplicitConfigPath resolves an explicitly named Moltnet config
+// path — either passed directly (--config) or via the MOLTNET_CONFIG
+// environment variable. hasExplicit is false only when neither source named
+// a path, letting the caller fall through to autodiscovery; when true, the
+// caller returns (path, found, err) as-is, since an explicit source always
+// wins outright and never falls back to cwd or ~/.moltnet.
+func discoverExplicitConfigPath(explicit string) (path string, found bool, hasExplicit bool, err error) {
 	if value := strings.TrimSpace(explicit); value != "" {
-		return explicitConfigPath(value)
+		path, found, err = explicitConfigPath(value)
+		return path, found, true, err
 	}
 	if value, ok := envValue("MOLTNET_CONFIG"); ok {
-		return explicitConfigPath(value)
+		path, found, err = explicitConfigPath(value)
+		return path, found, true, err
 	}
+	return "", false, false, nil
+}
 
+// discoverCwdConfigPath scans DefaultDiscoveryOrder in the current
+// directory. A candidate that stats successfully but fails the text sniff
+// (looksLikeTextConfig) — most plausibly a compiled binary shadowing the
+// config filename on a case-insensitive filesystem — is skipped with a
+// stderr warning and treated as though it were never there, so discovery
+// keeps looking rather than handing a Mach-O/ELF binary to the YAML/JSON
+// decoder.
+func discoverCwdConfigPath() (string, bool, error) {
 	for _, candidate := range DefaultDiscoveryOrder {
 		info, err := os.Stat(candidate)
-		if err == nil && !info.IsDir() {
-			return candidate, true, nil
-		}
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return "", false, fmt.Errorf("inspect Moltnet config %q: %w", candidate, err)
 		}
+		if info.IsDir() {
+			continue
+		}
+
+		ok, sniffErr := looksLikeTextConfig(candidate)
+		if sniffErr != nil {
+			return "", false, fmt.Errorf("inspect Moltnet config %q: %w", candidate, sniffErr)
+		}
+		if !ok {
+			warnIgnoringBinaryConfig(candidate)
+			continue
+		}
+		return candidate, true, nil
 	}
 
 	return "", false, nil

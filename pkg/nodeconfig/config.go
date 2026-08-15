@@ -47,6 +47,14 @@ func LoadFile(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("read MoltnetNode config: %w", err)
 	}
+	// Binary-content guard: a discovered candidate is already filtered by
+	// DiscoverPath's cwd loop before it ever reaches here, so this only
+	// fires for an explicitly named MoltnetNode path — turning what would
+	// otherwise be a cryptic YAML/JSON decode error into a clear one that
+	// names the binary-file suspicion.
+	if !textSniffContents(contents) {
+		return Config{}, binaryConfigError(path)
+	}
 
 	var config Config
 	if formatForPath(path) == "json" {
@@ -88,9 +96,24 @@ func DiscoverPath(explicit string) (string, bool, error) {
 			}
 			return "", false, err
 		}
-		if ok {
-			return path, true, nil
+		if !ok {
+			continue
 		}
+
+		// Binary-content guard: a discovered candidate (never one passed
+		// explicitly — that branch already returned above) that fails the
+		// text sniff is skipped with a warning and treated as though it
+		// were never there, so discovery keeps looking rather than handing
+		// a compiled binary shadowing the filename to the decoder.
+		textOK, sniffErr := looksLikeTextConfig(path)
+		if sniffErr != nil {
+			return "", false, sniffErr
+		}
+		if !textOK {
+			warnIgnoringBinaryConfig(path)
+			continue
+		}
+		return path, true, nil
 	}
 
 	return "", false, nil

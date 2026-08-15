@@ -127,11 +127,22 @@ func TestRunNodeHelpCommand(t *testing.T) {
 }
 
 func TestRunNodeErrorsWhenConfigMissing(t *testing.T) {
+	// HOME must be isolated here, not just cwd: without it, this test reads
+	// whatever real ~/.moltnet/ network the machine running it happens to
+	// have. On a machine with a real global network whose MoltnetNode has no
+	// attachments, runNode would then actually resolve it and block forever
+	// in Runner.Run's `<-ctx.Done()` (context.Background() never cancels),
+	// instead of returning the "config not found" error this test expects.
+	t.Setenv("HOME", t.TempDir())
 	directory := t.TempDir()
 	t.Chdir(directory)
 
-	if err := runNode(context.Background(), nil); err == nil {
-		t.Fatal("expected missing config error")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := runNode(ctx, nil)
+	if err == nil || !strings.Contains(err.Error(), "MoltnetNode config not found") {
+		t.Fatalf("expected a %q error, got %v", "MoltnetNode config not found", err)
 	}
 }
 

@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/noopolis/moltnet/pkg/protocol"
@@ -349,5 +350,33 @@ func TestRoomCredentialIsRejectedWhenAuthIsNone(t *testing.T) {
 	}
 	if err := validateApplyConfigFile(config); err == nil {
 		t.Fatal("expected apply auth none room credential validation error")
+	}
+}
+
+// TestLoadFileConfigExplicitBinaryPathGetsClearError covers an explicitly
+// named --config path (never skipped by discovery, since only discovered
+// candidates get the "treat it as though it weren't there" fallback):
+// pointing it at binary bytes must still fail, but with a message naming
+// the binary-file suspicion instead of the raw YAML decode error a Mach-O
+// header produces ("yaml: invalid trailing UTF-8 octet").
+func TestLoadFileConfigExplicitBinaryPathGetsClearError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "Moltnet")
+	if err := os.WriteFile(path, binaryLikeCandidateContents(), 0o755); err != nil {
+		t.Fatalf("write binary config: %v", err)
+	}
+
+	_, err := loadFileConfig(path)
+	if err == nil {
+		t.Fatal("expected an error loading a binary config file")
+	}
+	if strings.Contains(err.Error(), "UTF-8 octet") {
+		t.Fatalf("expected the raw yaml decode error to be replaced, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "does not look like a text config file") {
+		t.Fatalf("expected a binary-file-suspicion error, got %v", err)
+	}
+
+	if _, err := LoadConfigForPath(path, "1.0.0"); err == nil || !strings.Contains(err.Error(), "does not look like a text config file") {
+		t.Fatalf("LoadConfigForPath() error = %v, want a binary-file-suspicion error", err)
 	}
 }

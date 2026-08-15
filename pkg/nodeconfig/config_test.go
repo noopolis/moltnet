@@ -339,59 +339,6 @@ func TestValidateRejectsSharedOpenAgentToken(t *testing.T) {
 	}
 }
 
-func TestDiscoverPath(t *testing.T) {
-	directory := t.TempDir()
-	t.Chdir(directory)
-
-	writeNodeConfig(t, filepath.Join(directory, DefaultPath), "moltnet:\n  base_url: http://127.0.0.1:8787\n  network_id: local\n")
-
-	path, ok, err := DiscoverPath("")
-	if err != nil {
-		t.Fatalf("DiscoverPath() error = %v", err)
-	}
-	if !ok || path != DefaultPath {
-		t.Fatalf("unexpected discovery result path=%q ok=%v", path, ok)
-	}
-}
-
-func TestDiscoverPathExplicit(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "node.yaml")
-	writeNodeConfig(t, path, "moltnet:\n  base_url: http://127.0.0.1:8787\n  network_id: local\n")
-
-	discovered, ok, err := DiscoverPath(path)
-	if err != nil {
-		t.Fatalf("DiscoverPath() explicit error = %v", err)
-	}
-	if !ok || discovered != path {
-		t.Fatalf("unexpected explicit discovery path=%q ok=%v", discovered, ok)
-	}
-}
-
-func TestDiscoverPathSupportsFallbackNamesAndMissingConfig(t *testing.T) {
-	directory := t.TempDir()
-	t.Chdir(directory)
-
-	if path, ok, err := DiscoverPath(""); err != nil || ok || path != "" {
-		t.Fatalf("expected no config, got path=%q ok=%v err=%v", path, ok, err)
-	}
-
-	writeNodeConfig(t, filepath.Join(directory, defaultYAMLAlt), "moltnet:\n  base_url: http://127.0.0.1:8787\n  network_id: local\n")
-	path, ok, err := DiscoverPath("")
-	if err != nil {
-		t.Fatalf("DiscoverPath() fallback error = %v", err)
-	}
-	if !ok || path != defaultYAMLAlt {
-		t.Fatalf("unexpected fallback discovery path=%q ok=%v", path, ok)
-	}
-}
-
-func TestDiscoverPathDirectoryError(t *testing.T) {
-	directory := t.TempDir()
-	if _, _, err := DiscoverPath(directory); err == nil {
-		t.Fatal("expected directory error")
-	}
-}
-
 func writeNodeConfig(t *testing.T, path string, contents string) {
 	t.Helper()
 

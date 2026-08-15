@@ -30,10 +30,12 @@ func runPairCommand(ctx context.Context, args []string) error {
 }
 
 // resolvePairConfigPath discovers the Moltnet server config that a
-// pair/relay command should read and write: explicit --config > ./Moltnet
-// in cwd > sole network directory under ~/.moltnet/, disambiguated by id
-// (app.ResolveConfigPath) — the same order `moltnet start` and `moltnet
-// admin` use.
+// pair/relay command should read and write (app.ResolveConfigPath) — the
+// same order `moltnet start` and `moltnet admin` use: explicit --config
+// wins outright; with id given, ~/.moltnet/<id>/Moltnet is resolved first,
+// falling back to cwd only when its config self-identifies as network id
+// id; with neither, ./Moltnet in cwd, then the sole network directory under
+// ~/.moltnet/.
 func resolvePairConfigPath(explicit string, id string) (string, error) {
 	path, ok, err := app.ResolveConfigPath(explicit, id)
 	if err != nil {

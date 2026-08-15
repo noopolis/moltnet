@@ -9,11 +9,14 @@ import (
 )
 
 // runServer implements `moltnet start` (and its `server` alias). Config
-// resolution follows the shared explicit --config > ./Moltnet in cwd > sole
-// network under ~/.moltnet/ order (app.ResolveConfigPath); when nothing is
-// found anywhere in that order, it falls back to environment-only defaults
-// exactly as before phase 4, so a bare `moltnet start` with no config file
-// still works in tests and minimal setups.
+// resolution follows the shared app.ResolveConfigPath order: explicit
+// --config wins outright; otherwise, with --id given,
+// ~/.moltnet/<id>/Moltnet is resolved first, falling back to cwd only when
+// its config self-identifies as network id id (see app.ResolveConfigPath);
+// otherwise ./Moltnet in cwd, then the sole network under ~/.moltnet/. When
+// nothing is found anywhere in that order, it falls back to
+// environment-only defaults exactly as before phase 4, so a bare `moltnet
+// start` with no config file still works in tests and minimal setups.
 func runServer(ctx context.Context, args []string, buildVersion string) error {
 	flags := flag.NewFlagSet("moltnet start", flag.ContinueOnError)
 	flags.SetOutput(stdout)
