@@ -225,3 +225,44 @@ func TestManagerStartStopRestartDispatchLinux(t *testing.T) {
 		}
 	}
 }
+
+func TestManagerInstalledNetworkIDsDarwin(t *testing.T) {
+	spec := installedSpec(t)
+	mgr := NewForOS(newFakeRunner(), "darwin")
+	if err := mgr.Install(context.Background(), spec); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+
+	ids, err := mgr.InstalledNetworkIDs()
+	if err != nil {
+		t.Fatalf("InstalledNetworkIDs() error = %v", err)
+	}
+	if len(ids) != 1 || ids[0] != spec.NetworkID {
+		t.Fatalf("InstalledNetworkIDs() = %v, want [%q]", ids, spec.NetworkID)
+	}
+}
+
+func TestManagerInstalledNetworkIDsLinux(t *testing.T) {
+	spec := installedSpec(t)
+	mgr := NewForOS(newFakeRunner(), "linux")
+	if err := mgr.Install(context.Background(), spec); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+
+	ids, err := mgr.InstalledNetworkIDs()
+	if err != nil {
+		t.Fatalf("InstalledNetworkIDs() error = %v", err)
+	}
+	if len(ids) != 1 || ids[0] != spec.NetworkID {
+		t.Fatalf("InstalledNetworkIDs() = %v, want [%q]", ids, spec.NetworkID)
+	}
+}
+
+func TestManagerInstalledNetworkIDsUnsupportedOS(t *testing.T) {
+	mgr := NewForOS(newFakeRunner(), "windows")
+	_, err := mgr.InstalledNetworkIDs()
+	var unsupported ErrUnsupportedOS
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("InstalledNetworkIDs() error = %v, want ErrUnsupportedOS", err)
+	}
+}

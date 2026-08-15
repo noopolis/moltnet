@@ -5,16 +5,65 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
-// SystemdUnitPath returns ~/.config/systemd/user/moltnet-<network-id>.service.
-func SystemdUnitPath(networkID string) (string, error) {
+// systemdUnitDir returns ~/.config/systemd/user, the directory every
+// network's systemd user unit lives in.
+func systemdUnitDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home directory: %w", err)
 	}
-	return filepath.Join(home, ".config", "systemd", "user", SystemdUnitName(networkID)), nil
+	return filepath.Join(home, ".config", "systemd", "user"), nil
+}
+
+// SystemdUnitPath returns ~/.config/systemd/user/moltnet-<network-id>.service.
+func SystemdUnitPath(networkID string) (string, error) {
+	dir, err := systemdUnitDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, SystemdUnitName(networkID)), nil
+}
+
+// installedSystemdNetworkIDs lists the network ids with a
+// moltnet-<id>.service under ~/.config/systemd/user, by scanning the
+// directory and parsing ids back out of the SystemdUnitName naming
+// convention. `moltnet uninstall` unions this with the ~/.moltnet/<id>/
+// directory listing so a dangling unit (its network directory already
+// removed by hand) still gets stopped and disabled. A missing directory is
+// not an error: it just means no units have ever been installed.
+func installedSystemdNetworkIDs() ([]string, error) {
+	dir, err := systemdUnitDir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list %q: %w", dir, err)
+	}
+
+	const prefix, suffix = "moltnet-", ".service"
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
+			continue
+		}
+		if id := strings.TrimSuffix(strings.TrimPrefix(name, prefix), suffix); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids, nil
 }
 
 // RenderSystemdUnit renders the systemd user unit for spec. It is a pure

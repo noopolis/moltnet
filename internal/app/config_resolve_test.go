@@ -145,6 +145,41 @@ func TestNetworkHomeDir(t *testing.T) {
 	}
 }
 
+func TestListNetworkIDsSortedAndDeduped(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	writeResolveFixture(t, filepath.Join(home, ".moltnet", "beta", DefaultPath))
+	// A network directory with no config file at all still counts: it is
+	// enumerated purely by directory name, not by DiscoverPath's filename
+	// filter.
+	if err := os.MkdirAll(filepath.Join(home, ".moltnet", "acme"), 0o700); err != nil {
+		t.Fatalf("mkdir acme: %v", err)
+	}
+
+	ids, err := ListNetworkIDs()
+	if err != nil {
+		t.Fatalf("ListNetworkIDs() error = %v", err)
+	}
+	want := []string{"acme", "beta"}
+	if len(ids) != len(want) || ids[0] != want[0] || ids[1] != want[1] {
+		t.Fatalf("ListNetworkIDs() = %v, want %v", ids, want)
+	}
+}
+
+func TestListNetworkIDsMissingHomeIsNotAnError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	ids, err := ListNetworkIDs()
+	if err != nil {
+		t.Fatalf("ListNetworkIDs() error = %v", err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("ListNetworkIDs() = %v, want empty", ids)
+	}
+}
+
 func writeResolveFixture(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

@@ -59,6 +59,39 @@ func ResolveNodeConfigPath(explicit string, id string) (path string, found bool,
 	return resolveHomeNetworkConfig(nodeconfig.DefaultPath, id)
 }
 
+// ListNetworkIDs returns the sorted subdirectory names under ~/.moltnet,
+// each one a network id `moltnet init` created there — regardless of
+// whether the network still contains a config file. Unlike
+// resolveHomeNetworkConfig (which only counts a directory when it holds a
+// specific filename), this is used by `moltnet uninstall` to enumerate
+// every network home so a config file removed by hand does not hide a
+// network's leftover service or data from the uninstall plan. A missing
+// ~/.moltnet is not an error: it just means no networks were ever created
+// there.
+func ListNetworkIDs() ([]string, error) {
+	root, err := HomeMoltnetDir()
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list %s: %w", root, err)
+	}
+
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			ids = append(ids, entry.Name())
+		}
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
 // resolveHomeNetworkConfig looks for filename under ~/.moltnet/<network-id>/
 // directories. With id set, only that network's directory is considered.
 // With id empty, exactly one network directory containing filename must

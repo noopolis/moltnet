@@ -283,14 +283,20 @@ func validatePrivateRegularFile(path string, label string) error {
 }
 
 func defaultInstallMetadataPath() string {
-	home := defaultMoltnetHome()
+	home := ResolveHome()
 	if home == "" {
 		return ""
 	}
 	return filepath.Join(home, "install.json")
 }
 
-func defaultMoltnetHome() string {
+// ResolveHome returns the directory updater reads and writes install/update
+// state in (install.json, update.lock): MOLTNET_HOME when set, otherwise
+// ~/.moltnet. It is exported so `moltnet uninstall` can detect a MOLTNET_HOME
+// override that points outside the ~/.moltnet it already handles, using the
+// exact same resolution this package uses to read/write that state, so the
+// two can never drift apart.
+func ResolveHome() string {
 	if override := strings.TrimSpace(os.Getenv(moltnetHomeEnv)); override != "" {
 		if absolute, err := filepath.Abs(override); err == nil {
 			return absolute

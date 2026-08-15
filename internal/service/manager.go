@@ -216,6 +216,23 @@ func (m *Manager) UnitPath(networkID string) (string, error) {
 	}
 }
 
+// InstalledNetworkIDs lists network ids with an installed unit/plist file
+// for this Manager's GOOS: dev.moltnet.<id>.plist under
+// ~/Library/LaunchAgents on darwin, moltnet-<id>.service under
+// ~/.config/systemd/user on linux. `moltnet uninstall` unions this with the
+// ~/.moltnet/<id>/ directory listing so a dangling service (its network
+// directory already removed by hand) still gets stopped and unloaded.
+func (m *Manager) InstalledNetworkIDs() ([]string, error) {
+	switch m.goos {
+	case "darwin":
+		return installedLaunchdNetworkIDs()
+	case "linux":
+		return installedSystemdNetworkIDs()
+	default:
+		return nil, ErrUnsupportedOS{GOOS: m.goos}
+	}
+}
+
 func writeUnitFile(path string, contents string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

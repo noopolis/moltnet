@@ -1,6 +1,7 @@
 package service
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -67,5 +68,42 @@ func TestSystemdUnitPath(t *testing.T) {
 	want := filepath.Join(home, ".config", "systemd", "user", "moltnet-acme.service")
 	if path != want {
 		t.Fatalf("SystemdUnitPath() = %q, want %q", path, want)
+	}
+}
+
+func TestInstalledSystemdNetworkIDs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	dir := filepath.Join(home, ".config", "systemd", "user")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %q: %v", dir, err)
+	}
+	for _, name := range []string{"moltnet-beta.service", "moltnet-acme.service", "other-thing.service"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("placeholder"), 0o644); err != nil {
+			t.Fatalf("write %q: %v", name, err)
+		}
+	}
+
+	ids, err := installedSystemdNetworkIDs()
+	if err != nil {
+		t.Fatalf("installedSystemdNetworkIDs() error = %v", err)
+	}
+	want := []string{"acme", "beta"}
+	if len(ids) != len(want) || ids[0] != want[0] || ids[1] != want[1] {
+		t.Fatalf("installedSystemdNetworkIDs() = %v, want %v", ids, want)
+	}
+}
+
+func TestInstalledSystemdNetworkIDsMissingDirIsNotAnError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	ids, err := installedSystemdNetworkIDs()
+	if err != nil {
+		t.Fatalf("installedSystemdNetworkIDs() error = %v", err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("installedSystemdNetworkIDs() = %v, want empty", ids)
 	}
 }

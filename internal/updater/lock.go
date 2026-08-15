@@ -140,7 +140,7 @@ func existingLockIsStale(path string, staleAfter time.Duration) (bool, error) {
 }
 
 func defaultUpdateLockPath(_ string) string {
-	home := defaultMoltnetHome()
+	home := ResolveHome()
 	if home == "" {
 		return ""
 	}

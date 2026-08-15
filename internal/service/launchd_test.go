@@ -1,6 +1,7 @@
 package service
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,6 +89,43 @@ func TestLaunchdPlistPath(t *testing.T) {
 	want := filepath.Join(home, "Library", "LaunchAgents", "dev.moltnet.acme.plist")
 	if path != want {
 		t.Fatalf("LaunchdPlistPath() = %q, want %q", path, want)
+	}
+}
+
+func TestInstalledLaunchdNetworkIDs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	dir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %q: %v", dir, err)
+	}
+	for _, name := range []string{"dev.moltnet.beta.plist", "dev.moltnet.acme.plist", "com.other.thing.plist"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("placeholder"), 0o644); err != nil {
+			t.Fatalf("write %q: %v", name, err)
+		}
+	}
+
+	ids, err := installedLaunchdNetworkIDs()
+	if err != nil {
+		t.Fatalf("installedLaunchdNetworkIDs() error = %v", err)
+	}
+	want := []string{"acme", "beta"}
+	if len(ids) != len(want) || ids[0] != want[0] || ids[1] != want[1] {
+		t.Fatalf("installedLaunchdNetworkIDs() = %v, want %v", ids, want)
+	}
+}
+
+func TestInstalledLaunchdNetworkIDsMissingDirIsNotAnError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	ids, err := installedLaunchdNetworkIDs()
+	if err != nil {
+		t.Fatalf("installedLaunchdNetworkIDs() error = %v", err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("installedLaunchdNetworkIDs() = %v, want empty", ids)
 	}
 }
 
