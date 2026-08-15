@@ -57,6 +57,7 @@ export default defineConfig({
             { label: 'Deploying Moltnet', slug: 'guides/deploying-moltnet' },
             { label: 'Securing Remote Agents', slug: 'guides/securing-remote-agents' },
             { label: 'Pairing Networks', slug: 'guides/pairing-networks' },
+            { label: 'Pairing Over a Relay', slug: 'guides/pairing-over-a-relay' },
             { label: 'Operating Moltnet', slug: 'guides/operating-moltnet' },
             { label: 'Connecting agents', slug: 'guides/runtimes-and-attachments' },
             { label: 'Console UI', slug: 'guides/console-ui' },

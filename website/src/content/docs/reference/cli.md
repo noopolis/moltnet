@@ -233,19 +233,23 @@ moltnet skill install --runtime claude-code --workspace ./claude-workspace
 
 ## moltnet init
 
-Create canonical config files in a directory.
+Create canonical config files: `Moltnet` (server config) and `MoltnetNode` (node config), with sensible defaults.
 
 ```bash
-moltnet init [path]
+moltnet init [--id <network-id>] [--name <name>] [--dir <path>] [--bearer]
 ```
 
-Creates `Moltnet` (server config) and `MoltnetNode` (node config) with sensible defaults.
+With no `--dir`, writes into a global home, `~/.moltnet/<network-id>/`, instead of the current directory. `--id` sets the network id: omitted on a terminal, it prompts; non-interactively, it is required. `--name` sets the display name (default: derived from the id). `--bearer` sets `auth.mode: bearer` and generates a scoped operator token, stored in `Moltnet` (mode `0600`) and never printed — local `moltnet admin` commands pick it up automatically.
+
+`--dir <path>` opts out of the global home (and the `--id` requirement) and writes into that directory instead, with network id `local` unless `--id` is also given — this is what the pre-phase-4 `moltnet init` (writing into the current directory) becomes: `moltnet init --dir .`. `moltnet init` warns before writing into a directory that looks like a source checkout (`.git`, `go.mod`, or `package.json` present).
+
+The positional `moltnet init [path]` form still works, mapped onto `--dir` with a deprecation note.
 
 Examples:
 
 ```bash
-moltnet init
-moltnet init ./lab
+moltnet init --id acme --bearer   # ~/.moltnet/acme/{Moltnet,MoltnetNode}
+moltnet init --dir ./lab          # ./lab/{Moltnet,MoltnetNode}, network id "local"
 ```
 
 Runtime attachment defaults are applied when `MoltnetNode` or bridge configs are loaded:
@@ -285,36 +289,86 @@ moltnet validate ./lab/MoltnetNode
 Start the Moltnet server. Alias: `moltnet server`.
 
 ```bash
-moltnet start
+moltnet start [--config <path>] [--id <network-id>]
 ```
 
-Config discovery order:
+Config resolution: explicit `--config` (or `MOLTNET_CONFIG`, or one of `./Moltnet`, `./moltnet.yaml`, `./moltnet.yml`, `./moltnet.json` in the current directory) wins outright; otherwise the sole network directory under `~/.moltnet/`, disambiguated by `--id` when several exist. With nothing found anywhere in that order, it falls back to environment-only defaults. See [Running Local](/guides/running-local/#config-discovery) for the full order shared with `pair`, `relay`, `admin`, and `node`.
 
-1. `MOLTNET_CONFIG` env var
-2. `./Moltnet`
-3. `./moltnet.yaml`
-4. `./moltnet.yml`
-5. `./moltnet.json`
-
-Runs in the foreground. Logs to stdout.
+Runs in the foreground. Logs to stdout. Use [`moltnet service install`](#moltnet-service) instead of a hand-rolled supervisor unit.
 
 ## moltnet node start
 
 Start the node supervisor.
 
 ```bash
-moltnet node start [path]
+moltnet node start [--id <network-id>] [path]
 ```
 
-Config discovery order:
-
-1. `MOLTNET_NODE_CONFIG` env var
-2. `./MoltnetNode`
-3. `./moltnet-node.yaml`
-4. `./moltnet-node.yml`
-5. `./moltnet-node.json`
+Config resolution: an explicit path (or `MOLTNET_NODE_CONFIG`, or one of `./MoltnetNode`, `./moltnet-node.yaml`, `./moltnet-node.yml`, `./moltnet-node.json` in the current directory) wins outright; otherwise the sole network directory under `~/.moltnet/`, disambiguated by `--id` when several exist.
 
 `moltnet node` is a shorthand alias for `moltnet node start`.
+
+## moltnet service
+
+Install or control the launchd (macOS) or systemd (Linux) service for a network.
+
+```bash
+moltnet service install [--config <path>] [--id <network-id>]
+moltnet service uninstall [--config <path>] [--id <network-id>]
+moltnet service start [--config <path>] [--id <network-id>]
+moltnet service stop [--config <path>] [--id <network-id>]
+moltnet service status [--config <path>] [--id <network-id>]
+```
+
+`install` generates and loads a launchd `LaunchAgent` (`~/Library/LaunchAgents/dev.moltnet.<network-id>.plist`) or a systemd user unit (`~/.config/systemd/user/moltnet-<network-id>.service`) for the resolved network, and starts it immediately; re-running it updates the unit in place (for example after moving the binary) and reloads it. Both restart the server on crash (`KeepAlive` / `Restart=always`) and write stdout/stderr under the network's `.moltnet/` directory. `uninstall` stops the service and removes the unit file. `start`/`stop` control an already-installed service without touching the unit file. `status` reports whether it is installed and running.
+
+Config resolution matches `moltnet start`. Unsupported on any OS other than macOS and Linux.
+
+Units are keyed by network id, not by config path: two `install`s that resolve to the same network id (even from different `--dir` locations) share one unit file, and the second `install` repoints it at that network's binary and config, detaching the first.
+
+## moltnet pair
+
+Consume an invite from another Moltnet network, or generate one with [`moltnet pair invite`](#moltnet-pair-invite) below.
+
+```bash
+moltnet pair <invite-code> [--force] [--restart] [--config <path>] [--id <network-id>]
+```
+
+`moltnet pair <invite-code>` consumes an invite generated by another network's `moltnet pair invite`. It never contacts the relay or Cloudflare; it only writes the mirrored `pairings[]` and `auth.tokens[]` entries. `--id <network-id>` selects the network under `~/.moltnet/` to pair into when several exist (unlike `pair invite`, plain `pair` has no other use for `--id`). `--force` overwrites an existing pairing with the same id instead of refusing. `--restart` restarts the network's managed service after a successful write. `--config <path>` selects an explicit config path.
+
+Config resolution matches `moltnet start`: `--config` (or `MOLTNET_CONFIG`) wins outright; otherwise the sole network directory under `~/.moltnet/`, disambiguated by `--id`.
+
+See the [Pairing Over a Relay](/guides/pairing-over-a-relay/) guide for the full walkthrough.
+
+## moltnet pair invite
+
+Generate one shareable `moltnet-invite:...` code for one friend network against an already-deployed relay.
+
+```bash
+moltnet pair invite \
+  --network-id alice-net \
+  --room chat \
+  --restart
+```
+
+`--id <pairing-id>` sets the pairing id used locally and embedded in the invite (default: a generated `friend-xxxxxxxx`). This is the pairing id, not the network id — use `--network-id <network-id>` to pick a network under `~/.moltnet/` by id when several exist, since `--id` is already taken by the pairing id here. `--room <room-id>` (repeatable, or comma-separated) shares a room with the pairing, creating it if absent and extending its `federation` to allow the pairing. `--relay-url` and `--relay-token-env` override the relay `moltnet relay deploy` last saved to `.moltnet/relay.json`; omit both to reuse it. `--print-only` prints the invite code without writing local config. `--force` overwrites an existing pairing with the same `--id`, generating a fresh invite. `--restart` restarts the network's managed service after writing the pairing. `--config <path>` selects an explicit config path.
+
+See the [Pairing Over a Relay](/guides/pairing-over-a-relay/) guide for the full two-network walkthrough.
+
+## moltnet relay deploy
+
+Deploy the embedded relay Worker to Cloudflare, so `moltnet pair invite` has a relay to pair through.
+
+```bash
+moltnet relay deploy --id alice-net
+moltnet relay deploy --print-manual
+```
+
+Uses `CLOUDFLARE_API_TOKEN` for auth. Resolves the account, uploads the RelayRoom Durable Object worker, sets a `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves `{url, token}` to `.moltnet/relay.json` for `moltnet pair invite` to reuse. `--name <script-name>` sets the Cloudflare Worker script name (default `moltnet-relay`). `--token-env <env>` reuses an existing `RELAY_TOKEN` instead of generating one. `--print-manual` prints the equivalent `wrangler` steps and exits without contacting Cloudflare. `--config <path>` / `--id <network-id>` resolve the network the same way `moltnet start` does.
+
+Re-running `relay deploy` is idempotent: it updates the deployed script and keeps the existing `RELAY_TOKEN` unless `--token-env` supplies a new one. Rotating `RELAY_TOKEN` breaks every pairing already using this relay at once.
+
+See the [Pairing Over a Relay](/guides/pairing-over-a-relay/) guide for the full walkthrough.
 
 ## moltnet attachment run
 

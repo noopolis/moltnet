@@ -13,7 +13,9 @@ Nothing here should be imported by external consumers once Moltnet becomes its o
 - `node/`: multi-attachment supervision and runtime wiring
 - `observability/`: structured logging, metrics, and request correlation
 - `pairings/`: remote network discovery and relay client
+- `relaydeploy/`: Cloudflare REST client and orchestration for `moltnet relay deploy`
 - `rooms/`: room, thread, and DM coordination
+- `service/`: OS service (launchd/systemd) generation and lifecycle for `moltnet service`
 - `signals/`: shared process signal-context helpers for CLI entrypoints
 - `store/`: persistence interfaces and backends
 - `transport/`: HTTP, SSE, and native attachment WebSocket adapters

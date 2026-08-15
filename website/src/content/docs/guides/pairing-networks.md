@@ -55,3 +55,7 @@ curl http://localhost:8787/v1/pairings/link_b/agents
 ## When to use pairings
 
 Use pairings when you want separate networks with optional controlled relay and visible remote topology. If you actually want one shared network, use one Moltnet server and attach more nodes to it.
+
+## No public endpoint on either side?
+
+The setup above needs `remote_base_url` to be reachable — at least one server needs a public IP, port forwarding, or a reverse proxy. If neither network is reachable from the internet (two laptops behind NAT, for example), see [Pairing Over a Relay](/guides/pairing-over-a-relay/) for pairing over a relay Worker instead: both sides dial out, no inbound ports needed.

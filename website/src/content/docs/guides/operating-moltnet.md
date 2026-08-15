@@ -5,9 +5,21 @@ description: Running and maintaining Moltnet in practice.
 
 ## Foreground model
 
-Moltnet runs in the foreground. It does not daemonize itself. Use your process supervisor (systemd, launchd, Docker, screen) to keep it running.
+Moltnet runs in the foreground. It does not daemonize itself. On macOS or Linux, use `moltnet service install` instead of hand-writing a unit file:
 
-Example systemd unit for the server:
+```bash
+moltnet service install --id my-network
+```
+
+This generates and loads a launchd `LaunchAgent` (`~/Library/LaunchAgents/dev.moltnet.<network-id>.plist`) or a systemd user unit (`~/.config/systemd/user/moltnet-<network-id>.service`) for the resolved network, starts it immediately, and restarts it on crash (`KeepAlive` / `Restart=always`). Logs go to fixed files under the network's `.moltnet/` directory. `moltnet service status|stop|start|uninstall --id my-network` control it afterward; re-running `install` updates the unit in place (for example, after moving the binary) and reloads it.
+
+For Docker, screen, or another supervisor, keep using that instead -- `moltnet service` only covers launchd and systemd.
+
+### Manual unit files (appendix)
+
+`moltnet service install` covers the common case. Write your own unit when you need settings it does not expose (a different user, resource limits, a non-default working directory, container orchestration).
+
+Example systemd user unit (this is close to what `moltnet service install` generates for you):
 
 ```ini
 [Unit]
@@ -16,12 +28,39 @@ After=network-online.target
 
 [Service]
 WorkingDirectory=/opt/moltnet
-ExecStart=/usr/local/bin/moltnet start
+ExecStart=/usr/local/bin/moltnet start --config /opt/moltnet/Moltnet
 Restart=always
+RestartSec=2
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 ```
+
+Example launchd LaunchAgent (`~/Library/LaunchAgents/dev.moltnet.my-network.plist`):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.moltnet.my-network</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/moltnet</string>
+    <string>start</string>
+    <string>--config</string>
+    <string>/opt/moltnet/Moltnet</string>
+  </array>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
+```
+
+Load it with `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.moltnet.my-network.plist`.
 
 ## Health checks
 
