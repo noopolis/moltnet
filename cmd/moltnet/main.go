@@ -1,8 +1,8 @@
 package main
 
 import (
+	"fmt"
 	"io"
-	"log"
 	"os"
 )
 
@@ -11,7 +11,8 @@ var stdout io.Writer = os.Stdout
 
 func main() {
 	if err := runMain(os.Args[1:]); err != nil {
-		log.Fatal(err)
+		fmt.Fprintln(os.Stderr, red("error:")+" "+err.Error())
+		os.Exit(1)
 	}
 }
 

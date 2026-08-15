@@ -94,7 +94,7 @@ type pairAftercareOptions struct {
 // restart.
 func printPairAftercare(ctx context.Context, config app.Config, path string, opts pairAftercareOptions) error {
 	if config.Auth.Mode != "bearer" && config.Auth.Mode != "open" {
-		fmt.Fprintf(stdout, "note: auth.mode in %s is %q; set it to \"bearer\" so the pairing token is enforced\n", path, config.Auth.Mode)
+		fmt.Fprintf(stdout, "%s auth.mode in %s is %q; set it to \"bearer\" so the pairing token is enforced\n", yellow("note:"), path, config.Auth.Mode)
 	}
 
 	restarted, err := maybeRestartService(ctx, config.NetworkID, opts.restart)
@@ -105,7 +105,7 @@ func printPairAftercare(ctx context.Context, config app.Config, path string, opt
 		fmt.Fprintf(stdout, "restarted the moltnet service for network %q\n", config.NetworkID)
 	} else {
 		if !opts.restart && isInteractive() {
-			fmt.Fprintln(stdout, "tip: rerun with --restart to restart the managed moltnet service now")
+			fmt.Fprintf(stdout, "%s rerun with --restart to restart the managed moltnet service now\n", yellow("tip:"))
 		}
 		fmt.Fprintln(stdout, "restart the Moltnet server for this pairing to take effect")
 	}

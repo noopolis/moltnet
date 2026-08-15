@@ -84,8 +84,8 @@ func runServiceInstall(ctx context.Context, manager *service.Manager, spec servi
 		return err
 	}
 	fmt.Fprintf(stdout, "installed and started the moltnet service for network %q\n", spec.NetworkID)
-	fmt.Fprintf(stdout, "unit file: %s\n", unitPath)
-	fmt.Fprintf(stdout, "logs: %s, %s\n", spec.StdoutLogPath(), spec.StderrLogPath())
+	fmt.Fprintln(stdout, dim(fmt.Sprintf("unit file: %s", unitPath)))
+	fmt.Fprintln(stdout, dim(fmt.Sprintf("logs: %s, %s", spec.StdoutLogPath(), spec.StderrLogPath())))
 	return nil
 }
 

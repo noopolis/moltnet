@@ -36,11 +36,17 @@ func printNextSteps(steps []nextStep) {
 
 // formatNextStep column-aligns one "Next:" line's description to
 // nextStepColumn, wrapping the description onto its own indented
-// continuation line when command itself runs past that column.
+// continuation line when command itself runs past that column. Width is
+// computed from the plain (unstyled) command, then the command is bolded
+// and the description dimmed for display — so column alignment stays
+// correct whether or not styling is active, and is byte-identical to plain
+// text when it is not (bold/dim are no-ops off a terminal or under
+// NO_COLOR).
 func formatNextStep(command, description string) string {
 	line := "    " + command
+	styledLine := "    " + bold(command)
 	if len(line) < nextStepColumn {
-		return line + strings.Repeat(" ", nextStepColumn-len(line)) + description
+		return styledLine + strings.Repeat(" ", nextStepColumn-len(line)) + dim(description)
 	}
-	return line + "\n" + strings.Repeat(" ", nextStepColumn) + description
+	return styledLine + "\n" + strings.Repeat(" ", nextStepColumn) + dim(description)
 }

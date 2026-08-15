@@ -23,7 +23,10 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 	case "--help", "-h":
 		fmt.Fprint(stdout, buildUsage())
 		return nil
-	case "", "start", "server":
+	case "":
+		printBanner()
+		return runServer(ctx, rest, buildVersion)
+	case "start", "server":
 		return runServer(ctx, rest, buildVersion)
 	case "admin":
 		return runAdminCommand(rest)

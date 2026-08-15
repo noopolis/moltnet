@@ -39,7 +39,7 @@ func printInitSummary(summary initSummary) {
 	if summary.dirExisted {
 		dirVerb = "using"
 	}
-	fmt.Fprintf(stdout, "  ✓ %s %s%s\n", dirVerb, abbreviateHome(summary.root), string(filepath.Separator))
+	fmt.Fprintf(stdout, "  %s %s %s%s\n", green("✓"), dirVerb, abbreviateHome(summary.root), string(filepath.Separator))
 
 	authLabel := "none"
 	if summary.bearer {
@@ -58,18 +58,18 @@ func printInitSummary(summary initSummary) {
 
 	switch {
 	case summary.bearer && summary.serverCreated:
-		fmt.Fprintln(stdout, "  ✓ operator token stored in Moltnet (0600) — local admin")
+		fmt.Fprintf(stdout, "  %s operator token stored in Moltnet (0600) — local admin\n", green("✓"))
 		fmt.Fprintln(stdout, "    commands pick it up automatically")
 	case summary.bearer && summary.bearerAdded:
-		fmt.Fprintf(stdout, "  ✓ operator token added to %s (0600) — local admin\n", abbreviateHome(summary.serverPath))
+		fmt.Fprintf(stdout, "  %s operator token added to %s (0600) — local admin\n", green("✓"), abbreviateHome(summary.serverPath))
 		fmt.Fprintln(stdout, "    commands pick it up automatically")
 	case summary.bearer && summary.bearerAddErr != nil:
 		// The reason varies (auth.tokens already has entries, or the config
 		// is a symlink init refuses to write through), so the note leads
 		// with the actual error rather than assuming which one it was.
-		fmt.Fprintf(stdout, "    note: --bearer could not add an operator token to %s (%v); edit auth: there to add one manually\n", abbreviateHome(summary.serverPath), summary.bearerAddErr)
+		fmt.Fprintf(stdout, "    %s --bearer could not add an operator token to %s (%v); edit auth: there to add one manually\n", yellow("note:"), abbreviateHome(summary.serverPath), summary.bearerAddErr)
 	default:
-		fmt.Fprintln(stdout, "    tip: rerun with --bearer to generate an operator token for admin access")
+		fmt.Fprintf(stdout, "    %s rerun with --bearer to generate an operator token for admin access\n", yellow("tip:"))
 	}
 
 	steps := []nextStep{
@@ -112,17 +112,22 @@ func printInitConfigLine(label string, created bool, extra string) {
 // would claim the file was freshly written) or "already exists (unchanged)"
 // (which would contradict the operator-token-added line printed right
 // after it — N3).
+//
+// Column width is computed from the plain (unstyled) prefix so alignment
+// stays correct whether or not the ✓ and extra get styled for display.
 func printInitConfigCheckLine(what string, extra string) {
-	prefix := "  ✓ " + what
+	plainPrefix := "  ✓ " + what
+	displayPrefix := "  " + green("✓") + " " + what
 	if extra == "" {
-		fmt.Fprintln(stdout, prefix)
+		fmt.Fprintln(stdout, displayPrefix)
 		return
 	}
-	if width := utf8.RuneCountInString(prefix); width < configLineColumn {
-		fmt.Fprintln(stdout, prefix+strings.Repeat(" ", configLineColumn-width)+extra)
+	styledExtra := dim(extra)
+	if width := utf8.RuneCountInString(plainPrefix); width < configLineColumn {
+		fmt.Fprintln(stdout, displayPrefix+strings.Repeat(" ", configLineColumn-width)+styledExtra)
 		return
 	}
-	fmt.Fprintln(stdout, prefix+" "+extra)
+	fmt.Fprintln(stdout, displayPrefix+" "+styledExtra)
 }
 
 // abbreviateHome replaces the user's home directory prefix in path with

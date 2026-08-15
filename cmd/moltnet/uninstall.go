@@ -105,7 +105,7 @@ func runUninstallCommand(ctx context.Context, args []string) error {
 
 	otherCopies := uninstall.OtherCopies(os.Getenv("PATH"), binaryPath)
 	if len(otherCopies) > 0 {
-		fmt.Fprintln(stdout, "warning: other moltnet copies remain on PATH:")
+		fmt.Fprintf(stdout, "%s other moltnet copies remain on PATH:\n", yellow("warning:"))
 		for _, copy := range otherCopies {
 			fmt.Fprintf(stdout, "  %s\n", copy)
 		}
@@ -118,7 +118,7 @@ func runUninstallCommand(ctx context.Context, args []string) error {
 	// catch that case.
 	danglingSymlinks := uninstall.DanglingSymlinks(os.Getenv("PATH"), binaryPath)
 	if len(danglingSymlinks) > 0 {
-		fmt.Fprintln(stdout, "warning: dangling moltnet symlinks remain on PATH:")
+		fmt.Fprintf(stdout, "%s dangling moltnet symlinks remain on PATH:\n", yellow("warning:"))
 		for _, link := range danglingSymlinks {
 			fmt.Fprintf(stdout, "  dangling symlink: %s — remove it with rm %s\n", link, link)
 		}
@@ -134,7 +134,7 @@ func runUninstallCommand(ctx context.Context, args []string) error {
 func printUninstallPlan(networkIDs []string, binaryPath string, purge bool, overridePath string, overrideActive bool) {
 	fmt.Fprintln(stdout, "moltnet uninstall will:")
 	if len(networkIDs) == 0 {
-		fmt.Fprintln(stdout, "  - stop and remove no services (no installed networks found)")
+		fmt.Fprintf(stdout, "  %s no installed services found\n", yellow("note:"))
 	}
 	for _, id := range networkIDs {
 		fmt.Fprintf(stdout, "  - stop and remove the moltnet service for network %q\n", id)
@@ -251,7 +251,15 @@ func printPurgeResult(path string, result uninstall.PurgeResult) {
 // state living outside ~/.moltnet.
 func buildPurgeConfirmationPrompt(dirNetworkIDs []string, root string, rootState uninstall.HomeState, overridePath string, overrideActive bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "--purge will permanently delete %s, destroying data for network(s): %s\n", root, describeNetworkIDs(dirNetworkIDs))
+	if len(dirNetworkIDs) == 0 {
+		if rootState.Existed {
+			fmt.Fprintf(&b, "--purge will permanently delete %s; no network data found under it; the directory itself will be removed\n", root)
+		} else {
+			fmt.Fprintf(&b, "--purge will permanently delete %s; no network data found under it; nothing exists there yet\n", root)
+		}
+	} else {
+		fmt.Fprintf(&b, "--purge will permanently delete %s, destroying data for network(s): %s\n", root, describeNetworkIDs(dirNetworkIDs))
+	}
 	switch {
 	case rootState.IsSymlink && rootState.SymlinkTarget != "":
 		fmt.Fprintf(&b, "%s is a symlink to %s; --purge only removes the link, not the data at %s.\n", root, rootState.SymlinkTarget, rootState.SymlinkTarget)
@@ -265,10 +273,11 @@ func buildPurgeConfirmationPrompt(dirNetworkIDs []string, root string, rootState
 	return b.String()
 }
 
+// describeNetworkIDs joins networkIDs for the confirmation prompt's
+// "destroying data for network(s): ..." line. Callers only reach this with
+// a non-empty list — buildPurgeConfirmationPrompt handles the empty case
+// with its own "no network data found" wording instead.
 func describeNetworkIDs(networkIDs []string) string {
-	if len(networkIDs) == 0 {
-		return "(none found)"
-	}
 	return strings.Join(networkIDs, ", ")
 }
 

@@ -110,6 +110,9 @@ func runRegisterAgent(args []string) error {
 				return err
 			}
 		} else {
+			// Deliberately unstyled: green/yellow/bold/dim (style.go) gate on
+			// stdout's terminal state and must never be used on a stderr write
+			// like this one — red is the only stderr-gated helper.
 			fmt.Fprintln(os.Stderr, "warning: open agent token was not stored; save agent_token from the JSON output")
 		}
 	}

@@ -45,6 +45,13 @@ func runInit(args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+
+	// P2-2: the banner must be the first output on every init path — before
+	// the positional-path deprecation note below and before
+	// resolveInitNetworkID's interactive --id prompt further down — so it
+	// prints immediately once flags are known to be well-formed.
+	printBanner()
+
 	if flags.NArg() > 1 {
 		return fmt.Errorf("init accepts at most one positional path (deprecated; use --dir)")
 	}
@@ -55,7 +62,7 @@ func runInit(args []string) error {
 			return fmt.Errorf("init: pass either a positional path or --dir, not both")
 		}
 		dir = flags.Arg(0)
-		fmt.Fprintln(stdout, "  note: `moltnet init <path>` is deprecated; use `moltnet init --dir <path>` instead")
+		fmt.Fprintf(stdout, "  %s `moltnet init <path>` is deprecated; use `moltnet init --dir <path>` instead\n", yellow("note:"))
 	}
 
 	usingGlobalHome := dir == ""
@@ -272,8 +279,8 @@ func checkoutWarning(root string) string {
 		return ""
 	}
 	return fmt.Sprintf(
-		"  warning: %s looks like a source checkout (found %s); writing Moltnet config here is unusual for a runtime install — did you mean a different --dir, or the default ~/.moltnet/ home?",
-		root, strings.Join(found, ", "),
+		"  %s %s looks like a source checkout (found %s); writing Moltnet config here is unusual for a runtime install — did you mean a different --dir, or the default ~/.moltnet/ home?",
+		yellow("warning:"), root, strings.Join(found, ", "),
 	)
 }
 

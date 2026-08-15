@@ -126,8 +126,11 @@ func TestRunUninstallCommandNoNetworksStillDeletesBinary(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "no installed networks found") {
-		t.Fatalf("output = %q, want a no-networks-found note", output)
+	if !strings.Contains(output, "no installed services found") {
+		t.Fatalf("output = %q, want a no-installed-services note", output)
+	}
+	if strings.Contains(output, "stop and remove no services") {
+		t.Fatalf("output = %q, want the empty-state bullet dropped", output)
 	}
 	if _, err := os.Stat(binaryPath); !os.IsNotExist(err) {
 		t.Fatalf("expected %q to be removed, stat err = %v", binaryPath, err)
@@ -203,9 +206,24 @@ func TestBuildPurgeConfirmationPromptListsNetworkIDs(t *testing.T) {
 		t.Fatalf("buildPurgeConfirmationPrompt() = %q, want it to list network ids", got)
 	}
 
-	empty := buildPurgeConfirmationPrompt(nil, root, uninstall.HomeState{}, "", false)
-	if !strings.Contains(empty, "(none found)") {
-		t.Fatalf("buildPurgeConfirmationPrompt(nil) = %q, want a none-found placeholder", empty)
+	empty := buildPurgeConfirmationPrompt(nil, root, uninstall.HomeState{Existed: true}, "", false)
+	if !strings.Contains(empty, "no network data found under it") || !strings.Contains(empty, "the directory itself will be removed") {
+		t.Fatalf("buildPurgeConfirmationPrompt(nil) = %q, want the no-network-data wording", empty)
+	}
+	// P3-3: the first line names root once, not twice.
+	firstLine, _, _ := strings.Cut(empty, "\n")
+	if strings.Count(firstLine, root) != 1 {
+		t.Fatalf("buildPurgeConfirmationPrompt(nil) first line = %q, want %q to appear exactly once (no repeated root)", firstLine, root)
+	}
+
+	// When the directory does not exist at all, the prompt must not promise
+	// to remove it — it should say plainly that there is nothing there yet.
+	missing := buildPurgeConfirmationPrompt(nil, root, uninstall.HomeState{}, "", false)
+	if !strings.Contains(missing, "no network data found under it") || !strings.Contains(missing, "nothing exists there yet") {
+		t.Fatalf("buildPurgeConfirmationPrompt(nil) = %q, want the nothing-exists-yet wording", missing)
+	}
+	if strings.Contains(missing, "the directory itself will be removed") {
+		t.Fatalf("buildPurgeConfirmationPrompt(nil) = %q, want it not to promise removal of a directory that does not exist", missing)
 	}
 }
 

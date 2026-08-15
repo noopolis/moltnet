@@ -99,12 +99,15 @@ func runRelayDeploy(args []string) error {
 	}
 
 	fmt.Fprintf(stdout, "  deployed relay Worker %q\n", result.ScriptName)
-	fmt.Fprintf(stdout, "  relay url: %s\n", result.URL)
+	// P2-3: the relay URL itself must stay at full contrast — it is the
+	// value an operator copies out of this line — so only the "relay url:"
+	// label is dimmed, not the URL.
+	fmt.Fprintf(stdout, "  %s %s\n", dim("relay url:"), result.URL)
 	if !result.HostnameResolved {
-		fmt.Fprintf(stdout, "  note: %s is not resolving yet; workers.dev DNS can take a few minutes to propagate, retry `moltnet pair invite` shortly if it fails\n", result.Hostname)
+		fmt.Fprintf(stdout, "  %s %s is not resolving yet; workers.dev DNS can take a few minutes to propagate, retry `moltnet pair invite` shortly if it fails\n", yellow("note:"), result.Hostname)
 	}
-	fmt.Fprintf(stdout, "  saved relay credentials to %s\n", credentialsPath)
-	fmt.Fprintln(stdout, "  warning: rotating RELAY_TOKEN (redeploying with a new --token-env value) breaks every pairing on this relay at once")
+	fmt.Fprintln(stdout, dim(fmt.Sprintf("  saved relay credentials to %s", credentialsPath)))
+	fmt.Fprintf(stdout, "  %s rotating RELAY_TOKEN (redeploying with a new --token-env value) breaks every pairing on this relay at once\n", yellow("warning:"))
 
 	printRelayDeployNextSteps(config.NetworkID)
 	return nil
