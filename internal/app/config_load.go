@@ -18,22 +18,36 @@ var DefaultDiscoveryOrder = []string{
 	"moltnet.json",
 }
 
-func LoadConfig(version string) (Config, error) {
-	config := defaultConfig(version)
-
-	path, ok, err := DiscoverPath("")
+func LoadFile(path string, version string) (Config, error) {
+	fileConfig, err := loadFileConfig(path)
 	if err != nil {
 		return Config{}, err
 	}
-	if ok {
-		fileConfig, err := loadFileConfig(path)
-		if err != nil {
-			return Config{}, err
-		}
 
-		config = mergeFileConfig(config, fileConfig)
-		config.roomCredentialBaseDir = filepath.Dir(path)
+	config := mergeFileConfig(defaultConfig(version), fileConfig)
+	config.roomCredentialBaseDir = filepath.Dir(path)
+	config.Storage = anchorStoragePaths(config.Storage, config.roomCredentialBaseDir)
+	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
+		return Config{}, err
 	}
+	return config, nil
+}
+
+// LoadConfigForPath loads and validates an explicit Moltnet config path
+// through the same full load path the server uses at startup, including
+// environment overrides. Unlike LoadFile (used by `moltnet validate`), it
+// merges environment configuration, so it is the right check to run after a
+// config writeback: LoadFile alone can pass a config that would fail once
+// the server actually starts.
+func LoadConfigForPath(path string, version string) (Config, error) {
+	fileConfig, err := loadFileConfig(path)
+	if err != nil {
+		return Config{}, err
+	}
+
+	config := mergeFileConfig(defaultConfig(version), fileConfig)
+	config.roomCredentialBaseDir = filepath.Dir(path)
+	config.Storage = anchorStoragePaths(config.Storage, config.roomCredentialBaseDir)
 
 	config, err = mergeEnvConfig(config)
 	if err != nil {
@@ -45,18 +59,32 @@ func LoadConfig(version string) (Config, error) {
 	return config, nil
 }
 
-func LoadFile(path string, version string) (Config, error) {
-	fileConfig, err := loadFileConfig(path)
-	if err != nil {
-		return Config{}, err
-	}
+// anchorStoragePaths resolves relative storage.json.path and
+// storage.sqlite.path values (whether set explicitly in the config file or
+// left at their defaults) against baseDir, the directory containing the
+// config file that was loaded. Without this, a relative default like
+// ".moltnet/moltnet.db" resolves against the process's current working
+// directory instead of the network directory the config lives in, which
+// breaks `moltnet start` when it locates a config via the ~/.moltnet/<id>/
+// fallback from an unrelated cwd. Absolute paths are left untouched, and
+// callers that have no config path (env-only / zero-config loads) never call
+// this, so that behavior stays cwd-relative exactly as before.
+func anchorStoragePaths(storage StorageConfig, baseDir string) StorageConfig {
+	storage.JSON.Path = resolveConfigRelativePath(baseDir, storage.JSON.Path)
+	storage.SQLite.Path = resolveConfigRelativePath(baseDir, storage.SQLite.Path)
+	return storage
+}
 
-	config := mergeFileConfig(defaultConfig(version), fileConfig)
-	config.roomCredentialBaseDir = filepath.Dir(path)
-	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
-		return Config{}, err
+func resolveConfigRelativePath(baseDir string, value string) string {
+	path := strings.TrimSpace(value)
+	if path == "" || filepath.IsAbs(path) {
+		return path
 	}
-	return config, nil
+	root := strings.TrimSpace(baseDir)
+	if root == "" {
+		root = "."
+	}
+	return filepath.Clean(filepath.Join(root, path))
 }
 
 func defaultConfig(version string) Config {

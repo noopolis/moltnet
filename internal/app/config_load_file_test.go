@@ -9,10 +9,9 @@ import (
 
 func TestLoadConfigFromMoltnetFile(t *testing.T) {
 	directory := t.TempDir()
-	restore := chdirForTest(t, directory)
-	defer restore()
+	path := filepath.Join(directory, defaultConfigFile)
 
-	writeConfigFile(t, filepath.Join(directory, defaultConfigFile), `
+	writeConfigFile(t, path, `
 version: moltnet.v1
 network:
   id: local_lab
@@ -59,9 +58,9 @@ pairings:
     status: connected
 `)
 
-	config, err := LoadConfig("1.2.3")
+	config, err := LoadFile(path, "1.2.3")
 	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
+		t.Fatalf("LoadFile() error = %v", err)
 	}
 
 	if config.ListenAddr != "127.0.0.1:8787" {
@@ -99,5 +98,97 @@ pairings:
 	}
 	if !config.Auth.PublicRead || !config.Auth.RequirePairNetworkBinding || config.Auth.AgentRegistration != authn.AgentRegistrationToken {
 		t.Fatalf("unexpected auth policy %#v", config.Auth)
+	}
+}
+
+func TestLoadFileAppliesDefaultsAndVersion(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "Moltnet")
+	writeConfigFile(t, path, `
+version: moltnet.v1
+network:
+  id: explicit
+`)
+
+	config, err := LoadFile(path, "9.9.9")
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+
+	if config.NetworkID != "explicit" {
+		t.Fatalf("unexpected network id %q", config.NetworkID)
+	}
+	if config.ListenAddr != defaultListenAddr {
+		t.Fatalf("unexpected default listen addr %q", config.ListenAddr)
+	}
+	wantSQLitePath := filepath.Join(directory, defaultSQLitePath)
+	if config.Storage.Kind != storageKindSQLite || config.Storage.SQLite.Path != wantSQLitePath {
+		t.Fatalf("unexpected default storage %#v, want sqlite path %q", config.Storage, wantSQLitePath)
+	}
+	if config.Version != "9.9.9" {
+		t.Fatalf("unexpected version %q", config.Version)
+	}
+	if config.DisableDirectMessages {
+		t.Fatalf("expected direct messages default enabled, got %#v", config)
+	}
+}
+
+func TestLoadFileOpenExpandsPublicReadAndRegistration(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, defaultConfigFile)
+	writeConfigFile(t, path, `
+version: moltnet.v1
+auth:
+  mode: open
+rooms:
+  - id: agora
+`)
+
+	config, err := LoadFile(path, "1.2.3")
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if config.Auth.Mode != authn.ModeOpen ||
+		!config.Auth.PublicRead ||
+		config.Auth.AgentRegistration != authn.AgentRegistrationOpen {
+		t.Fatalf("unexpected open auth expansion %#v", config.Auth)
+	}
+	if config.Rooms[0].WritePolicy != "" {
+		t.Fatalf("open mode must not grant implicit room write policy, got %#v", config.Rooms[0])
+	}
+}
+
+func TestLoadFileSupportsLegacyDataPath(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, defaultConfigFile)
+	writeConfigFile(t, path, `
+version: moltnet.v1
+network:
+  id: legacy
+server:
+  data_path: /tmp/legacy-state.json
+`)
+
+	config, err := LoadFile(path, "1.2.3")
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if config.Storage.Kind != storageKindJSON || config.Storage.JSON.Path != "/tmp/legacy-state.json" {
+		t.Fatalf("unexpected legacy storage %#v", config.Storage)
+	}
+}
+
+func TestLoadFileRejectsUnknownFields(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, defaultConfigFile)
+	writeConfigFile(t, path, `
+version: moltnet.v1
+network:
+  id: local
+unknown: true
+`)
+
+	if _, err := LoadFile(path, "1.2.3"); err == nil {
+		t.Fatal("expected unknown field error")
 	}
 }

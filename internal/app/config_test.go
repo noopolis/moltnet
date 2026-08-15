@@ -5,6 +5,60 @@ import (
 	"testing"
 )
 
+func TestConfigFromEnvDefaults(t *testing.T) {
+	config, err := ConfigFromEnv("1.2.3")
+	if err != nil {
+		t.Fatalf("ConfigFromEnv() error = %v", err)
+	}
+
+	if config.ListenAddr != defaultListenAddr {
+		t.Fatalf("unexpected listen addr %q", config.ListenAddr)
+	}
+	if config.Storage.Kind != storageKindSQLite || config.Storage.SQLite.Path != defaultSQLitePath {
+		t.Fatalf("unexpected storage %#v", config.Storage)
+	}
+	if config.NetworkID != defaultNetworkID || config.NetworkName != defaultNetworkName {
+		t.Fatalf("unexpected network %#v", config)
+	}
+	if config.Version != "1.2.3" {
+		t.Fatalf("unexpected version %q", config.Version)
+	}
+}
+
+func TestConfigFromEnvSupportsStorageOverrides(t *testing.T) {
+	t.Setenv("MOLTNET_STORAGE_KIND", storageKindPostgres)
+	t.Setenv("MOLTNET_POSTGRES_DSN", "postgres://moltnet:test@localhost:5432/moltnet?sslmode=disable")
+
+	config, err := ConfigFromEnv("1.2.3")
+	if err != nil {
+		t.Fatalf("ConfigFromEnv() error = %v", err)
+	}
+	if config.Storage.Kind != storageKindPostgres || config.Storage.Postgres.DSN == "" {
+		t.Fatalf("unexpected env storage %#v", config.Storage)
+	}
+}
+
+func TestConfigFromEnvSupportsJSONPathAliases(t *testing.T) {
+	t.Setenv("MOLTNET_JSON_PATH", "/tmp/from-json-path.json")
+	config, err := ConfigFromEnv("1.2.3")
+	if err != nil {
+		t.Fatalf("ConfigFromEnv() error = %v", err)
+	}
+	if config.Storage.Kind != storageKindJSON || config.Storage.JSON.Path != "/tmp/from-json-path.json" {
+		t.Fatalf("unexpected json-path storage %#v", config.Storage)
+	}
+
+	t.Setenv("MOLTNET_JSON_PATH", "")
+	t.Setenv("MOLTNET_DATA_PATH", "/tmp/from-data-path.json")
+	config, err = ConfigFromEnv("1.2.3")
+	if err != nil {
+		t.Fatalf("ConfigFromEnv() second error = %v", err)
+	}
+	if config.Storage.Kind != storageKindJSON || config.Storage.JSON.Path != "/tmp/from-data-path.json" {
+		t.Fatalf("unexpected data-path storage %#v", config.Storage)
+	}
+}
+
 func TestConfigFromEnv(t *testing.T) {
 	t.Setenv("MOLTNET_ALLOW_HUMAN_INGRESS", "false")
 	t.Setenv("MOLTNET_REQUIRE_PAIR_NETWORK_BINDING", "true")

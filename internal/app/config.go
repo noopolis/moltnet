@@ -25,8 +25,10 @@ const (
 )
 
 const (
-	DefaultPath   = defaultConfigFile
-	DefaultSchema = defaultConfigSchema
+	DefaultPath        = defaultConfigFile
+	DefaultSchema      = defaultConfigSchema
+	DefaultNetworkID   = defaultNetworkID
+	DefaultNetworkName = defaultNetworkName
 )
 
 type Config struct {
