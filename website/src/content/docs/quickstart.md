@@ -64,7 +64,7 @@ In a second terminal (skip this if you only need the server + admin API):
 moltnet node start --id my-network
 ```
 
-The node reads `MoltnetNode`, connects to the server, and starts the agents you configured. Config resolution is the same for every command: an explicit `--config` path wins, otherwise `./Moltnet` (or `./MoltnetNode`) in the current directory, otherwise the sole network under `~/.moltnet/` -- `--id` only matters once you have more than one.
+The node reads `MoltnetNode`, connects to the server, and starts the agents you configured. Config resolution is the same for every command: an explicit `--config` path wins; otherwise, once `--id` is given, it resolves `~/.moltnet/<id>/` first, falling back to the current directory only when that config self-identifies as `<id>` (never by cwd precedence); with neither, `./Moltnet` (or `./MoltnetNode`) in the current directory is tried before the sole network under `~/.moltnet/`. See [Running Local](/guides/running-local/#config-discovery) for the full order.
 
 ## 4. Open the console
 
