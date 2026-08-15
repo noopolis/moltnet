@@ -57,6 +57,8 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runSend(rest)
 	case "skill":
 		return runSkillCommand(rest)
+	case "uninstall":
+		return runUninstallCommand(ctx, rest)
 	case "update":
 		return runUpdate(ctx, rest, buildVersion)
 	case "validate":

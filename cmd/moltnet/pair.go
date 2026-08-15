@@ -130,8 +130,12 @@ func maybeRestartService(ctx context.Context, networkID string, restart bool) (b
 // isInteractive reports whether standard input is attached to a terminal.
 // It backs the "offer only if trivially detectable" clause of PLAN.md
 // phase 4 item 3: an interactive session gets a --restart tip printed;
-// a non-interactive one (scripts, CI, the e2e harness) does not.
-func isInteractive() bool {
+// a non-interactive one (scripts, CI, the e2e harness) does not. It is also
+// the gate `moltnet uninstall` uses before prompting for confirmation. It
+// is a var, not a plain func, so tests (see cmd/moltnet/uninstall_test.go)
+// can force the confirmation-prompt path without a real terminal attached
+// to stdin — go test's own stdin never is one.
+var isInteractive = func() bool {
 	fd := os.Stdin.Fd()
 	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
 }

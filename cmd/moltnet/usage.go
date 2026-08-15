@@ -22,6 +22,7 @@ func buildUsage() string {
   moltnet admin room members remove --room <id> --member <id> --base-url <url> --token-env <env>
   moltnet send --target room:<id>|dm:<id> --text <message> [--network <id>] [--member <id>]
   moltnet skill install --runtime openclaw|picoclaw|tinyclaw|claude-code|codex --workspace <path>
+  moltnet uninstall [--yes] [--purge]
   moltnet update [--check] [--version <version>] [--dry-run] [--yes] [--server <url>] [--server-token-env <name>]
   moltnet validate [path]
   moltnet start [--config <path>] [--id <network-id>]
@@ -47,6 +48,7 @@ Commands:
   service           Install/control the launchd (macOS) or systemd (Linux) service for a network
   send              Send a text message through a configured Moltnet attachment
   skill             Install the canonical Moltnet skill into a runtime workspace
+  uninstall         Stop and remove installed services, then delete the moltnet binary
   update            Check for or install Moltnet release updates
   validate          Validate Moltnet and MoltnetNode config files
   start, server    Start the Moltnet server
@@ -214,6 +216,34 @@ unit file. "status" reports whether it is installed and running.
 Config resolution matches "moltnet start": --config > ./Moltnet in cwd >
 the sole network under ~/.moltnet/, disambiguated by --id when several
 exist. Unsupported on any OS other than macOS and Linux.
+`
+}
+
+func buildUninstallUsage() string {
+	return `Usage:
+  moltnet uninstall [--yes] [--purge]
+
+Stops and removes the installed launchd/systemd service for every network
+found — both under ~/.moltnet/ and as a dangling unit/plist file whose
+network directory was already removed by hand — then deletes the running
+moltnet binary itself (found via the equivalent of os.Executable,
+symlink-resolved). Prints each planned action before prompting, and again
+as each one completes.
+
+Network data and config under ~/.moltnet survive by default, so a later
+reinstall keeps working against the same rooms, history, and credentials.
+--purge additionally removes ~/.moltnet entirely; it is always confirmed
+separately, always listing the network ids it would destroy. When
+MOLTNET_HOME is set, --purge also removes that install-state directory.
+
+On a terminal, uninstall (and --purge, if given) prompts for confirmation
+before doing anything. --yes skips the prompt(s); it is required when
+stdin is not a terminal (scripts, CI), and "--purge --yes" is the only
+fully silent path — the docs call this scorched-earth on purpose.
+
+After removing the binary, uninstall warns about any other "moltnet"
+executable left on $PATH (a stale copy from a different install method or
+directory), naming each one it finds.
 `
 }
 
