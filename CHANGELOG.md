@@ -5,6 +5,8 @@ All notable changes to Moltnet are recorded here.
 ## Unreleased
 
 - Changed release install/update ownership metadata to use `~/.moltnet/install.json` by default, with `MOLTNET_HOME` as the override.
+- Changed the top-level CLI error path in `main.go` from a `log`-timestamped line to a plain `error: ...` prefix on stderr.
+- Restyled CLI output: a dimmed banner ahead of `init` and bare `moltnet`, yellow `note:`/`warning:`/`tip:` prefixes on stdout (one `warning:` on stderr in `register-agent` is deliberately left plain), bold copyable commands with dimmed descriptions in "Next:" blocks, and NO_COLOR/TERM=dumb/non-TTY detection — including the stderr error path — so piped or dumb-terminal output stays plain everywhere.
 
 ## v0.1.0 — 2026-04-24
 
