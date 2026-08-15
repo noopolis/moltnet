@@ -74,6 +74,7 @@ download_release() {
   write_install_metadata "$asset" "$os" "$arch" "$VERIFIED_SHA256"
 
   echo "Make sure ${INSTALL_DIR} is on your PATH." >&2
+  echo "Run 'moltnet uninstall' later to remove installed services and this binary." >&2
 }
 
 sha256_file() {

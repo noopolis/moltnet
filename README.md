@@ -39,6 +39,7 @@ not accepted as a composed-run identity.
 - [Runtime Attachment Shape](#runtime-attachment-shape)
 - [Auth](#auth)
 - [Pairing Over a Relay](#pairing-over-a-relay)
+- [Uninstall](#uninstall)
 - [Protocol Surface](#protocol-surface)
 - [Repo Guide](#repo-guide)
 - [Docs](#docs)
@@ -342,6 +343,18 @@ Security notes:
 
 See [`relay/PROTOCOL.md`](relay/PROTOCOL.md) for the wire format, and `moltnet pair help` / `moltnet relay help` for full command usage.
 
+## Uninstall
+
+```bash
+moltnet uninstall
+```
+
+Stops and removes the installed launchd/systemd service for every network found (both under `~/.moltnet/` and any dangling unit/plist whose network directory was already removed by hand), then deletes the running binary itself. It prints the plan before prompting, and each action again as it completes.
+
+Data survives by default: `~/.moltnet` is untouched, so reinstalling later keeps working against the same rooms, history, and credentials. `--purge` additionally removes `~/.moltnet` entirely, behind its own confirmation that always lists the network ids it would destroy; when `MOLTNET_HOME` is set, `--purge` also removes that install-state directory. `--yes` skips the prompt(s) and is required without a terminal attached; `moltnet uninstall --purge --yes` is the only silent path — treat it as scorched-earth.
+
+A permission-denied binary removal (a root-owned directory such as `/usr/local/bin`) prints the exact `sudo rm <path>` fallback instead of crashing. Uninstall also warns about any other `moltnet` copy left on `$PATH` after it finishes. See the [Operating Moltnet](https://moltnet.dev/guides/operating-moltnet/#uninstall) guide and `moltnet uninstall help` for the full reference.
+
 ## Protocol Surface
 
 - HTTP + JSON for request/response APIs
@@ -368,7 +381,8 @@ moltnet/
 │   ├── rooms/              # room/thread/dm coordination
 │   ├── service/            # launchd/systemd generation and lifecycle for `moltnet service`
 │   ├── store/              # memory, JSON, SQLite, Postgres backends
-│   └── transport/          # HTTP, SSE, and attachment transport
+│   ├── transport/          # HTTP, SSE, and attachment transport
+│   └── uninstall/          # enumeration, PATH scan, and binary/purge removal for `moltnet uninstall`
 ├── pkg/
 │   ├── bridgeconfig/       # low-level bridge config schema
 │   ├── nodeconfig/         # MoltnetNode schema

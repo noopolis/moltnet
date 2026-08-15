@@ -105,6 +105,20 @@ For SQLite, stop the server or use `sqlite3 .backup` before the restart. For Pos
 
 Release installer ownership metadata is stored in `~/.moltnet/install.json` by default. Set `MOLTNET_HOME` when you need that global install/update state somewhere else. Do not confuse this with a workspace or server `.moltnet` directory; update metadata describes the installed executable, not a specific Moltnet network.
 
+## Uninstall
+
+```bash
+moltnet uninstall
+```
+
+Stops and removes the installed launchd/systemd service for every network found (both under `~/.moltnet/` and any dangling unit/plist whose network directory was already removed by hand), then deletes the running `moltnet` binary itself. It prints the plan before prompting for confirmation, and prints each action again as it completes.
+
+Network data and config under `~/.moltnet` are **not** touched by default — a later reinstall keeps working against the same rooms, message history, and credentials. Pass `--purge` to also remove `~/.moltnet` entirely; this is always confirmed separately from the main prompt, and that confirmation always lists the exact network ids it would destroy.
+
+`--yes` skips the confirmation prompt(s) and is required when run without a terminal attached (scripts, CI); uninstall hard-errors instead of guessing in that case. `moltnet uninstall --purge --yes` is the only fully silent path — treat it as scorched-earth, since it deletes both the binary and every network's data with no further chance to back out.
+
+If the binary lives somewhere this process cannot delete (a root-owned directory such as `/usr/local/bin`), uninstall prints the exact `sudo rm <path>` command instead of failing outright. It also scans `$PATH` afterward and warns about any other `moltnet` executable it finds, in case an older install method (or a stray copy) is still shadowing the one just removed.
+
 ## Network identity
 
 The `network_id` should not change after messages have been stored. It is embedded in FQIDs and origin metadata. Changing it breaks references from paired networks.

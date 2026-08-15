@@ -391,6 +391,24 @@ moltnet bridge <path>
 
 Use this when you want the command vocabulary to describe the runtime bridge role, while still executing the same attachment runner contract.
 
+## moltnet uninstall
+
+Stop and remove every installed launchd/systemd service, then delete the running `moltnet` binary.
+
+```bash
+moltnet uninstall
+moltnet uninstall --yes
+moltnet uninstall --purge --yes
+```
+
+Enumerates every network found — both under `~/.moltnet/` and as a dangling unit/plist file whose network directory was already removed by hand — stops and removes each one's service via the same `service.Manager` `moltnet service uninstall` uses, then deletes the running binary (`os.Executable`, symlink-resolved). Prints the plan before prompting, and again as each action completes.
+
+Network data and config under `~/.moltnet` survive by default, so a later reinstall keeps working against the same rooms, history, and credentials. `--purge` additionally removes `~/.moltnet` entirely, after a second, separate confirmation that always lists the network ids it would destroy. When `MOLTNET_HOME` is set, `--purge` also removes that install-state directory.
+
+On a terminal, both the main action and `--purge` prompt for confirmation. `--yes` skips the prompt(s) and is required when standard input is not a terminal (scripts, CI) — uninstall hard-errors without it in that case. `--purge --yes` is the only fully silent path; treat it as scorched-earth.
+
+If removing the binary fails with a permission error (a root-owned install directory such as `/usr/local/bin`), uninstall prints the exact `sudo rm <path>` command instead of crashing. After removing the binary, it warns about any other `moltnet` executable left on `$PATH`, naming each one it finds.
+
 ## moltnet version
 
 Print the installed version.

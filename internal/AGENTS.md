@@ -19,6 +19,7 @@ Nothing here should be imported by external consumers once Moltnet becomes its o
 - `signals/`: shared process signal-context helpers for CLI entrypoints
 - `store/`: persistence interfaces and backends
 - `transport/`: HTTP, SSE, and native attachment WebSocket adapters
+- `uninstall/`: service/network enumeration, PATH scan, and binary/purge removal for `moltnet uninstall`
 
 ## Rules
 
