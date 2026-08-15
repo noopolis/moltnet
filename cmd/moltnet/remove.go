@@ -279,28 +279,54 @@ func resolveAdminClient(flags *flag.FlagSet, options *adminClientOptions) (*molt
 		NetworkID: strings.TrimSpace(options.networkID),
 	}
 
-	if strings.TrimSpace(options.configPath) != "" || attachment.BaseURL == "" {
+	explicitClientConfig := strings.TrimSpace(options.configPath) != ""
+	if explicitClientConfig || attachment.BaseURL == "" {
 		config, _, err := loadClientConfig(options.configPath)
-		if err != nil {
+		switch {
+		case err == nil:
+			resolved, resolveErr := config.ResolveAttachmentFor(options.networkID, options.memberID)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			if attachment.BaseURL == "" {
+				attachment.BaseURL = resolved.BaseURL
+			}
+			if attachment.MemberID == "" {
+				attachment.MemberID = resolved.MemberID
+			}
+			if attachment.NetworkID == "" {
+				attachment.NetworkID = resolved.NetworkID
+			}
+			sourceExplicit := flagWasSet(flags, "token") ||
+				flagWasSet(flags, "token-env") ||
+				flagWasSet(flags, "token-path")
+			attachment.Auth = mergeAuthFromConfig(resolved.Auth, attachment.Auth, flagWasSet(flags, "auth-mode"), sourceExplicit)
+		case explicitClientConfig:
 			return nil, err
+		default:
+			// No client config (.moltnet/config.json) on disk. Before giving
+			// up, fall back to the local Moltnet *server* config (PLAN.md
+			// phase 4's shared config resolution), deriving --base-url and an
+			// admin-scoped token from it — --network doubles as the network
+			// id to disambiguate ~/.moltnet/ when several networks exist,
+			// exactly like start/pair/relay's --id.
+			if attachment.BaseURL == "" {
+				derived, ok, derivedErr := resolveAdminFromServerConfig(options.networkID)
+				if derivedErr != nil {
+					return nil, derivedErr
+				}
+				if ok {
+					attachment.BaseURL = derived.BaseURL
+					if attachment.NetworkID == "" {
+						attachment.NetworkID = derived.NetworkID
+					}
+					sourceExplicit := flagWasSet(flags, "token") ||
+						flagWasSet(flags, "token-env") ||
+						flagWasSet(flags, "token-path")
+					attachment.Auth = mergeAuthFromConfig(derived.Auth, attachment.Auth, flagWasSet(flags, "auth-mode"), sourceExplicit)
+				}
+			}
 		}
-		resolved, err := config.ResolveAttachmentFor(options.networkID, options.memberID)
-		if err != nil {
-			return nil, err
-		}
-		if attachment.BaseURL == "" {
-			attachment.BaseURL = resolved.BaseURL
-		}
-		if attachment.MemberID == "" {
-			attachment.MemberID = resolved.MemberID
-		}
-		if attachment.NetworkID == "" {
-			attachment.NetworkID = resolved.NetworkID
-		}
-		sourceExplicit := flagWasSet(flags, "token") ||
-			flagWasSet(flags, "token-env") ||
-			flagWasSet(flags, "token-path")
-		attachment.Auth = mergeAuthFromConfig(resolved.Auth, attachment.Auth, flagWasSet(flags, "auth-mode"), sourceExplicit)
 	}
 
 	if attachment.BaseURL == "" {

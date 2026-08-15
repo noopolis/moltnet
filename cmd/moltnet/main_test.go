@@ -14,6 +14,8 @@ import (
 var processStateMu sync.Mutex
 
 func TestRunStartsServerByDefault(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(t.TempDir())
 	t.Setenv("MOLTNET_LISTEN_ADDR", "127.0.0.1:0")
 	t.Setenv("MOLTNET_NETWORK_ID", "local")
 	t.Setenv("MOLTNET_NETWORK_NAME", "Local")
@@ -27,6 +29,8 @@ func TestRunStartsServerByDefault(t *testing.T) {
 }
 
 func TestRunStartsServerExplicitly(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(t.TempDir())
 	t.Setenv("MOLTNET_LISTEN_ADDR", "127.0.0.1:0")
 	t.Setenv("MOLTNET_NETWORK_ID", "local")
 	t.Setenv("MOLTNET_NETWORK_NAME", "Local")
@@ -40,6 +44,8 @@ func TestRunStartsServerExplicitly(t *testing.T) {
 }
 
 func TestRunStartsServerAlias(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(t.TempDir())
 	t.Setenv("MOLTNET_LISTEN_ADDR", "127.0.0.1:0")
 	t.Setenv("MOLTNET_NETWORK_ID", "local")
 	t.Setenv("MOLTNET_NETWORK_NAME", "Local")
@@ -273,12 +279,14 @@ func TestRunAttachmentErrorsWhenFileMissing(t *testing.T) {
 func TestRunServerErrorsOnInvalidConfigPath(t *testing.T) {
 	t.Setenv("MOLTNET_CONFIG", filepath.Join(t.TempDir(), "missing.yaml"))
 
-	if err := runServer(context.Background(), "test"); err == nil {
+	if err := runServer(context.Background(), nil, "test"); err == nil {
 		t.Fatal("expected runServer error for invalid config path")
 	}
 }
 
 func TestRunCLIWithSignals(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Chdir(t.TempDir())
 	t.Setenv("MOLTNET_LISTEN_ADDR", "127.0.0.1:0")
 	t.Setenv("MOLTNET_NETWORK_ID", "local")
 	t.Setenv("MOLTNET_NETWORK_NAME", "Local")

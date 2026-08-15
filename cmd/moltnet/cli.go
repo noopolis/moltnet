@@ -24,7 +24,7 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		fmt.Fprint(stdout, buildUsage())
 		return nil
 	case "", "start", "server":
-		return runServer(ctx, buildVersion)
+		return runServer(ctx, rest, buildVersion)
 	case "admin":
 		return runAdminCommand(rest)
 	case "apply":
@@ -41,6 +41,12 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runMachine(ctx, rest)
 	case "machine-contract":
 		return runMachineContract(rest)
+	case "pair":
+		return runPairCommand(ctx, rest)
+	case "relay":
+		return runRelayCommand(rest)
+	case "service":
+		return runServiceCommand(ctx, rest)
 	case "participants":
 		return runParticipants(rest)
 	case "read":

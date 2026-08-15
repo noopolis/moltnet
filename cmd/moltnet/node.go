@@ -3,29 +3,43 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"os"
 
+	"github.com/noopolis/moltnet/internal/app"
 	"github.com/noopolis/moltnet/internal/node"
 	"github.com/noopolis/moltnet/pkg/nodeconfig"
 )
 
+// runNode implements `moltnet node [path]` / `moltnet node start [path]`.
+// Config resolution follows the same shared explicit > ./MoltnetNode in cwd
+// > sole network under ~/.moltnet/ order as the server config
+// (app.ResolveNodeConfigPath), disambiguated by --id when several networks
+// exist.
 func runNode(ctx context.Context, args []string) error {
-	explicitPath := ""
-	if len(args) > 1 {
+	flags := flag.NewFlagSet("moltnet node", flag.ContinueOnError)
+	flags.SetOutput(stdout)
+	id := flags.String("id", "", "network id to select under ~/.moltnet when several exist")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() > 1 {
 		return os.ErrInvalid
 	}
-	if len(args) == 1 {
-		explicitPath = args[0]
+
+	explicitPath := ""
+	if flags.NArg() == 1 {
+		explicitPath = flags.Arg(0)
 	}
 	if envPath := os.Getenv("MOLTNET_NODE_CONFIG"); explicitPath == "" && envPath != "" {
 		explicitPath = envPath
 	}
 
-	path, ok, err := nodeconfig.DiscoverPath(explicitPath)
+	path, found, err := app.ResolveNodeConfigPath(explicitPath, *id)
 	if err != nil {
 		return err
 	}
-	if !ok {
+	if !found {
 		return errors.New("MoltnetNode config not found")
 	}
 
