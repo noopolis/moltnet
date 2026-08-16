@@ -208,7 +208,12 @@ invite_output="$(
 		--room "$room_id" \
 		--config "$config_a" 2>&1 | tee "$run_dir/pair-invite.log"
 )"
-invite_code="$(printf '%s\n' "$invite_output" | grep -o 'moltnet-invite:[^[:space:]]*' | head -n1)"
+# The aftercare printer now prints the invite as one paste-safe, single-
+# quoted command -- `moltnet pair '<code>'` (cmd/moltnet/pair_aftercare.go)
+# -- rather than the bare code on its own line, so the extraction must stop
+# at a closing single quote too, not just whitespace, or the trailing `'`
+# ends up appended to the invite and fails base64 decoding on side B.
+invite_code="$(printf '%s\n' "$invite_output" | grep -o "moltnet-invite:[^[:space:]']*" | head -n1)"
 if [[ -z "$invite_code" ]]; then
 	log "'moltnet pair invite' did not print an invite code"
 	exit 1

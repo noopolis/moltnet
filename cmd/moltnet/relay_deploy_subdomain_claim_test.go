@@ -115,7 +115,7 @@ func TestRunRelayDeployInteractiveSubdomainClaimExhaustsAttemptsFallsBackToGuida
 	if !strings.Contains(output, buildWorkersDevSubdomainGuidance("acme-net")) {
 		t.Fatalf("expected the dashboard guidance once both claim attempts failed, got %q", output)
 	}
-	if strings.Contains(output, `deployed relay Worker`) {
+	if strings.Contains(output, "relay live") {
 		t.Fatalf("expected no successful deploy, got %q", output)
 	}
 }

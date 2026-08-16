@@ -51,8 +51,11 @@ func TestRunServiceCommandLifecycle(t *testing.T) {
 			t.Fatalf("service install error = %v", err)
 		}
 	})
-	if !strings.Contains(install, "installed and started") || !strings.Contains(install, "acme") {
+	if !strings.Contains(install, "✓ service running") || !strings.Contains(install, "acme") {
 		t.Fatalf("unexpected install output %q", install)
+	}
+	if !strings.Contains(install, "next:") || !strings.Contains(install, "relay deploy") {
+		t.Fatalf("expected a next: nudge toward relay deploy, got %q", install)
 	}
 
 	status := captureStdout(t, func() {
@@ -60,7 +63,7 @@ func TestRunServiceCommandLifecycle(t *testing.T) {
 			t.Fatalf("service status error = %v", err)
 		}
 	})
-	if !strings.Contains(status, "installed") {
+	if !strings.Contains(status, "running") {
 		t.Fatalf("unexpected status output %q", status)
 	}
 
@@ -69,7 +72,7 @@ func TestRunServiceCommandLifecycle(t *testing.T) {
 			t.Fatalf("service start error = %v", err)
 		}
 	})
-	if !strings.Contains(start, "started the moltnet service") {
+	if !strings.Contains(start, "✓ service started") {
 		t.Fatalf("unexpected start output %q", start)
 	}
 
@@ -78,7 +81,7 @@ func TestRunServiceCommandLifecycle(t *testing.T) {
 			t.Fatalf("service stop error = %v", err)
 		}
 	})
-	if !strings.Contains(stop, "stopped the moltnet service") {
+	if !strings.Contains(stop, "✓ service stopped") {
 		t.Fatalf("unexpected stop output %q", stop)
 	}
 
@@ -87,7 +90,7 @@ func TestRunServiceCommandLifecycle(t *testing.T) {
 			t.Fatalf("service uninstall error = %v", err)
 		}
 	})
-	if !strings.Contains(uninstall, "uninstalled the moltnet service") {
+	if !strings.Contains(uninstall, "✓ service removed") {
 		t.Fatalf("unexpected uninstall output %q", uninstall)
 	}
 }

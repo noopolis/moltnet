@@ -342,7 +342,7 @@ func TestRunUninstallCommandRejectsPositionalArgs(t *testing.T) {
 // identical on every invocation regardless of isOutputTerminal. It mirrors
 // style_test.go's alignmentInvariantCase, adapted to the uninstall summary
 // path (printUninstallPlan, printUninstallCheck, buildPurgeConfirmationPrompt,
-// printPurgeResult) instead of printInitSummary/printNextSteps.
+// printPurgeResult) instead of printInitSummary/printNextStep.
 func uninstallSummaryInvariantCase(t *testing.T) string {
 	t.Helper()
 	return captureStdout(t, func() {

@@ -44,6 +44,7 @@ func runRelayDeploy(args []string) error {
 		forgetToken = flags.Bool("forget-token", false, "delete the Cloudflare API token stored at .moltnet/cloudflare.json and exit without deploying")
 		configPath  = flags.String("config", "", "Moltnet config path")
 		id          = flags.String("id", "", "network id to select under ~/.moltnet when several exist")
+		verboseFlag = flags.Bool("verbose", false, "print full detail: per-step checkmarks, stored-token source, credential paths, the rotation warning")
 	)
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -54,6 +55,7 @@ func runRelayDeploy(args []string) error {
 	if *saveToken && *forgetToken {
 		return fmt.Errorf("--save-token and --forget-token cannot be used together")
 	}
+	verbose := *verboseFlag
 
 	// Validated before any config load or output, including the "Deploying
 	// relay for <id>" header below: --token-env naming an empty/unset
@@ -156,8 +158,10 @@ func runRelayDeploy(args []string) error {
 	var storedTokenPathForDeploy string
 	if tokenSource == cloudflareTokenSourceStored {
 		storedTokenPathForDeploy = tokenPath
-		sections.start()
-		fmt.Fprintln(stdout, dim(fmt.Sprintf("  using stored Cloudflare API token from %s", abbreviateHome(tokenPath))))
+		if verbose {
+			sections.start()
+			fmt.Fprintln(stdout, dim(fmt.Sprintf("  using stored Cloudflare API token from %s", abbreviateHome(tokenPath))))
+		}
 	}
 
 	// Only reuse a stored relay token when it belongs to this same --name: a
@@ -180,7 +184,9 @@ func runRelayDeploy(args []string) error {
 		ResolveHostname: resolveRelayDeployHostname,
 		StoredTokenPath: storedTokenPathForDeploy,
 	}
+	deploySpinner := startSpinner("deploying relay…")
 	result, err := relaydeploy.Deploy(ctx, client, deployOpts)
+	deploySpinner.Stop()
 	var claimedSubdomainName string
 	var claimPropagationPending bool
 	if err != nil && errors.Is(err, relaydeploy.ErrWorkersDevSubdomainUnclaimed) && isInteractive() && isOutputTerminal() {
@@ -197,7 +203,9 @@ func runRelayDeploy(args []string) error {
 			// The claim succeeded; re-run Deploy in full rather than trying
 			// to resume mid-flight — see attemptInteractiveWorkersDevSubdomainClaim's
 			// doc comment for why that's the simplest correct choice here.
+			redeploySpinner := startSpinner("deploying relay…")
 			result, err = relaydeploy.Deploy(ctx, client, deployOpts)
+			redeploySpinner.Stop()
 		} else {
 			claimPropagationPending = pending
 		}
@@ -247,29 +255,34 @@ func runRelayDeploy(args []string) error {
 
 	// When a claim just happened, attemptInteractiveWorkersDevSubdomainClaim
 	// already opened this results block with its own "✓ claimed ..." line
-	// (and its own leading blank line via sections.start()); the ✓ lines
-	// below continue that same block, not a new one.
+	// (and its own leading blank line via sections.start()); the checkmarks
+	// below (verbose only) continue that same block, not a new one.
 	if claimedSubdomainName == "" {
 		sections.start()
 	}
-	printInitConfigCheckLine(fmt.Sprintf("deployed relay Worker %q", result.ScriptName), "")
-	printInitConfigCheckLine("saved relay credentials", abbreviateHome(credentialsPath))
-
-	sections.start()
+	printedStepLines := false
+	if verbose {
+		printInitConfigCheckLine(fmt.Sprintf("deployed relay Worker %q", result.ScriptName), "")
+		printInitConfigCheckLine("saved relay credentials", abbreviateHome(credentialsPath))
+		printedStepLines = true
+	}
+	if claimedSubdomainName != "" || printedStepLines {
+		sections.start()
+	}
 	// P2-3: the relay URL itself must stay at full contrast — it is the
-	// value an operator copies out of this line — so only the "relay url:"
-	// label is dimmed, not the URL.
-	fmt.Fprintf(stdout, "  %s %s\n", dim("relay url:"), result.URL)
+	// value an operator copies out of this line — so it is never dimmed or
+	// abbreviated, unlike the "extra" column printInitConfigCheckLine dims.
+	fmt.Fprintf(stdout, "  %s relay live   %s\n", green("✓"), result.URL)
 	if !result.HostnameResolved {
 		// P2-5: name the detected hostname itself, not just the generic
 		// "DNS can take a few minutes" reason — the guide's own prose
 		// ("it says so") promises this note names what isn't resolving yet.
+		// A detected condition, so it always prints, --verbose or not.
 		fmt.Fprintf(stdout, "    %s %s is not resolving yet — workers.dev DNS can take a few minutes; retry `moltnet pair invite` shortly if it fails\n", yellow("note:"), result.Hostname)
 	}
-	// P3: this warning is about --token-env / rotation in general, not about
-	// the relay url line above it, so it sits at the same top-level indent
-	// as "relay url:" rather than nested under it.
-	fmt.Fprintf(stdout, "  %s rotating RELAY_TOKEN (redeploying with a new --token-env value) breaks every pairing on this relay at once\n", yellow("warning:"))
+	if verbose {
+		fmt.Fprintf(stdout, "  %s rotating RELAY_TOKEN (redeploying with a new --token-env value) breaks every pairing on this relay at once\n", yellow("warning:"))
+	}
 
 	switch tokenSource {
 	case cloudflareTokenSourceEnv:
@@ -280,8 +293,9 @@ func runRelayDeploy(args []string) error {
 		// The token this deploy used already lives at tokenPath (that's what
 		// "stored" means); --save-token has nothing new to persist. Say so
 		// instead of silently doing nothing, so the flag never looks like it
-		// was ignored.
-		if *saveToken {
+		// was ignored — a --verbose-only note, since it is informational,
+		// not actionable.
+		if *saveToken && verbose {
 			sections.start()
 			fmt.Fprintf(stdout, "  %s token already stored at %s; nothing to save\n", yellow("note:"), abbreviateHome(tokenPath))
 		}

@@ -135,7 +135,7 @@ func TestRunPairJoinRestartWithoutManagedServiceWarnsInsteadOfErroring(t *testin
 	if !strings.Contains(joinOutput, "restart the Moltnet server for this pairing to take effect") {
 		t.Fatalf("expected the manual-restart reminder alongside the warning in output %q", joinOutput)
 	}
-	if !strings.Contains(joinOutput, "You're paired with alice-net") {
+	if !strings.Contains(joinOutput, "✓ paired with alice-net") {
 		t.Fatalf("expected the rest of aftercare to still print in full, got %q", joinOutput)
 	}
 	if !strings.Contains(joinOutput, "admin room members add") {
@@ -211,8 +211,8 @@ func TestRunPairInviteRestartFailurePrintsCodeThenErrors(t *testing.T) {
 	if !strings.Contains(output, "warning:") {
 		t.Fatalf("expected the restart failure to also print inline as a warning, got %q", output)
 	}
-	if !strings.Contains(output, "Then:") {
-		t.Fatalf("expected the rest of aftercare (Then: sequence) to still print, got %q", output)
+	if !strings.Contains(output, "share this with your friend") {
+		t.Fatalf("expected the rest of aftercare (the share paragraph) to still print after the warning, got %q", output)
 	}
 
 	config, err := app.LoadConfigForPath(path, "1.0.0")
@@ -328,11 +328,14 @@ func TestRunPairInviteRestartPrintsCodeAndRestartConfirmation(t *testing.T) {
 		t.Fatalf("expected restart confirmation in output %q", output)
 	}
 
-	// The code must stand alone on its own line, with a blank line
-	// immediately before and after it — never run together with the
-	// status lines or the "Then:" guidance, which is what made it easy to
-	// miss in the field report this test guards against.
-	codeLine := "    " + code
+	// The invite command must stand alone on its own line, with a blank
+	// line immediately before and after it — never run together with the
+	// status lines or the next: guidance, which is what made a bare code
+	// easy to miss in the field report this test originally guarded
+	// against; rule 4 of the quiet-by-default redesign folded the code
+	// into one copyable `moltnet pair '<code>'` command, so this now looks
+	// for that whole line rather than the bare code.
+	codeLine := "    moltnet pair '" + code + "'"
 	lines := strings.Split(output, "\n")
 	found := false
 	for i, line := range lines {
@@ -341,13 +344,13 @@ func TestRunPairInviteRestartPrintsCodeAndRestartConfirmation(t *testing.T) {
 		}
 		found = true
 		if i == 0 || lines[i-1] != "" {
-			t.Fatalf("invite code line has no blank line before it: %q", output)
+			t.Fatalf("invite command line has no blank line before it: %q", output)
 		}
 		if i+1 >= len(lines) || lines[i+1] != "" {
-			t.Fatalf("invite code line has no blank line after it: %q", output)
+			t.Fatalf("invite command line has no blank line after it: %q", output)
 		}
 	}
 	if !found {
-		t.Fatalf("invite code not found as its own indented line in output: %q", output)
+		t.Fatalf("invite command not found as its own indented line in output: %q", output)
 	}
 }

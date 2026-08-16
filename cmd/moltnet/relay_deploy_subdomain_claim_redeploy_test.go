@@ -56,7 +56,7 @@ func TestRunRelayDeployInteractiveSubdomainClaimThenRedeploySucceeds(t *testing.
 	if !strings.Contains(output, `claimed workers.dev subdomain "apresmoi"`) {
 		t.Fatalf("expected a claim confirmation, got %q", output)
 	}
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
+	if !strings.Contains(output, "relay live") {
 		t.Fatalf("expected the redeploy after claiming to succeed, got %q", output)
 	}
 	if strings.Contains(output, buildWorkersDevSubdomainGuidance("acme-net")) {
@@ -98,7 +98,7 @@ func TestRunRelayDeployInteractiveSubdomainClaimViaSubdomainCheckThenRedeploySuc
 	if !strings.Contains(output, `claimed workers.dev subdomain "apresmoi"`) {
 		t.Fatalf("expected a claim confirmation (proof the claim PUT reached the real account, not an empty account id), got %q", output)
 	}
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
+	if !strings.Contains(output, "relay live") {
 		t.Fatalf("expected the redeploy after claiming to succeed, got %q", output)
 	}
 	if strings.Contains(output, buildWorkersDevSubdomainGuidance("acme-net")) {
@@ -172,7 +172,7 @@ func TestRunRelayDeploySubdomainClaimPropagationLagPrintsOnlySpecificGuidance(t 
 	if strings.Contains(output, buildWorkersDevSubdomainGuidance("acme-net")) {
 		t.Fatalf("expected no contradictory generic 'has not claimed one yet' guidance, got %q", output)
 	}
-	if strings.Contains(output, `deployed relay Worker`) {
+	if strings.Contains(output, "relay live") {
 		t.Fatalf("expected no successful deploy, got %q", output)
 	}
 }
@@ -210,7 +210,7 @@ func TestRunRelayDeployInteractiveSubdomainClaimRedeployReusesPriorToken(t *test
 			t.Fatalf("run() relay deploy error = %v", err)
 		}
 	})
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
+	if !strings.Contains(output, "relay live") {
 		t.Fatalf("expected the claim-then-redeploy to succeed, got %q", output)
 	}
 
@@ -261,7 +261,7 @@ func TestRunRelayDeployThreePromptEndToEnd(t *testing.T) {
 	if !strings.Contains(output, `claimed workers.dev subdomain "apresmoi"`) {
 		t.Fatalf("expected the claim to succeed, got %q", output)
 	}
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
+	if !strings.Contains(output, "relay live") {
 		t.Fatalf("expected the redeploy after claiming to succeed, got %q", output)
 	}
 	if !strings.Contains(output, saveOfferPrompt) {

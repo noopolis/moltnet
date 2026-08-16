@@ -39,14 +39,14 @@ func TestStyleColorsWhenTerminalAndNoColorUnset(t *testing.T) {
 
 	output := captureStdout(t, func() {
 		printBanner()
-		printNextSteps([]nextStep{{command: "moltnet service install --id acme", description: "run it as a service"}})
+		printNextStep(nextStep{command: "moltnet service install --id acme", description: "run it as a service"})
 	})
 
 	if !strings.Contains(output, ansiDim) {
 		t.Fatalf("output = %q, want a dim escape code from the banner", output)
 	}
 	if !strings.Contains(output, ansiBold) {
-		t.Fatalf("output = %q, want a bold escape code from the Next: command", output)
+		t.Fatalf("output = %q, want a bold escape code from the next: command", output)
 	}
 	if !strings.Contains(output, bannerText) {
 		t.Fatalf("output = %q, want the banner wordmark to appear on a terminal", output)
@@ -68,7 +68,7 @@ func TestStyleNoColorEnvKeepsOutputPlain(t *testing.T) {
 
 	output := captureStdout(t, func() {
 		printBanner()
-		printNextSteps([]nextStep{{command: "moltnet service install --id acme", description: "run it as a service"}})
+		printNextStep(nextStep{command: "moltnet service install --id acme", description: "run it as a service"})
 	})
 
 	if !strings.Contains(output, bannerText) {
@@ -92,12 +92,13 @@ func TestStyleBannerHiddenWhenNotTerminal(t *testing.T) {
 	}
 }
 
-// alignmentInvariantCase renders printInitSummary followed by printNextSteps
-// against a fixed initSummary and nextStep set chosen to exercise both
-// column-aligned helpers: printInitConfigCheckLine's "wrote <label>" extra
-// column (init_summary.go) and formatNextStep's command/description column
-// (nextsteps.go), including one command long enough to force the
-// wrapped-description continuation line.
+// alignmentInvariantCase renders printInitSummary (under --verbose, so its
+// per-file "wrote <label>" checkmark lines actually print) followed by
+// printNextStepList against a fixed initSummary and nextStep set chosen to
+// exercise both column-aligned helpers: printInitConfigCheckLine's "wrote
+// <label>" extra column (init_summary.go) and formatNextStepWithPrefix's
+// command/description column (nextsteps.go), including one command long
+// enough to force the wrapped-description continuation line.
 func alignmentInvariantCase(t *testing.T) string {
 	t.Helper()
 	return captureStdout(t, func() {
@@ -110,9 +111,9 @@ func alignmentInvariantCase(t *testing.T) string {
 			nodeCreated:   true,
 			bearer:        true,
 			bearerAdded:   false,
+			verbose:       true,
 		})
-		printNextSteps([]nextStep{
-			{command: "moltnet service install --id acme-friends", description: "run it as a service"},
+		printNextStepList([]nextStep{
 			{
 				command:     "moltnet pair invite --network-id acme-friends --room a-room-id-long-enough-to-force-the-description-to-wrap",
 				description: "invite a friend",
@@ -144,21 +145,19 @@ func relayDeploySummaryAlignmentInvariantCase(t *testing.T) string {
 	return captureStdout(t, func() {
 		printInitConfigCheckLine(`deployed relay Worker "moltnet-relay"`, "")
 		printInitConfigCheckLine("saved relay credentials", "/home/example/.moltnet/acme-friends/.moltnet/relay.json")
-		printNextSteps([]nextStep{
-			{command: "moltnet pair invite --network-id acme-friends --room chat", description: "invite a friend over this relay"},
-		})
+		printNextStep(nextStep{command: "moltnet pair invite --network-id acme-friends --room chat", description: "invite a friend over this relay"})
 	})
 }
 
 // TestAlignmentIsPlainWidthInvariant is the P2-1 regression test: it forces
 // the isOutputTerminal seam to true so printInitConfigCheckLine and
-// formatNextStep take their styled path (NO_COLOR unset), captures their
+// formatNextStepWithPrefix take their styled path (NO_COLOR unset), captures their
 // combined output, strips every ANSI escape code, and asserts the result is
 // byte-identical to the same calls' plain output (isOutputTerminal at its
 // default false, i.e. NO_COLOR/non-TTY) — i.e. that ANSI styling never
 // changes where padding lands, and that stripping it back out is lossless.
 // Column widths in both helpers are computed from the plain (unstyled)
-// prefix by design — see printInitConfigCheckLine's and formatNextStep's doc
+// prefix by design — see printInitConfigCheckLine's and formatNextStepWithPrefix's doc
 // comments — so ANSI codes must never shift where padding lands; this pins
 // that invariant directly rather than relying on it holding by construction.
 // It checks both the `init` summary shape (alignmentInvariantCase) and

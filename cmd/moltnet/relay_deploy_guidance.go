@@ -49,29 +49,25 @@ func buildCloudflareTokenDeepLink(name string) string {
 	)
 }
 
-// printRelayDeployNextSteps prints the "Next:" block a successful `moltnet
-// relay deploy` ends with: a filled-in `pair invite` command for the
-// resolved network, or (P1-4) a re-init nudge when the network is still on
-// the default id, since `pair invite` refuses to run against it (two
+// printRelayDeployNextSteps prints the single "next:" line a successful
+// `moltnet relay deploy` ends with: a filled-in `pair invite` command for
+// the resolved network, or (P1-4) a re-init nudge when the network is still
+// on the default id, since `pair invite` refuses to run against it (two
 // default installs would collide) and printing it here would hand out a
 // command that can never succeed. Split out from runRelayDeploy so the
 // branch can be exercised directly without a real Cloudflare deploy.
 func printRelayDeployNextSteps(networkID string) {
 	if networkID == app.DefaultNetworkID {
-		printNextSteps([]nextStep{
-			{
-				command:     "moltnet init --id <network-id>",
-				description: "re-init with a real network id before pairing",
-			},
+		printNextStep(nextStep{
+			command:     "moltnet init --id <network-id>",
+			description: "re-init with a real network id before pairing",
 		})
 		return
 	}
 
-	printNextSteps([]nextStep{
-		{
-			command:     fmt.Sprintf("moltnet pair invite --network-id %s --room chat", networkID),
-			description: "invite a friend over this relay",
-		},
+	printNextStep(nextStep{
+		command:     fmt.Sprintf("moltnet pair invite --network-id %s --room chat", networkID),
+		description: "invite a friend over this relay",
 	})
 }
 

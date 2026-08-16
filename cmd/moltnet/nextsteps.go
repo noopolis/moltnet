@@ -5,77 +5,56 @@ import (
 	"strings"
 )
 
-// nextStepColumn is the column (0-indexed) description text aligns to in a
-// "Next:" block; a command longer than that wraps its description onto its
-// own continuation line indented to the same column. Shared by every
-// command that ends its output with a "Next:" block (init, relay deploy)
-// so the CLI's aftercare output reads as one consistent design.
+// nextStepColumn is the column (0-indexed) description text aligns to on a
+// "next:" line; a command longer than that wraps its description onto its
+// own continuation line indented to the same column.
 const nextStepColumn = 51
 
-// nextStep is one line of a "Next:" block: a runnable command and a short
+// nextStep is one recommended follow-up: a runnable command and a short
 // description of what it does.
 type nextStep struct {
 	command     string
 	description string
 }
 
-// printNextSteps prints the two-space "Next:" header (preceded by a blank
-// line) followed by each step, column-aligned via formatNextStep. It is a
-// no-op for an empty steps slice, so callers can build the slice
-// conditionally without an extra guard at the call site.
-func printNextSteps(steps []nextStep) {
+// printNextStep prints the CLI's single-recommended-action line: a blank
+// line, then "  next: <command>    <description>", column-aligned via
+// formatNextStepWithPrefix. This is the shape every command in this CLI
+// that ends with a follow-up suggestion uses — the redesigned quiet-by-
+// default UX chains commands single-file (init -> service install -> relay
+// deploy -> pair invite -> the membership command), so there is never more
+// than one genuinely next action to name; a numbered menu of alternatives
+// only made the eye wander over choices that were never really optional.
+func printNextStep(step nextStep) {
+	printNextStepList([]nextStep{step})
+}
+
+// printNextStepList is printNextStep's multi-line counterpart for the one
+// remaining case where more than one command is genuinely required next —
+// not alternatives to choose between, but the same action repeated once per
+// declared shared room (`pair invite --room a --room b`). Each line gets its
+// own "next: " lead-in rather than a shared header, since there is no
+// single header that reads correctly above more than one command here. A
+// no-op for an empty slice, so callers can build it conditionally without
+// an extra guard at the call site.
+func printNextStepList(steps []nextStep) {
 	if len(steps) == 0 {
 		return
 	}
 	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "  Next:")
 	for _, step := range steps {
-		fmt.Fprintln(stdout, formatNextStep(step.command, step.description))
+		fmt.Fprintln(stdout, formatNextStepWithPrefix("  next: ", step.command, step.description))
 	}
 }
 
-// formatNextStep column-aligns one "Next:" line's description to
-// nextStepColumn, wrapping the description onto its own indented
-// continuation line when command itself runs past that column. Width is
-// computed from the plain (unstyled) command, then the command is bolded
-// and the description dimmed for display — so column alignment stays
-// correct whether or not styling is active, and is byte-identical to plain
-// text when it is not (bold/dim are no-ops off a terminal or under
-// NO_COLOR).
-func formatNextStep(command, description string) string {
-	return formatNextStepWithPrefix("    ", command, description)
-}
-
-// printNumberedNextSteps prints a "Next:" block the same way printNextSteps
-// does, except each step is prefixed with its 1-based position ("1.", "2.",
-// ...) — the same numbered-list convention printPairInviteAftercare's
-// "Then:" block (pair.go) uses for its own ordered, dependent steps. `moltnet
-// init`'s three steps (service install -> relay deploy -> pair invite) are
-// exactly that: ordered and dependent, not a menu to pick from, and an
-// unnumbered list let a real user jump straight to the pair invite step and
-// hit an otherwise-avoidable error. Kept as a separate function rather than
-// adding an "numbered" flag to printNextSteps so `relay deploy`'s existing
-// (unnumbered) Next block, which shares formatNextStep's column-alignment
-// machinery via printNextSteps, is untouched by this change.
-func printNumberedNextSteps(steps []nextStep) {
-	if len(steps) == 0 {
-		return
-	}
-	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "  Next:")
-	for i, step := range steps {
-		prefix := fmt.Sprintf("    %d. ", i+1)
-		fmt.Fprintln(stdout, formatNextStepWithPrefix(prefix, step.command, step.description))
-	}
-}
-
-// formatNextStepWithPrefix is formatNextStep's shared implementation: it
-// column-aligns description to nextStepColumn given an arbitrary line-start
-// prefix (plain "    " for printNextSteps, "    N. " for
-// printNumberedNextSteps), wrapping onto an indented continuation line at
-// nextStepColumn when prefix+command runs past it — so a block's descriptions
-// stay aligned to the same column whether or not any of its lines wrapped,
-// numbered or not.
+// formatNextStepWithPrefix column-aligns description to nextStepColumn
+// given an arbitrary line-start prefix, wrapping onto an indented
+// continuation line at nextStepColumn when prefix+command runs past it.
+// Width is computed from the plain (unstyled) prefix+command, then the
+// command is bolded and the description dimmed for display — so column
+// alignment stays correct whether or not styling is active, and is
+// byte-identical to plain text when it is not (bold/dim are no-ops off a
+// terminal or under NO_COLOR).
 func formatNextStepWithPrefix(prefix, command, description string) string {
 	line := prefix + command
 	styledLine := prefix + bold(command)

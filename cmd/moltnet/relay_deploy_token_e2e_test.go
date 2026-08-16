@@ -102,15 +102,18 @@ func TestRunRelayDeployEndToEndUsesStoredTokenAndPrintsSourceLine(t *testing.T) 
 	fake := startFakeCloudflareCLIServer(t, "stored-cf-token")
 	withRelayDeployFakeCloudflare(t, fake)
 
+	// The stored-token source line is --verbose-only detail (quiet mode
+	// collapses it away); this is the one test that actually proves it
+	// still exists and names the right file.
 	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path}, "test"); err != nil {
+		if err := run(context.Background(), []string{"relay", "deploy", "--config", path, "--verbose"}, "test"); err != nil {
 			t.Fatalf("run() relay deploy error = %v", err)
 		}
 	})
 	if !strings.Contains(output, "using stored Cloudflare API token from "+tokenPath) {
 		t.Fatalf("expected the stored-token source line naming %q, got %q", tokenPath, output)
 	}
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
+	if !strings.Contains(output, "relay live") {
 		t.Fatalf("expected a successful deploy, got %q", output)
 	}
 	if strings.Contains(output, "stored-cf-token") {
@@ -267,7 +270,7 @@ func TestRunRelayDeployCorruptStoredTokenFileFallsBackToEnvToken(t *testing.T) {
 	if !strings.Contains(output, tokenPath) {
 		t.Fatalf("expected a warning naming the corrupt stored token file %q, got %q", tokenPath, output)
 	}
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
+	if !strings.Contains(output, "relay live") {
 		t.Fatalf("expected a successful deploy using the env token, got %q", output)
 	}
 }
@@ -325,7 +328,7 @@ func TestRunRelayDeployCorruptStoredTokenFileInteractiveFallsThroughToPrompt(t *
 	if !strings.Contains(output, "paste token (input hidden): ") {
 		t.Fatalf("expected the interactive paste prompt to have been reached, got %q", output)
 	}
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
+	if !strings.Contains(output, "relay live") {
 		t.Fatalf("expected a successful deploy using the pasted token, got %q", output)
 	}
 }
@@ -346,8 +349,10 @@ func TestRunRelayDeployEndToEndSaveTokenFlagWithStoredTokenOnlyPrintsNothingToSa
 	fake := startFakeCloudflareCLIServer(t, "stored-cf-token")
 	withRelayDeployFakeCloudflare(t, fake)
 
+	// The nothing-to-save note is --verbose-only (informational, not
+	// actionable); this is the one test proving it still exists.
 	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path, "--save-token"}, "test"); err != nil {
+		if err := run(context.Background(), []string{"relay", "deploy", "--config", path, "--save-token", "--verbose"}, "test"); err != nil {
 			t.Fatalf("run() relay deploy --save-token error = %v", err)
 		}
 	})

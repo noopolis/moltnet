@@ -23,10 +23,11 @@ func runPairJoin(ctx context.Context, args []string) error {
 	flags.SetOutput(stdout)
 
 	var (
-		force      = flags.Bool("force", false, "overwrite an existing pairing with the same id")
-		configPath = flags.String("config", "", "Moltnet config path")
-		networkID  = flags.String("id", "", "network id to select under ~/.moltnet when several exist")
-		restart    = flags.Bool("restart", false, "restart the managed service when one exists for the resolved network")
+		force       = flags.Bool("force", false, "overwrite an existing pairing with the same id")
+		configPath  = flags.String("config", "", "Moltnet config path")
+		networkID   = flags.String("id", "", "network id to select under ~/.moltnet when several exist")
+		restart     = flags.Bool("restart", false, "restart the managed service when one exists for the resolved network")
+		verboseFlag = flags.Bool("verbose", false, "print full detail: the wrote-pairing path, the --restart tip, remote-admin aside")
 	)
 
 	if err := flags.Parse(flagArgs); err != nil {
@@ -85,6 +86,7 @@ func runPairJoin(ctx context.Context, args []string) error {
 	return printPairJoinAftercare(ctx, config, path, pairing.ID, pairAftercareOptions{
 		restart:           *restart,
 		roomIDs:           invite.SharedRooms,
+		verbose:           *verboseFlag,
 		remoteNetworkID:   invite.NetworkID,
 		remoteNetworkName: invite.NetworkName,
 	})

@@ -46,10 +46,11 @@ func runInit(ctx context.Context, args []string) error {
 	flags.SetOutput(stdout)
 
 	var (
-		idFlag     = flags.String("id", "", "network id (prompted on a TTY when omitted and --dir is not given; required otherwise)")
-		nameFlag   = flags.String("name", "", "network display name (default: derived from the network id)")
-		dirFlag    = flags.String("dir", "", "write into this directory instead of ~/.moltnet/<network-id>/ (the pre-phase-4 default was --dir .)")
-		bearerFlag = flags.Bool("bearer", false, "set auth.mode to bearer and generate a scoped operator token, stored in Moltnet (0600); never printed")
+		idFlag      = flags.String("id", "", "network id (prompted on a TTY when omitted and --dir is not given; required otherwise)")
+		nameFlag    = flags.String("name", "", "network display name (default: derived from the network id)")
+		dirFlag     = flags.String("dir", "", "write into this directory instead of ~/.moltnet/<network-id>/ (the pre-phase-4 default was --dir .)")
+		bearerFlag  = flags.Bool("bearer", false, "set auth.mode to bearer and generate a scoped operator token, stored in Moltnet (0600); never printed")
+		verboseFlag = flags.Bool("verbose", false, "print full detail: exact paths, per-file status, and the --bearer tip")
 	)
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -250,6 +251,7 @@ func runInit(ctx context.Context, args []string) error {
 		bearer:        *bearerFlag,
 		bearerAdded:   bearerAdded,
 		bearerAddErr:  bearerAddErr,
+		verbose:       *verboseFlag,
 	})
 
 	return nil

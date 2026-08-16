@@ -22,13 +22,25 @@ func writeMoltnetConfig(t *testing.T, directory string, networkID string, networ
 	return path
 }
 
+// extractInviteCode pulls the invite code out of `pair invite`'s output.
+// The normal aftercare embeds it in ONE copyable command — `moltnet pair
+// '<code>'` (rule 4 of the quiet-by-default redesign, pair_aftercare.go) —
+// so this first looks for the single-quoted span on that line; --print-only
+// bypasses the aftercare entirely and prints the bare code on its own line
+// instead, so that is checked too.
 func extractInviteCode(t *testing.T, output string) string {
 	t.Helper()
 
-	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, protocol.InvitePrefix) {
-			return line
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, protocol.InvitePrefix) {
+			return trimmed
+		}
+		if strings.HasPrefix(trimmed, "moltnet pair '") && strings.HasSuffix(trimmed, "'") {
+			code := strings.TrimSuffix(strings.TrimPrefix(trimmed, "moltnet pair '"), "'")
+			if strings.HasPrefix(code, protocol.InvitePrefix) {
+				return code
+			}
 		}
 	}
 	t.Fatalf("no invite code found in output:\n%s", output)
@@ -53,11 +65,8 @@ func TestRunPairInviteWritesConfigAndPrintsCode(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "wrote pairing \"friend-net\"") {
+	if !strings.Contains(output, "✓ pairing ready") {
 		t.Fatalf("unexpected output %q", output)
-	}
-	if !strings.Contains(output, "restart the Moltnet server") {
-		t.Fatalf("expected restart reminder in output %q", output)
 	}
 
 	code := extractInviteCode(t, output)
@@ -193,7 +202,7 @@ func TestRunPairJoinWritesMirroredPairing(t *testing.T) {
 			t.Fatalf("run() pair <code> error = %v", err)
 		}
 	})
-	if !strings.Contains(joinOutput, "friend-net") || !strings.Contains(joinOutput, "alice-net") {
+	if !strings.Contains(joinOutput, "✓ paired with alice-net") {
 		t.Fatalf("unexpected join output %q", joinOutput)
 	}
 

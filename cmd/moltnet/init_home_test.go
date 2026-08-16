@@ -22,8 +22,11 @@ func TestRunInitGlobalHomeWritesUnderNetworkID(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
+	// The per-file "wrote <label>" breakdown this test pins is --verbose-only
+	// detail under the quiet-by-default redesign (init_summary.go); quiet
+	// mode collapses it to a single "<id> ready" checkmark instead.
 	output := captureStdout(t, func() {
-		if err := runInit(context.Background(), []string{"--id", "acme"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "acme", "--verbose"}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
@@ -76,8 +79,10 @@ func TestRunInitBearerStoresTokenWithoutEverPrintingIt(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
+	// --verbose: the "operator token stored" line is --verbose-only detail
+	// under the quiet-by-default redesign.
 	output := captureStdout(t, func() {
-		if err := runInit(context.Background(), []string{"--id", "acme", "--bearer"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "acme", "--bearer", "--verbose"}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
@@ -117,8 +122,10 @@ func TestRunInitWithoutBearerShowsNoneAuthAndBearerTip(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
+	// --verbose: "auth: none" and the --bearer tip are --verbose-only detail
+	// under the quiet-by-default redesign.
 	output := captureStdout(t, func() {
-		if err := runInit(context.Background(), []string{"--id", "acme"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "acme", "--verbose"}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
@@ -171,11 +178,22 @@ func TestRunInitBearerOnSymlinkedConfigDegradesGracefully(t *testing.T) {
 		}
 	})
 
+	// The bearerAddErr note is a real, actionable failure — it prints
+	// unconditionally, quiet or --verbose (init_summary.go).
 	if !strings.Contains(output, "is a symlink") {
 		t.Fatalf("expected a note about the symlinked config, got %q", output)
 	}
-	if !strings.Contains(output, "wrote MoltnetNode") {
-		t.Fatalf("expected MoltnetNode to still be written, got %q", output)
+
+	// The per-file "wrote MoltnetNode" checkmark is --verbose-only detail
+	// under the quiet-by-default redesign; rerun with --verbose to confirm
+	// MoltnetNode was still actually written.
+	verboseOutput := captureStdout(t, func() {
+		if err := runInit(context.Background(), []string{"--id", "acme", "--bearer", "--verbose"}); err != nil {
+			t.Fatalf("runInit() --verbose error = %v", err)
+		}
+	})
+	if !strings.Contains(verboseOutput, "MoltnetNode already exists") {
+		t.Fatalf("expected MoltnetNode to still exist from the first run, got %q", verboseOutput)
 	}
 
 	after, err := os.ReadFile(realConfigPath)

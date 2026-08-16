@@ -34,6 +34,7 @@ func runPairInvite(ctx context.Context, args []string) error {
 		printOnly     = flags.Bool("print-only", false, "print the invite code without writing local config")
 		force         = flags.Bool("force", false, "overwrite an existing pairing with the same id, generating a fresh invite")
 		restart       = flags.Bool("restart", false, "restart the managed service for the resolved network after writing the pairing")
+		verboseFlag   = flags.Bool("verbose", false, "print full detail: the wrote-pairing path, the --restart tip, remote-admin aside")
 	)
 	var sharedRooms repeatedStringFlag
 	flags.Var(&sharedRooms, "room", "shared room id to declare in the invite (repeatable or comma-separated)")
@@ -133,6 +134,7 @@ func runPairInvite(ctx context.Context, args []string) error {
 	return printPairInviteAftercare(ctx, config, path, code, id, pairAftercareOptions{
 		restart: *restart,
 		roomIDs: invite.SharedRooms,
+		verbose: *verboseFlag,
 		// remoteNetworkID/remoteNetworkName are unknown here: pair invite
 		// never learns the friend's identity (no round trip); `pair <code>`
 		// on their side prints the real, filled-in command instead.

@@ -18,7 +18,7 @@ func TestRunInitCreatesCanonicalFiles(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "Initializing") || !strings.Contains(output, "created") {
+	if !strings.Contains(output, "Initializing") || !strings.Contains(output, "ready") {
 		t.Fatalf("unexpected init output %q", output)
 	}
 	assertFileExists(t, filepath.Join(directory, "Moltnet"))
@@ -30,8 +30,10 @@ func TestRunInitReportsExistingFiles(t *testing.T) {
 	writeNodeConfig(t, filepath.Join(directory, "Moltnet"), defaultMoltnetConfig("local", "Local Moltnet"))
 	writeNodeConfig(t, filepath.Join(directory, "MoltnetNode"), defaultMoltnetNodeConfig("local"))
 
+	// --verbose: the per-file "already exists" breakdown is --verbose-only
+	// detail under the quiet-by-default redesign.
 	output := captureStdout(t, func() {
-		if err := runInit(context.Background(), []string{directory}); err != nil {
+		if err := runInit(context.Background(), []string{"--verbose", directory}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})

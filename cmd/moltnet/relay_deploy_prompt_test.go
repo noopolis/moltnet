@@ -59,7 +59,7 @@ func TestRunRelayDeployInteractivePromptPasteDeploySaveYes(t *testing.T) {
 	if !strings.Contains(output, "dash.cloudflare.com/profile/api-tokens") {
 		t.Fatalf("expected the token-creation deep link before the prompt, got %q", output)
 	}
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
+	if !strings.Contains(output, "relay live") {
 		t.Fatalf("expected a successful deploy using the pasted token, got %q", output)
 	}
 	if !strings.Contains(output, "save to "+tokenPath+" (0600)? [Y/n] ") {
@@ -97,7 +97,7 @@ func TestRunRelayDeployInteractivePromptSaveDeclineSkipsSave(t *testing.T) {
 			t.Fatalf("run() relay deploy error = %v", err)
 		}
 	})
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
+	if !strings.Contains(output, "relay live") {
 		t.Fatalf("expected a successful deploy even when the save offer is declined, got %q", output)
 	}
 	if _, ok, err := relaydeploy.LoadCloudflareToken(tokenPath); err != nil || ok {

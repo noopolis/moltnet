@@ -37,8 +37,9 @@ func runServiceCommand(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("moltnet service "+action, flag.ContinueOnError)
 	flags.SetOutput(stdout)
 	var (
-		configPath = flags.String("config", "", "Moltnet config path")
-		id         = flags.String("id", "", "network id to select under ~/.moltnet when several exist")
+		configPath  = flags.String("config", "", "Moltnet config path")
+		id          = flags.String("id", "", "network id to select under ~/.moltnet when several exist")
+		verboseFlag = flags.Bool("verbose", false, "print full detail: unit file and log paths, raw service manager status")
 	)
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
@@ -55,37 +56,47 @@ func runServiceCommand(ctx context.Context, args []string) error {
 	manager := newServiceManager()
 	switch action {
 	case "install":
-		return runServiceInstall(ctx, manager, spec)
+		return runServiceInstall(ctx, manager, spec, *verboseFlag)
 	case "uninstall":
 		return runServiceUninstall(ctx, manager, spec.NetworkID)
 	case "start":
 		if err := manager.Start(ctx, spec.NetworkID); err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "started the moltnet service for network %q\n", spec.NetworkID)
+		printInitConfigCheckLine("service started", spec.NetworkID)
 		return nil
 	case "stop":
 		if err := manager.Stop(ctx, spec.NetworkID); err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "stopped the moltnet service for network %q\n", spec.NetworkID)
+		printInitConfigCheckLine("service stopped", spec.NetworkID)
 		return nil
 	default: // "status"
-		return runServiceStatus(ctx, manager, spec.NetworkID)
+		return runServiceStatus(ctx, manager, spec.NetworkID, *verboseFlag)
 	}
 }
 
-func runServiceInstall(ctx context.Context, manager *service.Manager, spec service.Spec) error {
+// runServiceInstall installs and starts the service, then prints the
+// house-style aftercare: by default, a single "service running" outcome
+// line and a "next:" nudge toward `relay deploy`; with --verbose, the unit
+// file and log paths this command used to always print.
+func runServiceInstall(ctx context.Context, manager *service.Manager, spec service.Spec, verbose bool) error {
 	if err := manager.Install(ctx, spec); err != nil {
 		return err
 	}
-	unitPath, err := manager.UnitPath(spec.NetworkID)
-	if err != nil {
-		return err
+	printInitConfigCheckLine("service running", "")
+	if verbose {
+		unitPath, err := manager.UnitPath(spec.NetworkID)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(stdout, dim(fmt.Sprintf("    unit file: %s", unitPath)))
+		fmt.Fprintln(stdout, dim(fmt.Sprintf("    logs: %s, %s", spec.StdoutLogPath(), spec.StderrLogPath())))
 	}
-	fmt.Fprintf(stdout, "installed and started the moltnet service for network %q\n", spec.NetworkID)
-	fmt.Fprintln(stdout, dim(fmt.Sprintf("unit file: %s", unitPath)))
-	fmt.Fprintln(stdout, dim(fmt.Sprintf("logs: %s, %s", spec.StdoutLogPath(), spec.StderrLogPath())))
+	printNextStep(nextStep{
+		command:     fmt.Sprintf("moltnet relay deploy --id %s", spec.NetworkID),
+		description: "relay on Cloudflare (pair across NAT)",
+	})
 	return nil
 }
 
@@ -93,26 +104,30 @@ func runServiceUninstall(ctx context.Context, manager *service.Manager, networkI
 	if err := manager.Uninstall(ctx, networkID); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "uninstalled the moltnet service for network %q\n", networkID)
+	printInitConfigCheckLine("service removed", "")
 	return nil
 }
 
-func runServiceStatus(ctx context.Context, manager *service.Manager, networkID string) error {
+// runServiceStatus prints one outcome line naming the service's state
+// (running, stopped-but-installed, or not installed at all — the last two
+// are real, actionable facts, so they always print, never behind
+// --verbose), plus the platform tool's raw status output when --verbose.
+func runServiceStatus(ctx context.Context, manager *service.Manager, networkID string, verbose bool) error {
 	status, err := manager.Status(ctx, networkID)
 	if err != nil {
 		return err
 	}
 	if !status.Installed {
-		fmt.Fprintf(stdout, "network %q has no installed service; run `moltnet service install --id %s`\n", networkID, networkID)
+		fmt.Fprintf(stdout, "  %s no installed service for %q; run `moltnet service install --id %s`\n", yellow("note:"), networkID, networkID)
 		return nil
 	}
-	state := "stopped"
 	if status.Running {
-		state = "running"
+		printInitConfigCheckLine("service running", networkID)
+	} else {
+		fmt.Fprintf(stdout, "  %s service installed but not running for %q; run `moltnet service start --id %s`\n", yellow("note:"), networkID, networkID)
 	}
-	fmt.Fprintf(stdout, "network %q service: installed, %s\n", networkID, state)
-	if status.Detail != "" {
-		fmt.Fprintln(stdout, status.Detail)
+	if verbose && status.Detail != "" {
+		fmt.Fprintln(stdout, dim(status.Detail))
 	}
 	return nil
 }

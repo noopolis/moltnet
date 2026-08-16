@@ -20,13 +20,16 @@ func pairAftercareTestConfig(networkID string) app.Config {
 	return app.Config{NetworkID: networkID, Auth: authn.Config{Mode: "bearer"}}
 }
 
-// TestPrintPairInviteAftercareNarrativeShape pins the redesigned `pair
-// invite` aftercare's exact phase structure line by line: the two status
-// lines with no blank line between them, then a blank line, then the invite
-// code alone in its own paragraph (nothing else sharing its line — the P0
-// fix, see TestRunPairInviteRestartPrintsCodeAndRestartConfirmation in
-// pair_restart_test.go for the ordering half of that fix), then the
-// numbered "Then:" sequence with its later, explained membership step.
+// TestPrintPairInviteAftercareNarrativeShape pins the quiet-by-default
+// `pair invite` aftercare's exact phase structure line by line: a single
+// "pairing ready" checkmark, then the unconditional plain restart reminder
+// (P1 fix — there is no hot-reload, so a pairing written without a restart
+// simply does not work yet; this prints regardless of --verbose whenever no
+// restart was actually performed, see printPairRestartLine), then a blank
+// line, then the ONE copyable `moltnet pair '<code>'` command in its own
+// paragraph (rule 4: no separate "they run ..." line, no bare code on its
+// own — the command IS the invite), then a single "next:" line naming the
+// membership command for the one declared room.
 func TestPrintPairInviteAftercareNarrativeShape(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -43,72 +46,100 @@ func TestPrintPairInviteAftercareNarrativeShape(t *testing.T) {
 	})
 
 	lines := strings.Split(output, "\n")
-	if len(lines) < 18 {
-		t.Fatalf("output has %d lines, want at least 18:\n%s", len(lines), output)
+	if len(lines) < 7 {
+		t.Fatalf("output has %d lines, want at least 7:\n%s", len(lines), output)
 	}
 
-	if !strings.HasPrefix(lines[0], "  ✓ wrote pairing \"friend-4cfff025\"") {
-		t.Fatalf("line 0 = %q, want the wrote-pairing status line", lines[0])
-	}
-	if !strings.Contains(lines[0], "~/.moltnet/alice-net/Moltnet") {
-		t.Fatalf("line 0 = %q, want the config path abbreviated to ~", lines[0])
+	if lines[0] != "  ✓ pairing ready" {
+		t.Fatalf("line 0 = %q, want the single pairing-ready checkmark", lines[0])
 	}
 	if lines[1] != "  restart the Moltnet server for this pairing to take effect" {
-		t.Fatalf("line 1 = %q, want the restart reminder (no --restart, no service)", lines[1])
+		t.Fatalf("line 1 = %q, want the unconditional plain restart reminder (no restart was requested)", lines[1])
 	}
 	if lines[2] != "" {
-		t.Fatalf("line 2 = %q, want a blank line separating status from the invite paragraph", lines[2])
+		t.Fatalf("line 2 = %q, want a blank line separating the restart reminder from the share paragraph", lines[2])
 	}
-	if !strings.Contains(lines[3], "Send this invite to your friend") {
-		t.Fatalf("line 3 = %q, want the invite-paragraph lead-in", lines[3])
+	if !strings.Contains(lines[3], "share this with your friend") || !strings.Contains(lines[3], "expires in 7 days") {
+		t.Fatalf("line 3 = %q, want the share-paragraph lead-in with the expiry", lines[3])
 	}
-	if !strings.Contains(lines[4], "expires in 7 days") {
-		t.Fatalf("line 4 = %q, want the credential/expiry line", lines[4])
+	if lines[4] != "" {
+		t.Fatalf("line 4 = %q, want a blank line before the copyable command", lines[4])
 	}
-	if lines[5] != "" {
-		t.Fatalf("line 5 = %q, want a blank line before the code paragraph", lines[5])
+	wantCommandLine := "    moltnet pair '" + code + "'"
+	if lines[5] != wantCommandLine {
+		t.Fatalf("line 5 = %q, want the one copyable command %q (single-quoted, paste-safe, nothing else sharing the line)", lines[5], wantCommandLine)
 	}
-	if strings.TrimSpace(lines[6]) != code {
-		t.Fatalf("line 6 = %q, want the invite code alone on its own line, nothing else sharing it", lines[6])
+	if lines[6] != "" {
+		t.Fatalf("line 6 = %q, want a blank line before the next: block", lines[6])
 	}
-	if lines[7] != "" {
-		t.Fatalf("line 7 = %q, want a blank line after the code paragraph", lines[7])
+	if !strings.Contains(output, "next: "+pairMembershipCommand("chat", "<their-network-id>:<their-agent-id>", "alice-net")) {
+		t.Fatalf("expected a single next: line naming the membership command, got %q", output)
 	}
-	if lines[8] != "  Then:" {
-		t.Fatalf("line 8 = %q, want the Then: header", lines[8])
+	if strings.Contains(output, "they run") || strings.Contains(output, "Then:") {
+		t.Fatalf("expected no redundant \"they run\" step or numbered Then: menu, got %q", output)
 	}
-	if !strings.Contains(lines[9], "1. they run") || !strings.Contains(lines[9], "moltnet pair '<the invite above>'") {
-		t.Fatalf("line 9 = %q, want step 1 naming the friend's pair command", lines[9])
+	if strings.Contains(output, "remote?") {
+		t.Fatalf("expected the remote-admin aside to stay hidden without --verbose, got %q", output)
 	}
-	if strings.Contains(lines[9], "--restart") {
-		t.Fatalf("line 9 = %q, want --restart NOT recommended unconditionally in step 1 itself", lines[9])
+}
+
+// TestPrintPairInviteAftercareVerboseRestoresDetail covers --verbose parity:
+// the quiet essentials (the checkmark, the copyable command, the next: line)
+// must all still be present, plus the detail quiet mode hides — the
+// wrote-pairing path line and the remote-admin aside.
+func TestPrintPairInviteAftercareVerboseRestoresDetail(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := home + "/.moltnet/alice-net/Moltnet"
+	config := pairAftercareTestConfig("alice-net")
+	code := "moltnet-invite:test-code-body"
+
+	quiet := captureStdout(t, func() {
+		if err := printPairInviteAftercare(context.Background(), config, path, code, "friend-4cfff025", pairAftercareOptions{
+			roomIDs: []string{"chat"},
+		}); err != nil {
+			t.Fatalf("printPairInviteAftercare() error = %v", err)
+		}
+	})
+	verbose := captureStdout(t, func() {
+		if err := printPairInviteAftercare(context.Background(), config, path, code, "friend-4cfff025", pairAftercareOptions{
+			roomIDs: []string{"chat"},
+			verbose: true,
+		}); err != nil {
+			t.Fatalf("printPairInviteAftercare() --verbose error = %v", err)
+		}
+	})
+
+	if !strings.Contains(verbose, "wrote pairing \"friend-4cfff025\"") {
+		t.Fatalf("expected --verbose to restore the wrote-pairing line, got %q", verbose)
 	}
-	if !strings.Contains(lines[10], "add --restart if they run it as a service") {
-		t.Fatalf("line 10 = %q, want --restart mentioned only as a conditional add-on", lines[10])
+	if !strings.Contains(verbose, "~/.moltnet/alice-net/Moltnet") {
+		t.Fatalf("expected --verbose to restore the abbreviated config path, got %q", verbose)
 	}
-	if !strings.Contains(lines[11], "2. after they've paired, grant their agent access to room \"chat\"") {
-		t.Fatalf("line 11 = %q, want step 2's lead-in naming room chat", lines[11])
+	if !strings.Contains(verbose, "remote?") {
+		t.Fatalf("expected --verbose to restore the remote-admin aside, got %q", verbose)
 	}
-	if !strings.Contains(lines[12], "room writes need membership") {
-		t.Fatalf("line 12 = %q, want the why-membership clause", lines[12])
-	}
-	wantCmd := "moltnet admin room members add --room chat --member <their-network-id>:<their-agent-id> --network alice-net"
-	if !strings.Contains(lines[13], wantCmd) {
-		t.Fatalf("line 13 = %q, want %q", lines[13], wantCmd)
-	}
-	if !strings.Contains(lines[14], "you'll know both ids once they've paired") {
-		t.Fatalf("line 14 = %q, want the why-placeholders explanation", lines[14])
-	}
-	if !strings.Contains(lines[16], "remote?") {
-		t.Fatalf("line 16 = %q, want the dim remote-admin aside, demoted off the numbered steps", lines[16])
+
+	// Superset check: every essential quiet line still appears in verbose
+	// output (content-wise — exact spacing/position may differ).
+	for _, essential := range []string{
+		"✓ pairing ready",
+		"moltnet pair '" + code + "'",
+		pairMembershipCommand("chat", "<their-network-id>:<their-agent-id>", "alice-net"),
+	} {
+		if !strings.Contains(verbose, essential) {
+			t.Fatalf("verbose output missing quiet essential %q:\n%s", essential, verbose)
+		}
+		if !strings.Contains(quiet, essential) {
+			t.Fatalf("quiet output missing its own essential %q:\n%s", essential, quiet)
+		}
 	}
 }
 
 // TestPrintPairInviteAftercareNoRoomsSkipsMembershipStep covers the
-// zero-shared-rooms case: the invite paragraph and the "run `moltnet pair`"
-// step still print (the friend still needs to know what to do with the
-// code), but there is nothing to grant membership to, so step 2 and its
-// commands never appear.
+// zero-shared-rooms case: the checkmark and the copyable command still
+// print (the friend still needs to know what to do with it), but there is
+// nothing to grant membership to, so no next: line ever appears.
 func TestPrintPairInviteAftercareNoRoomsSkipsMembershipStep(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -122,21 +153,21 @@ func TestPrintPairInviteAftercareNoRoomsSkipsMembershipStep(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "1. they run") {
-		t.Fatalf("expected step 1 in output %q", output)
+	if !strings.Contains(output, "moltnet pair '"+code+"'") {
+		t.Fatalf("expected the copyable pair command in output %q", output)
 	}
 	if strings.Contains(output, "admin room members add") {
 		t.Fatalf("expected no membership step with zero shared rooms, got %q", output)
 	}
+	if strings.Contains(output, "next:") {
+		t.Fatalf("expected no next: line with zero shared rooms, got %q", output)
+	}
 }
 
 // TestPrintPairJoinAftercareNarrativeShape pins the mirrored joiner-side
-// narrative: the same two status lines, then a blank line, then "you're
-// paired with <network>" naming the sender's real network id, then the
-// fully filled in membership command (real remote network id, placeholder
-// agent id, `<their-agent-id>` — the same placeholder vocabulary the
-// invite side uses — since the agent id is never carried by the invite),
-// its one-line swap explainer, and the friendly-name closing note.
+// narrative: a single "paired with <network>" checkmark naming the sender's
+// real network id, then a single next: line naming the fully filled-in
+// membership command (real remote network id, placeholder agent id).
 func TestPrintPairJoinAftercareNarrativeShape(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -154,38 +185,63 @@ func TestPrintPairJoinAftercareNarrativeShape(t *testing.T) {
 	})
 
 	lines := strings.Split(output, "\n")
-	if len(lines) < 10 {
-		t.Fatalf("output has %d lines, want at least 10:\n%s", len(lines), output)
+	if len(lines) < 3 {
+		t.Fatalf("output has %d lines, want at least 3:\n%s", len(lines), output)
+	}
+	if lines[0] != "  ✓ paired with alice-net" {
+		t.Fatalf("line 0 = %q, want the paired-with checkmark naming the real remote network id", lines[0])
 	}
 
-	if !strings.HasPrefix(lines[0], "  ✓ wrote pairing \"friend-4cfff025\"") {
-		t.Fatalf("line 0 = %q, want the wrote-pairing status line", lines[0])
+	wantCmd := pairMembershipCommand("chat", "alice-net:<their-agent-id>", "bob-net")
+	if !strings.Contains(output, "next: "+wantCmd) {
+		t.Fatalf("expected the fully filled in membership command as a next: line, got %q", output)
 	}
-	if lines[1] != "  restart the Moltnet server for this pairing to take effect" {
-		t.Fatalf("line 1 = %q, want the restart reminder (no --restart, no service)", lines[1])
+	if strings.Contains(output, "swap <their-agent-id>") || strings.Contains(output, "ask whoever runs") {
+		t.Fatalf("expected the verbose-only explainer asides to stay hidden without --verbose, got %q", output)
 	}
-	if lines[2] != "" {
-		t.Fatalf("line 2 = %q, want a blank line before the paired-with paragraph", lines[2])
+}
+
+// TestPrintPairJoinAftercareVerboseRestoresDetail covers --verbose parity on
+// the joiner side: the wrote-pairing line and the placeholder/remote-admin
+// explainer asides come back, and every quiet essential still appears.
+func TestPrintPairJoinAftercareVerboseRestoresDetail(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := home + "/.moltnet/bob-net/Moltnet"
+	config := pairAftercareTestConfig("bob-net")
+
+	verbose := captureStdout(t, func() {
+		if err := printPairJoinAftercare(context.Background(), config, path, "friend-4cfff025", pairAftercareOptions{
+			roomIDs:           []string{"chat"},
+			verbose:           true,
+			remoteNetworkID:   "alice-net",
+			remoteNetworkName: "Alice's Moltnet",
+		}); err != nil {
+			t.Fatalf("printPairJoinAftercare() --verbose error = %v", err)
+		}
+	})
+
+	if !strings.Contains(verbose, "wrote pairing \"friend-4cfff025\"") {
+		t.Fatalf("expected --verbose to restore the wrote-pairing line, got %q", verbose)
 	}
-	if !strings.Contains(lines[3], "You're paired with alice-net; last step:") {
-		t.Fatalf("line 3 = %q, want the paired-with sentence naming the real remote network id", lines[3])
+	if !strings.Contains(verbose, "swap <their-agent-id> for the agent id they'll post as") {
+		t.Fatalf("expected --verbose to restore the placeholder explainer, got %q", verbose)
 	}
-	wantCmd := "moltnet admin room members add --room chat --member alice-net:<their-agent-id> --network bob-net"
-	if !strings.Contains(output, wantCmd) {
-		t.Fatalf("expected the fully filled in membership command %q in output %q", wantCmd, output)
+	if !strings.Contains(verbose, "ask whoever runs Alice's Moltnet to run the mirrored command") {
+		t.Fatalf("expected --verbose to restore the closing ask-them-to-mirror note naming the remote network's display name, got %q", verbose)
 	}
-	if !strings.Contains(output, "(swap <their-agent-id> for the agent id they'll post as)") {
-		t.Fatalf("expected the placeholder's one-line explainer in output %q", output)
+	if !strings.Contains(verbose, "remote?") {
+		t.Fatalf("expected --verbose to restore the remote-admin aside, got %q", verbose)
 	}
-	if !strings.Contains(output, "ask whoever runs Alice's Moltnet to run the mirrored command") {
-		t.Fatalf("expected the closing ask-them-to-mirror note naming the remote network's display name in %q", output)
+	if !strings.Contains(verbose, "✓ paired with alice-net") {
+		t.Fatalf("expected the quiet checkmark to still appear under --verbose, got %q", verbose)
 	}
 }
 
 // TestPrintPairJoinAftercareNoRoomsPrintsPairedConfirmationOnly covers the
 // zero-shared-rooms case on the joiner side: no membership step to run, but
-// the plain "you're paired with <network>" fact still prints so the
-// operator gets positive confirmation instead of silence.
+// the checkmark still prints so the operator gets positive confirmation
+// instead of silence.
 func TestPrintPairJoinAftercareNoRoomsPrintsPairedConfirmationOnly(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -201,8 +257,8 @@ func TestPrintPairJoinAftercareNoRoomsPrintsPairedConfirmationOnly(t *testing.T)
 		}
 	})
 
-	if !strings.Contains(output, "You're paired with alice-net.") {
-		t.Fatalf("expected the paired-with confirmation in output %q", output)
+	if !strings.Contains(output, "✓ paired with alice-net") {
+		t.Fatalf("expected the paired-with checkmark in output %q", output)
 	}
 	if strings.Contains(output, "admin room members add") {
 		t.Fatalf("expected no membership step with zero shared rooms, got %q", output)
@@ -210,17 +266,19 @@ func TestPrintPairJoinAftercareNoRoomsPrintsPairedConfirmationOnly(t *testing.T)
 }
 
 // TestPairStatusBlockAlignmentIsPlainWidthInvariant is pair.go's own P2-1
-// style regression: it forces the isOutputTerminal seam (style.go) true to
-// take printPairWroteLine's styled path, captures printPairStatusBlock's
-// output, strips every ANSI escape code (ansiEscapePattern, defined in
-// style_test.go and shared across this test binary), and asserts the
-// result is byte-identical to the same call's plain output (isOutputTerminal
-// at its default false). printPairWroteLine computes its column padding
-// from the plain (unstyled) prefix by design, exactly like
-// printInitConfigCheckLine and formatNextStep, so this pins that invariant
-// for pair's own aligned column rather than relying on it holding by
-// construction. It also asserts the actual column value: the abbreviated
-// path annotation must start at pairStatusColumn in the plain output.
+// style regression, run under --verbose (the only mode printPairWroteLine's
+// column-aligned path line prints at all): it forces the isOutputTerminal
+// seam (style.go) true to take printPairWroteLine's styled path, captures
+// printPairStatusBlock's output, strips every ANSI escape code
+// (ansiEscapePattern, defined in style_test.go and shared across this test
+// binary), and asserts the result is byte-identical to the same call's
+// plain output (isOutputTerminal at its default false). printPairWroteLine
+// computes its column padding from the plain (unstyled) prefix by design,
+// exactly like printInitConfigCheckLine and formatNextStepWithPrefix, so
+// this pins that invariant for pair's own aligned column rather than
+// relying on it holding by construction. It also asserts the actual column
+// value: the abbreviated path annotation must start at pairStatusColumn in
+// the plain output.
 func TestPairStatusBlockAlignmentIsPlainWidthInvariant(t *testing.T) {
 	previousNoColor, hadNoColor := os.LookupEnv("NO_COLOR")
 	if err := os.Unsetenv("NO_COLOR"); err != nil {
@@ -243,7 +301,7 @@ func TestPairStatusBlockAlignmentIsPlainWidthInvariant(t *testing.T) {
 	statusBlockCase := func(t *testing.T) string {
 		t.Helper()
 		return captureStdout(t, func() {
-			printPairStatusBlock(context.Background(), config, path, "friend-4cfff025", false)
+			printPairStatusBlock(context.Background(), config, path, "friend-4cfff025", false, true)
 		})
 	}
 
