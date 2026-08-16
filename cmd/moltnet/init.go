@@ -50,7 +50,11 @@ func runInit(args []string) error {
 	// the positional-path deprecation note below and before
 	// resolveInitNetworkID's interactive --id prompt further down — so it
 	// prints immediately once flags are known to be well-formed.
-	printBanner()
+	// printBannerAnimated (banner_player.go) plays the settle animation on
+	// a real terminal, falling back to plain printBanner's own static
+	// output otherwise — init is the one place this CLI can afford the
+	// ~1s a full animation takes; see printBannerAnimated's doc comment.
+	printBannerAnimated()
 
 	if flags.NArg() > 1 {
 		return fmt.Errorf("init accepts at most one positional path (deprecated; use --dir)")
