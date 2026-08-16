@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 )
@@ -40,10 +41,19 @@ func printBanner() {
 // server launch for a purely cosmetic flourish. `init` is already an
 // interactive, one-shot command that narrates several steps in sequence,
 // so the same ~1s reads as pacing rather than a delay.
-func printBannerAnimated() {
+//
+// ctx is threaded straight through to playBanner (banner_player.go), whose
+// doc comment covers what a cancelled ctx does mid-animation. When it comes
+// back with ctx already done, printBannerAnimated skips the trailing blank
+// line too — runInit is about to return ctx.Err() and exit, so there is no
+// following output for that blank line to separate.
+func printBannerAnimated(ctx context.Context) {
 	if !isOutputTerminal() {
 		return
 	}
-	playBanner()
+	playBanner(ctx)
+	if ctx.Err() != nil {
+		return
+	}
 	fmt.Fprintln(stdout)
 }

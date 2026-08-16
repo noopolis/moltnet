@@ -90,7 +90,7 @@ func printInitSummary(summary initSummary) {
 			description: "invite a friend",
 		})
 	}
-	printNextSteps(steps)
+	printNumberedNextSteps(steps)
 }
 
 // printInitConfigLine prints the "wrote <label>" checkmark line when

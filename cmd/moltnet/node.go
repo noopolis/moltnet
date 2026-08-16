@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/noopolis/moltnet/internal/app"
 	"github.com/noopolis/moltnet/internal/node"
@@ -26,6 +28,21 @@ func runNode(ctx context.Context, args []string) error {
 		return err
 	}
 	if flags.NArg() > 1 {
+		// The flag package stops parsing at the first non-flag argument, so
+		// `moltnet node start <path> --id x` never reaches --id as a flag at
+		// all: it lands here as three unparsed positional args (path, --id,
+		// x), with *id left at its zero value — every flag after the path is
+		// silently dropped, not applied and not rejected, even though the
+		// usage text (buildNodeUsage) already documents flags-first
+		// ([--id <network-id>] [path]). Extra args that still look like a
+		// flag get a specific, actionable error instead of the same
+		// os.ErrInvalid a genuinely bogus arg list gets, so the fix is
+		// obvious from the message alone.
+		for _, extra := range flags.Args()[1:] {
+			if strings.HasPrefix(extra, "-") {
+				return fmt.Errorf("node: flags must precede the path (got %q after it); usage: moltnet node start [--id <network-id>] [path]", extra)
+			}
+		}
 		return os.ErrInvalid
 	}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 )
@@ -24,7 +25,7 @@ func TestRunInitGoldenIDBearerFresh(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{"--id", "acme", "--bearer"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "acme", "--bearer"}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
@@ -39,9 +40,9 @@ func TestRunInitGoldenIDBearerFresh(t *testing.T) {
 		"    commands pick it up automatically\n" +
 		"\n" +
 		"  Next:\n" +
-		"    moltnet service install --id acme              run it as a service\n" +
-		"    moltnet relay deploy --id acme                 relay on Cloudflare (pair across NAT)\n" +
-		"    moltnet pair invite --network-id acme --room chat\n" +
+		"    1. moltnet service install --id acme           run it as a service\n" +
+		"    2. moltnet relay deploy --id acme              relay on Cloudflare (pair across NAT)\n" +
+		"    3. moltnet pair invite --network-id acme --room chat\n" +
 		"                                                   invite a friend\n"
 
 	if output != want {
@@ -57,7 +58,7 @@ func TestRunInitGoldenIDWithoutBearer(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{"--id", "beta"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "beta"}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
@@ -71,9 +72,9 @@ func TestRunInitGoldenIDWithoutBearer(t *testing.T) {
 		"    tip: rerun with --bearer to generate an operator token for admin access\n" +
 		"\n" +
 		"  Next:\n" +
-		"    moltnet service install --id beta              run it as a service\n" +
-		"    moltnet relay deploy --id beta                 relay on Cloudflare (pair across NAT)\n" +
-		"    moltnet pair invite --network-id beta --room chat\n" +
+		"    1. moltnet service install --id beta           run it as a service\n" +
+		"    2. moltnet relay deploy --id beta              relay on Cloudflare (pair across NAT)\n" +
+		"    3. moltnet pair invite --network-id beta --room chat\n" +
 		"                                                   invite a friend\n"
 
 	if output != want {
@@ -91,7 +92,7 @@ func TestRunInitGoldenDirLocalID(t *testing.T) {
 	directory := filepath.Join(home, "customdir")
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{"--dir", directory}); err != nil {
+		if err := runInit(context.Background(), []string{"--dir", directory}); err != nil {
 			t.Fatalf("runInit() --dir error = %v", err)
 		}
 	})
@@ -105,9 +106,9 @@ func TestRunInitGoldenDirLocalID(t *testing.T) {
 		"    tip: rerun with --bearer to generate an operator token for admin access\n" +
 		"\n" +
 		"  Next:\n" +
-		"    moltnet service install --id local             run it as a service\n" +
-		"    moltnet relay deploy --id local                relay on Cloudflare (pair across NAT)\n" +
-		"    moltnet init --id <network-id>                 re-init with a real network id before pairing\n"
+		"    1. moltnet service install --id local          run it as a service\n" +
+		"    2. moltnet relay deploy --id local             relay on Cloudflare (pair across NAT)\n" +
+		"    3. moltnet init --id <network-id>              re-init with a real network id before pairing\n"
 
 	if output != want {
 		t.Fatalf("init --dir output mismatch\n got:\n%s\nwant:\n%s", output, want)
@@ -125,13 +126,13 @@ func TestRunInitGoldenBearerOnExistingConfig(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	captureStdout(t, func() {
-		if err := runInit([]string{"--id", "friend"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "friend"}); err != nil {
 			t.Fatalf("runInit() setup error = %v", err)
 		}
 	})
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{"--id", "friend", "--bearer"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "friend", "--bearer"}); err != nil {
 			t.Fatalf("runInit() --bearer rerun error = %v", err)
 		}
 	})
@@ -146,9 +147,9 @@ func TestRunInitGoldenBearerOnExistingConfig(t *testing.T) {
 		"    commands pick it up automatically\n" +
 		"\n" +
 		"  Next:\n" +
-		"    moltnet service install --id friend            run it as a service\n" +
-		"    moltnet relay deploy --id friend               relay on Cloudflare (pair across NAT)\n" +
-		"    moltnet pair invite --network-id friend --room chat\n" +
+		"    1. moltnet service install --id friend         run it as a service\n" +
+		"    2. moltnet relay deploy --id friend            relay on Cloudflare (pair across NAT)\n" +
+		"    3. moltnet pair invite --network-id friend --room chat\n" +
 		"                                                   invite a friend\n"
 
 	if output != want {

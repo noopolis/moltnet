@@ -43,8 +43,42 @@ func printNextSteps(steps []nextStep) {
 // text when it is not (bold/dim are no-ops off a terminal or under
 // NO_COLOR).
 func formatNextStep(command, description string) string {
-	line := "    " + command
-	styledLine := "    " + bold(command)
+	return formatNextStepWithPrefix("    ", command, description)
+}
+
+// printNumberedNextSteps prints a "Next:" block the same way printNextSteps
+// does, except each step is prefixed with its 1-based position ("1.", "2.",
+// ...) — the same numbered-list convention printPairInviteAftercare's
+// "Then:" block (pair.go) uses for its own ordered, dependent steps. `moltnet
+// init`'s three steps (service install -> relay deploy -> pair invite) are
+// exactly that: ordered and dependent, not a menu to pick from, and an
+// unnumbered list let a real user jump straight to the pair invite step and
+// hit an otherwise-avoidable error. Kept as a separate function rather than
+// adding an "numbered" flag to printNextSteps so `relay deploy`'s existing
+// (unnumbered) Next block, which shares formatNextStep's column-alignment
+// machinery via printNextSteps, is untouched by this change.
+func printNumberedNextSteps(steps []nextStep) {
+	if len(steps) == 0 {
+		return
+	}
+	fmt.Fprintln(stdout)
+	fmt.Fprintln(stdout, "  Next:")
+	for i, step := range steps {
+		prefix := fmt.Sprintf("    %d. ", i+1)
+		fmt.Fprintln(stdout, formatNextStepWithPrefix(prefix, step.command, step.description))
+	}
+}
+
+// formatNextStepWithPrefix is formatNextStep's shared implementation: it
+// column-aligns description to nextStepColumn given an arbitrary line-start
+// prefix (plain "    " for printNextSteps, "    N. " for
+// printNumberedNextSteps), wrapping onto an indented continuation line at
+// nextStepColumn when prefix+command runs past it — so a block's descriptions
+// stay aligned to the same column whether or not any of its lines wrapped,
+// numbered or not.
+func formatNextStepWithPrefix(prefix, command, description string) string {
+	line := prefix + command
+	styledLine := prefix + bold(command)
 	if len(line) < nextStepColumn {
 		return styledLine + strings.Repeat(" ", nextStepColumn-len(line)) + dim(description)
 	}

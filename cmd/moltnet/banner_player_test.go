@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"slices"
@@ -183,7 +184,7 @@ func TestTerminalWidthColumnsFallback(t *testing.T) {
 // TestStyleBannerHiddenWhenNotTerminal (style_test.go): with
 // isOutputTerminal false, printBannerAnimated is a no-op.
 func TestPrintBannerAnimatedHiddenWhenNotTerminal(t *testing.T) {
-	if output := captureStdout(t, func() { printBannerAnimated() }); output != "" {
+	if output := captureStdout(t, func() { printBannerAnimated(context.Background()) }); output != "" {
 		t.Fatalf("output = %q, want no banner output when stdout is not a terminal", output)
 	}
 }
@@ -201,7 +202,7 @@ func TestPrintBannerAnimatedMatchesStaticOutsideRealTTY(t *testing.T) {
 	withNoColorUnset(t)
 	t.Setenv("TERM", "xterm-256color")
 
-	animated := captureStdout(t, func() { printBannerAnimated() })
+	animated := captureStdout(t, func() { printBannerAnimated(context.Background()) })
 	static := captureStdout(t, func() { printBanner() })
 	if animated != static {
 		t.Fatalf("printBannerAnimated() = %q, want byte-identical to printBanner() = %q", animated, static)
@@ -317,7 +318,7 @@ func TestPlayBannerAnimatesOverRealPTY(t *testing.T) {
 	}
 
 	buf := preparePTYBannerTest(t, 80)
-	printBannerAnimated()
+	printBannerAnimated(context.Background())
 	output := drainedOutput(buf)
 
 	cursorUp := cursorUpEscape()
@@ -345,7 +346,7 @@ func TestPlayBannerStaticFallbackWhenTerminalNarrow(t *testing.T) {
 	}
 
 	buf := preparePTYBannerTest(t, 30)
-	printBannerAnimated()
+	printBannerAnimated(context.Background())
 	output := drainedOutput(buf)
 	cursorUp := cursorUpEscape()
 	if strings.Contains(output, cursorUp) {
@@ -385,7 +386,7 @@ func TestPlayBannerDeadlineJumpsToFinalFrame(t *testing.T) {
 	buf := preparePTYBannerTest(t, 80)
 
 	testStart := time.Now()
-	printBannerAnimated()
+	printBannerAnimated(context.Background())
 	if elapsed := time.Since(testStart); elapsed > 500*time.Millisecond {
 		t.Fatalf("printBannerAnimated() took %v; want a prompt jump to the final frame, not sleeping through every transition", elapsed)
 	}

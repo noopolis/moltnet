@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -119,7 +120,18 @@ func bannerFrameStepInterval(frameCount int) time.Duration {
 // Whenever any of the above don't hold, it falls back to printing
 // dim(bannerText) — byte-identical to printBanner's own static output, so
 // every existing non-animated caller and test is unaffected.
-func playBanner() {
+//
+// ctx is consulted between frames (via a select against time.After(interval)
+// rather than an uninterruptible time.Sleep, so a cancellation lands within
+// one frame interval instead of waiting out whatever sleep was already in
+// progress): when ctx is done, playBanner returns immediately, leaving
+// whatever partial frame is already on screen — unlike the hard-cap branch
+// above, it does NOT jump to the final settled frame, since a cancelled ctx
+// means the caller (runInit) is about to exit on ctx.Err() anyway, not
+// continue on to whatever the completed animation would normally lead into.
+// The static fallback path above never sleeps, so it has no cancellation
+// point of its own — ctx is not consulted there.
+func playBanner(ctx context.Context) {
 	width, widthOK := terminalWidth()
 	if !stdoutIsRealTTY() || !colorEnabled() || bannerFramesErr != nil || !widthOK || width < bannerFrameContentWidth+1 {
 		fmt.Fprint(stdout, dim(bannerText))
@@ -140,7 +152,11 @@ func playBanner() {
 			fmt.Fprint(stdout, dim(bannerFrames[last].block()))
 			return
 		}
-		time.Sleep(interval)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
 		fmt.Fprint(stdout, cursorUp)
 		fmt.Fprint(stdout, dim(bannerFrames[i].block()))
 	}

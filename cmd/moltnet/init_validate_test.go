@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunInitCreatesCanonicalFiles(t *testing.T) {
@@ -30,7 +31,7 @@ func TestRunInitReportsExistingFiles(t *testing.T) {
 	writeNodeConfig(t, filepath.Join(directory, "MoltnetNode"), defaultMoltnetNodeConfig("local"))
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{directory}); err != nil {
+		if err := runInit(context.Background(), []string{directory}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
@@ -41,8 +42,41 @@ func TestRunInitReportsExistingFiles(t *testing.T) {
 }
 
 func TestRunInitErrorsOnTooManyArgs(t *testing.T) {
-	if err := runInit([]string{"one", "two"}); err == nil {
+	if err := runInit(context.Background(), []string{"one", "two"}); err == nil {
 		t.Fatal("expected invalid init args error")
+	}
+}
+
+// TestRunInitValidatesArgsBeforeAnimation is item 2's own regression guard:
+// `moltnet init a b` used to run the full ~0.9s settle animation
+// (printBannerAnimated) before ever reaching the "at most one positional
+// path" check, so a doomed command still cost a real user the whole
+// animation before showing the error it could have shown instantly. Needs a
+// real pty (preparePTYBannerTest, banner_player_test.go) — a plain
+// captureStdout pipe never satisfies stdoutIsRealTTY, so printBannerAnimated
+// would silently no-op either way and the ordering bug would go unnoticed.
+func TestRunInitValidatesArgsBeforeAnimation(t *testing.T) {
+	if bannerFramesErr != nil {
+		t.Fatalf("bannerFramesErr = %v, want nil", bannerFramesErr)
+	}
+
+	buf := preparePTYBannerTest(t, 80)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	start := time.Now()
+	err := runInit(context.Background(), []string{"one", "two"})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error for two positional args")
+	}
+	if elapsed > 100*time.Millisecond {
+		t.Fatalf("runInit() took %v to reject invalid args; want instant, before any animation frame is drawn", elapsed)
+	}
+
+	if output := drainedOutput(buf); output != "" {
+		t.Fatalf("output = %q, want nothing written at all — the arg-count error must fire before printBannerAnimated", output)
 	}
 }
 
@@ -52,7 +86,7 @@ func TestRunInitErrorsWhenTargetCannotBeCreated(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	if err := runInit([]string{filepath.Join(root, "child")}); err == nil {
+	if err := runInit(context.Background(), []string{filepath.Join(root, "child")}); err == nil {
 		t.Fatal("expected init mkdir error")
 	}
 }

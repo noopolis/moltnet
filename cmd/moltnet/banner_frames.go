@@ -15,8 +15,9 @@ import (
 // render provenance. parseBannerFrames crops that shared canvas margin away
 // and drops consecutive duplicate frames before playBanner ever sees them
 // — see bannerFrames/bannerFramesErr below. assets/banner-frames-loop.txt
-// (a 24-frame idle pendulum) ships alongside it for a later "waiting"
-// animation but is not embedded or wired up here.
+// (a 7-frame idle pendulum quarter-period — 0deg to +18deg; a player
+// ping-pongs it for the full swing, see assets/AGENTS.md) ships alongside
+// it for a later "waiting" animation but is not embedded or wired up here.
 //
 //go:embed assets/banner-frames.txt
 var bannerFramesText string

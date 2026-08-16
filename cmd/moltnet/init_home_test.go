@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,7 +13,7 @@ func TestRunInitGlobalHomeRequiresIDNonInteractively(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	if err := runInit(nil); err == nil {
+	if err := runInit(context.Background(), nil); err == nil {
 		t.Fatal("expected an error when --id is omitted non-interactively with no --dir")
 	}
 }
@@ -22,7 +23,7 @@ func TestRunInitGlobalHomeWritesUnderNetworkID(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{"--id", "acme"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "acme"}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
@@ -48,7 +49,7 @@ func TestRunInitGlobalHomeRejectsInvalidID(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	if err := runInit([]string{"--id", "not a valid id!"}); err == nil {
+	if err := runInit(context.Background(), []string{"--id", "not a valid id!"}); err == nil {
 		t.Fatal("expected an error for an invalid --id")
 	}
 }
@@ -57,7 +58,7 @@ func TestRunInitCustomNameIsUsed(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	if err := runInit([]string{"--id", "acme", "--name", "Acme Friends"}); err != nil {
+	if err := runInit(context.Background(), []string{"--id", "acme", "--name", "Acme Friends"}); err != nil {
 		t.Fatalf("runInit() error = %v", err)
 	}
 
@@ -76,7 +77,7 @@ func TestRunInitBearerStoresTokenWithoutEverPrintingIt(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{"--id", "acme", "--bearer"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "acme", "--bearer"}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
@@ -117,7 +118,7 @@ func TestRunInitWithoutBearerShowsNoneAuthAndBearerTip(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{"--id", "acme"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "acme"}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
@@ -165,7 +166,7 @@ func TestRunInitBearerOnSymlinkedConfigDegradesGracefully(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{"--id", "acme", "--bearer"}); err != nil {
+		if err := runInit(context.Background(), []string{"--id", "acme", "--bearer"}); err != nil {
 			t.Fatalf("runInit() error = %v, want a graceful degrade instead of a hard failure", err)
 		}
 	})
@@ -191,7 +192,7 @@ func TestRunInitDirOptsOutOfGlobalHomeAndIDPrompt(t *testing.T) {
 	t.Setenv("HOME", home)
 	directory := t.TempDir()
 
-	if err := runInit([]string{"--dir", directory}); err != nil {
+	if err := runInit(context.Background(), []string{"--dir", directory}); err != nil {
 		t.Fatalf("runInit() --dir error = %v", err)
 	}
 
@@ -206,7 +207,7 @@ func TestRunInitPositionalPathIsDeprecatedButWorks(t *testing.T) {
 	directory := t.TempDir()
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{directory}); err != nil {
+		if err := runInit(context.Background(), []string{directory}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
@@ -220,7 +221,7 @@ func TestRunInitPositionalPathIsDeprecatedButWorks(t *testing.T) {
 func TestRunInitRejectsPositionalAndDirTogether(t *testing.T) {
 	directory := t.TempDir()
 
-	if err := runInit([]string{directory, "--dir", directory}); err == nil {
+	if err := runInit(context.Background(), []string{directory, "--dir", directory}); err == nil {
 		t.Fatal("expected an error when both a positional path and --dir are given")
 	}
 }
@@ -232,7 +233,7 @@ func TestRunInitWarnsOnCheckoutMarkers(t *testing.T) {
 	}
 
 	output := captureStdout(t, func() {
-		if err := runInit([]string{"--dir", directory}); err != nil {
+		if err := runInit(context.Background(), []string{"--dir", directory}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
