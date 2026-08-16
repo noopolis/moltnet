@@ -24,6 +24,24 @@ type Client struct {
 }
 
 func New(attachment clientconfig.AttachmentConfig) (*Client, error) {
+	return newClient(attachment, nil)
+}
+
+// NewLoopbackOnly is New's variant for callers whose documented invariant is
+// that a request never leaves the local machine — the zero-setup operator
+// fallback (resolveOperatorClient, cmd/moltnet/client_operator_fallback.go),
+// which only ever dials a loopback address it derived itself. Without this,
+// the standard library's default redirect policy still follows a same- or
+// cross-host 307/308 the local server issues: Go strips the Authorization
+// header on a cross-host hop, but the request body — a message's text, for
+// a send — still goes wherever the redirect points. refuseCrossHostRedirect
+// makes that impossible instead of merely "usually fine because nothing
+// redirects today".
+func NewLoopbackOnly(attachment clientconfig.AttachmentConfig) (*Client, error) {
+	return newClient(attachment, refuseCrossHostRedirect)
+}
+
+func newClient(attachment clientconfig.AttachmentConfig, checkRedirect func(*http.Request, []*http.Request) error) (*Client, error) {
 	token, err := attachment.ResolveToken()
 	if err != nil {
 		return nil, err
@@ -31,9 +49,33 @@ func New(attachment clientconfig.AttachmentConfig) (*Client, error) {
 
 	return &Client{
 		attachment: attachment,
-		httpClient: &http.Client{Timeout: defaultTimeout},
+		httpClient: &http.Client{Timeout: defaultTimeout, CheckRedirect: checkRedirect},
 		token:      token,
 	}, nil
+}
+
+// refuseCrossHostRedirect is NewLoopbackOnly's http.Client.CheckRedirect: it
+// allows a redirect back to the same host the original request dialed
+// (via[0] is always that original request), and refuses — with a clear,
+// named error instead of silently following it — any redirect elsewhere.
+// "Same host" compares URL.Host (host:port, not just hostname): two
+// services on the same loopback IP but different ports are still two
+// different destinations for this invariant, and the operator fallback
+// this backs (resolveOperatorClient) already derived one specific
+// host:port from server.listen_addr — nothing else is "the local machine"
+// as far as it is concerned.
+func refuseCrossHostRedirect(request *http.Request, via []*http.Request) error {
+	if len(via) == 0 {
+		return nil
+	}
+	origin := via[0].URL.Host
+	if request.URL.Host == origin {
+		return nil
+	}
+	return fmt.Errorf(
+		"refusing redirect from %s to a different host %s: this client only ever dials the local machine",
+		origin, request.URL.Host,
+	)
 }
 
 func (c *Client) ListRooms(ctx context.Context) (protocol.RoomPage, error) {

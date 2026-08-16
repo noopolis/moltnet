@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 
+	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -16,27 +17,43 @@ func runRead(args []string) error {
 		limit      = flags.Int("limit", 20, "message limit")
 		memberID   = flags.String("member", "", "Moltnet member id when a network has multiple attachments")
 		networkID  = flags.String("network", "", "Moltnet network id when multiple attachments are configured")
-		targetArg  = flags.String("target", "", "explicit target in the form room:<id> or dm:<id>")
+		targetArg  = flags.String("target", "", "target in the form room:<id> or dm:<id> (or the first positional argument)")
 	)
+	override := bindOperatorOverrideFlags(flags)
+
+	// See send.go's runSend for why this checks only the literal word
+	// "help" here, before Parse: "-h"/"--help" already reach Go's flag
+	// package below and become flag.ErrHelp after printing usage.
+	if len(args) > 0 && args[0] == "help" {
+		flags.Usage()
+		return nil
+	}
 
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if flags.NArg() != 0 {
-		return fmt.Errorf("read does not accept positional arguments")
+
+	targetValue := *targetArg
+	if targetValue == "" && flags.NArg() > 0 {
+		targetValue = flags.Arg(0)
+	}
+	if flags.NArg() > 1 || (flags.NArg() == 1 && *targetArg != "") {
+		return fmt.Errorf("read does not accept positional arguments once --target is given")
 	}
 
-	target, err := parseTarget(*targetArg)
+	target, err := parseTarget(targetValue)
 	if err != nil {
 		return err
 	}
 
-	_, attachment, client, err := resolveClientForMember(*configPath, *networkID, *memberID)
+	attachment, client, usingFallback, err := resolveClientOrOperator(*configPath, *networkID, *memberID, *override, authn.ScopeObserve)
 	if err != nil {
 		return err
 	}
-	if err := ensureTargetAllowed(attachment, target); err != nil {
-		return err
+	if !usingFallback {
+		if err := ensureTargetAllowed(attachment, target); err != nil {
+			return err
+		}
 	}
 
 	pageRequest := protocol.PageRequest{Limit: *limit}

@@ -21,13 +21,23 @@ type targetRef struct {
 	kind string
 }
 
+// errClientConfigNotFound is loadClientConfig's sentinel for "explicitPath
+// was empty and none of clientconfig.DiscoverPath's default candidates
+// exist" — the one loadClientConfig failure mode that is fallback-eligible
+// (see resolveClientOrOperator, client_operator_fallback.go). An explicit
+// --config pointing at a path that does not exist fails DiscoverPath's
+// os.Stat directly instead, with a different (non-sentinel) error, so it is
+// never mistaken for this case and never silently falls back to a
+// different config the caller did not ask for.
+var errClientConfigNotFound = errors.New("moltnet client config not found")
+
 func loadClientConfig(explicitPath string) (clientconfig.Config, string, error) {
 	path, ok, err := clientconfig.DiscoverPath(explicitPath)
 	if err != nil {
 		return clientconfig.Config{}, "", err
 	}
 	if !ok {
-		return clientconfig.Config{}, "", fmt.Errorf("moltnet client config not found")
+		return clientconfig.Config{}, "", errClientConfigNotFound
 	}
 
 	config, err := clientconfig.LoadFile(path)
@@ -291,10 +301,16 @@ func validateClientConfigWriteTarget(path string) error {
 }
 
 type conversationsView struct {
-	DMs       []protocol.DirectConversation `json:"dms,omitempty"`
-	MemberID  string                        `json:"member_id"`
-	NetworkID string                        `json:"network_id"`
-	Rooms     []protocol.Room               `json:"rooms,omitempty"`
+	DMs []protocol.DirectConversation `json:"dms,omitempty"`
+	// MemberID omits empty: the zero-setup operator fallback has no member
+	// identity at all (resolveOperatorClient never sets
+	// AttachmentConfig.MemberID), so printing `"member_id": ""` there would
+	// be a fabricated field rather than real attachment data — the
+	// client-config path always has a real, non-empty member id, so
+	// omitempty never hides anything for it.
+	MemberID  string          `json:"member_id,omitempty"`
+	NetworkID string          `json:"network_id"`
+	Rooms     []protocol.Room `json:"rooms,omitempty"`
 }
 
 func commandContext() context.Context {

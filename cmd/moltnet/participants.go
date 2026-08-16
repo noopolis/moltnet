@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 
+	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -17,6 +18,7 @@ func runParticipants(args []string) error {
 		networkID  = flags.String("network", "", "Moltnet network id when multiple attachments are configured")
 		targetArg  = flags.String("target", "", "explicit target in the form room:<id> or dm:<id>")
 	)
+	override := bindOperatorOverrideFlags(flags)
 
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -30,12 +32,14 @@ func runParticipants(args []string) error {
 		return err
 	}
 
-	_, attachment, client, err := resolveClientForMember(*configPath, *networkID, *memberID)
+	attachment, client, usingFallback, err := resolveClientOrOperator(*configPath, *networkID, *memberID, *override, authn.ScopeObserve)
 	if err != nil {
 		return err
 	}
-	if err := ensureTargetAllowed(attachment, target); err != nil {
-		return err
+	if !usingFallback {
+		if err := ensureTargetAllowed(attachment, target); err != nil {
+			return err
+		}
 	}
 
 	switch target.kind {

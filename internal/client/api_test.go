@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/noopolis/moltnet/pkg/clientconfig"
@@ -189,5 +191,95 @@ func TestRegisterAgentUsesOpenToken(t *testing.T) {
 	}
 	if authHeader != "Bearer magt_v1_alpha" {
 		t.Fatalf("unexpected auth header %q", authHeader)
+	}
+}
+
+// TestNewLoopbackOnlyRefusesCrossHostRedirect is the P2 fix for the false
+// "never leaves the machine" claim: the operator fallback (moltnetclient.
+// NewLoopbackOnly, used by cmd/moltnet's resolveOperatorClient) dials only a
+// loopback address it derived itself, but the standard library's default
+// redirect policy still follows a same-process 307/308 to any other host —
+// Go strips the Authorization header cross-host, but the request body (a
+// message's text, for a send) still goes wherever the redirect points. This
+// proves NewLoopbackOnly's client refuses that hop instead of silently
+// completing it.
+func TestNewLoopbackOnlyRefusesCrossHostRedirect(t *testing.T) {
+	t.Parallel()
+
+	var offHostHits int32
+	offHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&offHostHits, 1)
+		_ = json.NewEncoder(w).Encode(protocol.MessageAccepted{Accepted: true})
+	}))
+	defer offHost.Close()
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, offHost.URL+"/v1/messages", http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+
+	client, err := NewLoopbackOnly(clientconfig.AttachmentConfig{
+		Auth:      clientconfig.AuthConfig{Mode: "none"},
+		BaseURL:   origin.URL,
+		MemberID:  "operator",
+		NetworkID: "local",
+	})
+	if err != nil {
+		t.Fatalf("NewLoopbackOnly() error = %v", err)
+	}
+
+	_, err = client.SendMessage(context.Background(), protocol.SendMessageRequest{
+		Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "general"},
+		From:   protocol.Actor{Type: "human", ID: "operator"},
+		Parts:  []protocol.Part{{Kind: "text", Text: "hola"}},
+	})
+	if err == nil {
+		t.Fatal("expected SendMessage to refuse the cross-host redirect")
+	}
+	if !strings.Contains(err.Error(), "different host") {
+		t.Fatalf("expected the error to explain the cross-host refusal, got %v", err)
+	}
+	if atomic.LoadInt32(&offHostHits) != 0 {
+		t.Fatal("request body must never reach the off-host redirect target")
+	}
+}
+
+// TestNewLoopbackOnlyStillFollowsSameHostRedirect confirms the fix is
+// specific to cross-host hops, not a blanket "never follow any redirect":
+// a same-host 307 (e.g. a trailing-slash normalization) still completes.
+func TestNewLoopbackOnlyStillFollowsSameHostRedirect(t *testing.T) {
+	t.Parallel()
+
+	var finalPath string
+	var mux http.ServeMux
+	server := httptest.NewServer(&mux)
+	defer server.Close()
+	mux.HandleFunc("/v1/messages", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, server.URL+"/v1/messages/", http.StatusTemporaryRedirect)
+	})
+	mux.HandleFunc("/v1/messages/", func(w http.ResponseWriter, r *http.Request) {
+		finalPath = r.URL.Path
+		_ = json.NewEncoder(w).Encode(protocol.MessageAccepted{Accepted: true})
+	})
+
+	client, err := NewLoopbackOnly(clientconfig.AttachmentConfig{
+		Auth:      clientconfig.AuthConfig{Mode: "none"},
+		BaseURL:   server.URL,
+		MemberID:  "operator",
+		NetworkID: "local",
+	})
+	if err != nil {
+		t.Fatalf("NewLoopbackOnly() error = %v", err)
+	}
+
+	if _, err := client.SendMessage(context.Background(), protocol.SendMessageRequest{
+		Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "general"},
+		From:   protocol.Actor{Type: "human", ID: "operator"},
+		Parts:  []protocol.Part{{Kind: "text", Text: "hola"}},
+	}); err != nil {
+		t.Fatalf("SendMessage() error = %v, want the same-host redirect to be followed", err)
+	}
+	if finalPath != "/v1/messages/" {
+		t.Fatalf("unexpected final path %q", finalPath)
 	}
 }
