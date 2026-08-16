@@ -159,6 +159,7 @@ func newFakeCloudflareCLIServer(t *testing.T, wantToken, initialSubdomain, accep
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /user/tokens/verify", fake.authenticated(fake.handleVerify))
 	mux.HandleFunc("GET /accounts", fake.authenticated(fake.handleAccounts))
+	mux.HandleFunc("GET /accounts/{account}/workers/services/{script}", fake.authenticated(fake.handleGetService))
 	mux.HandleFunc("PUT /accounts/{account}/workers/scripts/{script}", fake.authenticated(fake.handleOK))
 	mux.HandleFunc("PUT /accounts/{account}/workers/scripts/{script}/secrets", fake.authenticated(fake.handleOK))
 	mux.HandleFunc("POST /accounts/{account}/workers/scripts/{script}/subdomain", fake.authenticated(fake.handleOK))
@@ -186,6 +187,22 @@ func (f *fakeCloudflareCLIServer) handleVerify(w http.ResponseWriter, r *http.Re
 
 func (f *fakeCloudflareCLIServer) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	writeFakeCloudflareEnvelope(w, http.StatusOK, true, json.RawMessage(`[{"id":"account-1","name":"acme"}]`))
+}
+
+// handleGetService backs relaydeploy.Client.ScriptMigrationTag (GET
+// /accounts/{account_id}/workers/services/{script_name}), the P1
+// migration-tag fix's pre-upload lookup. This fake never actually tracks
+// per-script migration state the way internal/relaydeploy's own richer
+// fake does (see that package's fake_cloudflare_migration_test.go for the
+// stateful, precondition-enforcing version this CLI-layer fake
+// intentionally does not replicate) — it always reports the script as not
+// found (Cloudflare error code 10092), so every deploy through this fake
+// is treated as a fresh create and sends the embedded migration unchanged,
+// exactly matching this fake's pre-fix behavior (`handleOK` never modeled
+// migration state either). Testing the redeploy-omits-migrations and
+// unrecognized-tag branches themselves is internal/relaydeploy's job.
+func (f *fakeCloudflareCLIServer) handleGetService(w http.ResponseWriter, r *http.Request) {
+	writeFakeCloudflareEnvelopeError(w, http.StatusNotFound, 10092, "workers.api.error.environment_not_found")
 }
 
 // handleOK backs the worker upload, secret, and route-enable calls. Once

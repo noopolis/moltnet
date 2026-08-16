@@ -124,7 +124,13 @@ func deploy(ctx context.Context, client *Client, opts Options) (Result, error) {
 	}
 
 	mainModule := workerMainModule(relay.WorkerMetadataJSON)
-	if err := client.UploadWorkerModule(ctx, accountID, scriptName, mainModule, relay.WorkerScript, relay.WorkerMetadataJSON); err != nil {
+
+	uploadMetadata, err := prepareUploadMetadata(ctx, client, accountID, scriptName, relay.WorkerMetadataJSON)
+	if err != nil {
+		return Result{}, fmt.Errorf("resolve relay worker migration state: %w", err)
+	}
+
+	if err := client.UploadWorkerModule(ctx, accountID, scriptName, mainModule, relay.WorkerScript, uploadMetadata); err != nil {
 		// A field-observed failure mode this belt-and-braces check exists
 		// for: on a minimal-scope token that never even reaches the
 		// WorkersDevSubdomain check below (auth itself succeeds), Cloudflare

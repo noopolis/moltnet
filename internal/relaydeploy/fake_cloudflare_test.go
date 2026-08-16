@@ -64,6 +64,17 @@ type fakeCloudflareServer struct {
 	secrets          map[string]string
 	routeEnabled     bool
 	claimedSubdomain string // set by a successful handleClaimSubdomain PUT
+
+	// scriptMigrationTags models the per-script Durable Object migration
+	// state a real Cloudflare account carries: presence of scriptName as a
+	// key means the script exists (GET /workers/scripts lists it), and the
+	// value is its current migration_tag — "" until a migration has ever
+	// been applied to it. handleUploadWorker updates this on every
+	// successful upload (see applyMigrationLocked); handleGetService and
+	// checkMigrationPrecondition both read it, mirroring how Client.
+	// ScriptMigrationTag and Cloudflare's own upload precondition check
+	// consult the same underlying state on the real API.
+	scriptMigrationTags map[string]string
 }
 
 func newFakeCloudflareServer(t *testing.T, cfg fakeCloudflareConfig) *fakeCloudflareServer {
@@ -72,11 +83,12 @@ func newFakeCloudflareServer(t *testing.T, cfg fakeCloudflareConfig) *fakeCloudf
 		cfg.accountID = "account-1"
 	}
 
-	fake := &fakeCloudflareServer{cfg: cfg, secrets: map[string]string{}}
+	fake := &fakeCloudflareServer{cfg: cfg, secrets: map[string]string{}, scriptMigrationTags: map[string]string{}}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /user/tokens/verify", fake.handleVerify)
 	mux.HandleFunc("GET /accounts", fake.handleAccounts)
+	mux.HandleFunc("GET /accounts/{account}/workers/services/{script}", fake.handleGetService)
 	mux.HandleFunc("PUT /accounts/{account}/workers/scripts/{script}", fake.handleUploadWorker)
 	mux.HandleFunc("PUT /accounts/{account}/workers/scripts/{script}/secrets", fake.handleSetSecret)
 	mux.HandleFunc("POST /accounts/{account}/workers/scripts/{script}/subdomain", fake.handleEnableRoute)
@@ -144,9 +156,19 @@ func (f *fakeCloudflareServer) handleUploadWorker(w http.ResponseWriter, r *http
 		return
 	}
 
+	scriptName := r.PathValue("script")
 	metadata := []byte(r.FormValue("metadata"))
 	if err := validateUploadWorkerMetadataShape(metadata); err != nil {
 		writeCloudflareEnvelope(w, http.StatusBadRequest, false, nil, []CloudflareMessage{{Code: 10021, Message: err.Error()}})
+		return
+	}
+
+	if err := f.checkMigrationPrecondition(scriptName, metadata); err != nil {
+		// Mirrors the exact field-observed rejection: HTTP 412, Cloudflare
+		// error code 10079 ("Actor migration tag precondition failed, got
+		// tag '<provided old_tag>' when expected tag is '<script's actual
+		// tag>'") — see checkMigrationPrecondition's doc comment.
+		writeCloudflareEnvelope(w, http.StatusPreconditionFailed, false, nil, []CloudflareMessage{{Code: 10079, Message: err.Error()}})
 		return
 	}
 
@@ -164,6 +186,7 @@ func (f *fakeCloudflareServer) handleUploadWorker(w http.ResponseWriter, r *http
 		file.Close()
 		f.uploadedScript = data
 	}
+	f.applyMigrationLocked(scriptName, metadata)
 	f.mu.Unlock()
 
 	writeCloudflareEnvelope(w, http.StatusOK, true, json.RawMessage(`{"id":"script"}`), nil)
@@ -174,7 +197,12 @@ func (f *fakeCloudflareServer) handleUploadWorker(w http.ResponseWriter, r *http
 // wrangler.jsonc's config-file conventions (a nested `durable_objects`
 // wrapper key, or a `migrations` array keyed by `tag` instead of a single
 // `new_tag` object): the API wants a flat, typed top-level `bindings` array
-// and a single-step `migrations` object.
+// and, when present, a single-step `migrations` object. `migrations` itself
+// is optional on the wire (Cloudflare accepts an upload with no migrations
+// key at all, leaving Durable Object bindings untouched) — that is exactly
+// prepareUploadMetadata's redeploy-over-an-already-migrated-script path
+// (see deploy.go / upload_metadata.go), so this only validates the key's
+// shape when it is present, rather than requiring it on every upload.
 func validateUploadWorkerMetadataShape(metadata []byte) error {
 	var parsed map[string]json.RawMessage
 	if err := json.Unmarshal(metadata, &parsed); err != nil {
@@ -210,7 +238,7 @@ func validateUploadWorkerMetadataShape(metadata []byte) error {
 
 	rawMigrations, present := parsed["migrations"]
 	if !present {
-		return errors.New(`worker upload metadata missing "migrations"`)
+		return nil
 	}
 	trimmedMigrations := strings.TrimSpace(string(rawMigrations))
 	if !strings.HasPrefix(trimmedMigrations, "{") {

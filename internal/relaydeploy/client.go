@@ -272,6 +272,61 @@ func (c *Client) EnableWorkersDevRoute(ctx context.Context, accountID, scriptNam
 	return nil
 }
 
+// ScriptMigrationTag returns scriptName's current Durable Object migration
+// tag, via Cloudflare's per-script Get Service Metadata operation (GET
+// /accounts/{account_id}/workers/services/{script_name}), reading
+// result.default_environment.script.migration_tag — the same call and
+// field wrangler itself reads to compute old_tag before an upload (see
+// deploy.go's prepareUploadMetadata, which this backs). Unlike the
+// account-wide "List Workers" endpoint this used to call, this is a
+// single per-script lookup: O(1) in the account's script count.
+//
+// found is false when no script named scriptName exists yet: Cloudflare
+// reports that as a failed envelope carrying error code 10007, 10090, or
+// 10092 (script/service/environment not found — wrangler's own
+// suppressNotFoundError treats the same three as equivalent for this
+// call), all mapped here to found=false. Any other failure surfaces as a
+// *CloudflareAPIError. tag == "" with found true means the script exists
+// but has never had a migration applied.
+func (c *Client) ScriptMigrationTag(ctx context.Context, accountID, scriptName string) (tag string, found bool, err error) {
+	path := fmt.Sprintf("/accounts/%s/workers/services/%s", url.PathEscape(accountID), url.PathEscape(scriptName))
+	envelope, status, err := c.request(ctx, http.MethodGet, path, nil, "")
+	if err != nil {
+		return "", false, err
+	}
+	if !envelope.Success {
+		if isServiceNotFoundEnvelope(envelope) {
+			return "", false, nil
+		}
+		return "", false, apiError(status, envelope)
+	}
+
+	var result struct {
+		DefaultEnvironment struct {
+			Script struct {
+				MigrationTag string `json:"migration_tag"`
+			} `json:"script"`
+		} `json:"default_environment"`
+	}
+	if err := json.Unmarshal(envelope.Result, &result); err != nil {
+		return "", false, fmt.Errorf("decode cloudflare worker service metadata: %w", err)
+	}
+	return result.DefaultEnvironment.Script.MigrationTag, true, nil
+}
+
+// isServiceNotFoundEnvelope reports whether envelope's errors carry
+// Cloudflare error code 10007, 10090, or 10092 — the not-found codes
+// ScriptMigrationTag maps to found=false.
+func isServiceNotFoundEnvelope(envelope cloudflareEnvelope) bool {
+	for _, message := range envelope.Errors {
+		switch message.Code {
+		case 10007, 10090, 10092:
+			return true
+		}
+	}
+	return false
+}
+
 // WorkersDevSubdomain resolves the account-level workers.dev subdomain
 // (e.g. "acme" in "acme.workers.dev"). The account-level subdomain is a
 // one-time claim the API cannot perform on the caller's behalf (PLAN.md
