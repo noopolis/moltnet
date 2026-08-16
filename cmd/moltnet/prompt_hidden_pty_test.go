@@ -97,6 +97,12 @@ func TestPromptHiddenHelperProcess(t *testing.T) {
 			os.Exit(1)
 		}
 		fmt.Fprintf(os.Stderr, "HELPER-RESULT:err=%v token=%q\n", err, token)
+	case "claim-flush-then-attempt":
+		// The P1 flush-before-claim-prompt fix's own real-pty coverage
+		// (relay_deploy_subdomain_claim_pty_test.go): mirrors
+		// "flush-then-confirm" above for
+		// attemptInteractiveWorkersDevSubdomainClaim's own flush call.
+		runClaimFlushThenAttemptHelperScenario()
 	default:
 		fmt.Fprintf(os.Stderr, "HELPER-ERROR:unknown scenario %q\n", scenario)
 		os.Exit(1)

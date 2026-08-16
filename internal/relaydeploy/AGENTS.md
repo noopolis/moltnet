@@ -7,8 +7,8 @@ client and deploy orchestration for the relay Worker embedded from `relay/`.
 
 - Cloudflare REST API client (token verify, account resolution, module
   worker upload with the `RelayRoom` Durable Object migration, secret
-  management, workers.dev route enablement, subdomain resolution) — stdlib
-  `net/http` only.
+  management, workers.dev route enablement, subdomain resolution and claim)
+  — stdlib `net/http` only.
 - Deploy orchestration: idempotent re-deploy semantics (keep the existing
   `RELAY_TOKEN` unless a new one is supplied), post-deploy DNS verification.
 - Local relay credential storage (`.moltnet/relay.json`) so `pair invite` can

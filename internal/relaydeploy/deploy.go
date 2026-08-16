@@ -56,7 +56,12 @@ type Options struct {
 }
 
 // Result is what a successful Deploy learned, for the CLI to print and the
-// caller to persist via SaveCredentials.
+// caller to persist via SaveCredentials. On an ErrWorkersDevSubdomainUnclaimed
+// error specifically, Result is not fully zeroed: AccountID is still
+// populated (account resolution always happens before any step that can
+// return that sentinel), so a caller driving the interactive claim prompt
+// (cmd/moltnet's attemptInteractiveWorkersDevSubdomainClaim) can reuse it
+// instead of resolving the account a second time.
 type Result struct {
 	ScriptName       string
 	AccountID        string
@@ -74,6 +79,8 @@ type Result struct {
 //
 // A rejected/insufficiently-scoped Cloudflare API token error is enriched
 // with opts.StoredTokenPath guidance, when set, via wrapStoredTokenError.
+// See Result's doc comment for what is still populated on an
+// ErrWorkersDevSubdomainUnclaimed error specifically.
 func Deploy(ctx context.Context, client *Client, opts Options) (Result, error) {
 	result, err := deploy(ctx, client, opts)
 	if err != nil {
@@ -118,6 +125,16 @@ func deploy(ctx context.Context, client *Client, opts Options) (Result, error) {
 
 	mainModule := workerMainModule(relay.WorkerMetadataJSON)
 	if err := client.UploadWorkerModule(ctx, accountID, scriptName, mainModule, relay.WorkerScript, relay.WorkerMetadataJSON); err != nil {
+		// A field-observed failure mode this belt-and-braces check exists
+		// for: on a minimal-scope token that never even reaches the
+		// WorkersDevSubdomain check below (auth itself succeeds), Cloudflare
+		// can reject the upload itself with error code 10063 ("You need a
+		// workers.dev subdomain in order to proceed") when the account has
+		// never claimed one — not just the EnableWorkersDevRoute step this
+		// code originally only checked around.
+		if isUnclaimedWorkersDevSubdomainError(err) {
+			return Result{AccountID: accountID}, ErrWorkersDevSubdomainUnclaimed
+		}
 		return Result{}, fmt.Errorf("upload relay worker: %w", err)
 	}
 
@@ -133,6 +150,9 @@ func deploy(ctx context.Context, client *Client, opts Options) (Result, error) {
 	}
 
 	if err := client.SetSecret(ctx, accountID, scriptName, relayTokenSecretName, token); err != nil {
+		if isUnclaimedWorkersDevSubdomainError(err) {
+			return Result{AccountID: accountID}, ErrWorkersDevSubdomainUnclaimed
+		}
 		return Result{}, fmt.Errorf("set %s secret: %w", relayTokenSecretName, err)
 	}
 
@@ -140,21 +160,24 @@ func deploy(ctx context.Context, client *Client, opts Options) (Result, error) {
 	// route: on an account with no claimed subdomain, EnableWorkersDevRoute
 	// itself fails (Cloudflare error code 10007), so checking claim status
 	// first is what lets the ErrWorkersDevSubdomainUnclaimed branch (and the
-	// CLI's dashboard guidance) actually trigger instead of a raw API error.
+	// CLI's dashboard guidance / interactive claim prompt) actually trigger
+	// instead of a raw API error. In practice the upload and secret steps
+	// above can already have caught this (see their own checks), so this is
+	// usually a no-op confirmation rather than the first detection.
 	subdomain, claimed, err := client.WorkersDevSubdomain(ctx, accountID)
 	if err != nil {
 		return Result{}, fmt.Errorf("resolve workers.dev subdomain: %w", err)
 	}
 	if !claimed {
-		return Result{}, ErrWorkersDevSubdomainUnclaimed
+		return Result{AccountID: accountID}, ErrWorkersDevSubdomainUnclaimed
 	}
 
 	if err := client.EnableWorkersDevRoute(ctx, accountID, scriptName); err != nil {
-		// Belt and braces: treat a 10007 from EnableWorkersDevRoute itself as
-		// the same sentinel, in case the subdomain claim state changes
-		// between the check above and this call.
+		// Belt and braces: treat 10007/10063 from EnableWorkersDevRoute
+		// itself as the same sentinel, in case the subdomain claim state
+		// changes between the check above and this call.
 		if isUnclaimedWorkersDevSubdomainError(err) {
-			return Result{}, ErrWorkersDevSubdomainUnclaimed
+			return Result{AccountID: accountID}, ErrWorkersDevSubdomainUnclaimed
 		}
 		return Result{}, fmt.Errorf("enable workers.dev route: %w", err)
 	}
@@ -176,19 +199,23 @@ func deploy(ctx context.Context, client *Client, opts Options) (Result, error) {
 	}, nil
 }
 
-// isUnclaimedWorkersDevSubdomainError reports whether err is Cloudflare API
-// error code 10007, the code EnableWorkersDevRoute returns when the account
-// has never claimed a workers.dev subdomain. WorkersDevSubdomain is checked
-// before that call and normally catches the unclaimed case first; this is
-// belt and braces so the same sentinel still surfaces if that ordering ever
-// slips.
+// isUnclaimedWorkersDevSubdomainError reports whether err is a Cloudflare
+// API error carrying code 10007 ("You do not have a workers.dev
+// subdomain.", the code EnableWorkersDevRoute returns) or code 10063 ("You
+// need a workers.dev subdomain in order to proceed.", observed in the field
+// from the worker-upload step on a minimal-scope token, before
+// WorkersDevSubdomain or EnableWorkersDevRoute are ever reached). Cloudflare
+// does not document which of its steps can return which of these two codes
+// for an unclaimed account, so every step that touches a script on an
+// account with no claimed subdomain (upload, secret, route) checks for
+// both, rather than assuming only one code is possible at each call site.
 func isUnclaimedWorkersDevSubdomainError(err error) bool {
 	var apiErr *CloudflareAPIError
 	if !errors.As(err, &apiErr) {
 		return false
 	}
 	for _, message := range apiErr.Messages {
-		if message.Code == 10007 {
+		if message.Code == 10007 || message.Code == 10063 {
 			return true
 		}
 	}

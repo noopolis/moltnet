@@ -112,9 +112,20 @@ func TestDeployWorkersDevSubdomainUnclaimed(t *testing.T) {
 	// calling EnableWorkersDevRoute (which the real Cloudflare API would
 	// fail with error code 10007 for the same reason).
 	fake := newFakeCloudflareServer(t, fakeCloudflareConfig{authOK: true, subdomain: ""})
-	_, err := Deploy(context.Background(), fake.client(), Options{})
+	result, err := Deploy(context.Background(), fake.client(), Options{})
 	if !errors.Is(err, ErrWorkersDevSubdomainUnclaimed) {
 		t.Fatalf("Deploy() error = %v, want ErrWorkersDevSubdomainUnclaimed", err)
+	}
+	// P1 regression: this is the *primary* detection path (WorkersDevSubdomain
+	// itself reports unclaimed, not a belt-and-braces 10007/10063 rejection
+	// from another step), so Result's doc comment's guarantee that AccountID
+	// stays populated on this sentinel must hold here specifically — a
+	// caller driving the interactive claim (cmd/moltnet's
+	// attemptInteractiveWorkersDevSubdomainClaim) reuses exactly this value
+	// instead of resolving the account a second time, and a zeroed AccountID
+	// here would send its claim PUT to /accounts//workers/subdomain.
+	if result.AccountID != fake.cfg.accountID {
+		t.Fatalf("Result.AccountID = %q, want %q even on ErrWorkersDevSubdomainUnclaimed from the primary GET-check path", result.AccountID, fake.cfg.accountID)
 	}
 	// The worker was still uploaded and the secret still set; only the
 	// route/URL step is blocked on the one-time dashboard claim.
@@ -145,6 +156,61 @@ func TestDeployWorkersDevSubdomainUnclaimedViaEnableRoute10007(t *testing.T) {
 	}
 	if fake.routeEnabled {
 		t.Fatal("expected EnableWorkersDevRoute's 10007 response to leave the route disabled")
+	}
+}
+
+func TestDeployWorkersDevSubdomainUnclaimedViaUpload10063(t *testing.T) {
+	t.Parallel()
+
+	// Field-observed failure mode: a minimal-scope token whose auth itself
+	// succeeds, but where Cloudflare rejects the worker upload itself with
+	// error code 10063 ("You need a workers.dev subdomain in order to
+	// proceed.") on an account with no claimed subdomain — before Deploy
+	// ever reaches the WorkersDevSubdomain check or EnableWorkersDevRoute.
+	// The raw 403/10063 error must not leak past Deploy; it must map to the
+	// same ErrWorkersDevSubdomainUnclaimed sentinel as the 10007 paths.
+	fake := newFakeCloudflareServer(t, fakeCloudflareConfig{
+		authOK:           true,
+		subdomain:        "",
+		forceUpload10063: true,
+	})
+	_, err := Deploy(context.Background(), fake.client(), Options{})
+	if !errors.Is(err, ErrWorkersDevSubdomainUnclaimed) {
+		t.Fatalf("Deploy() error = %v, want ErrWorkersDevSubdomainUnclaimed", err)
+	}
+	if strings.Contains(err.Error(), "10063") {
+		t.Fatalf("Deploy() error = %v, want the raw Cloudflare error code never to leak past the sentinel", err)
+	}
+	if fake.routeEnabled {
+		t.Fatal("expected Deploy to stop at the upload step, never reaching EnableWorkersDevRoute")
+	}
+}
+
+// TestIsUnclaimedWorkersDevSubdomainErrorMatchesBothCodes covers the
+// detection function directly for all three deploy steps (upload, secret,
+// route) that call it, rather than standing up a fake-server scenario for
+// each: TestDeployWorkersDevSubdomainUnclaimedViaUpload10063 and
+// TestDeployWorkersDevSubdomainUnclaimedViaEnableRoute10007 already cover
+// two of those call sites end to end, and SetSecret's own check is the same
+// three lines as UploadWorkerModule's — this is what actually backs all of
+// them.
+func TestIsUnclaimedWorkersDevSubdomainErrorMatchesBothCodes(t *testing.T) {
+	t.Parallel()
+
+	for _, code := range []int{10007, 10063} {
+		err := &CloudflareAPIError{StatusCode: 400, Messages: []CloudflareMessage{{Code: code, Message: "workers.dev subdomain required"}}}
+		if !isUnclaimedWorkersDevSubdomainError(err) {
+			t.Fatalf("isUnclaimedWorkersDevSubdomainError() = false for code %d, want true", code)
+		}
+	}
+
+	other := &CloudflareAPIError{StatusCode: 400, Messages: []CloudflareMessage{{Code: 9109, Message: "invalid token"}}}
+	if isUnclaimedWorkersDevSubdomainError(other) {
+		t.Fatal("isUnclaimedWorkersDevSubdomainError() = true for an unrelated error code, want false")
+	}
+
+	if isUnclaimedWorkersDevSubdomainError(errors.New("not a cloudflare api error")) {
+		t.Fatal("isUnclaimedWorkersDevSubdomainError() = true for a non-CloudflareAPIError, want false")
 	}
 }
 

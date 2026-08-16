@@ -2,6 +2,7 @@ package relaydeploy
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -125,6 +126,49 @@ func TestClientWorkersDevSubdomainAuthFailureIsHardError(t *testing.T) {
 	}
 	if claimed {
 		t.Fatal("WorkersDevSubdomain() claimed = true, want false on error")
+	}
+}
+
+func TestClientClaimWorkersDevSubdomain(t *testing.T) {
+	t.Parallel()
+	fake := newFakeCloudflareServer(t, fakeCloudflareConfig{
+		accountID:      "acct-claim",
+		authOK:         true,
+		subdomain:      "", // unclaimed until the PUT below
+		claimSubdomain: "apresmoi",
+	})
+	client := fake.client()
+	ctx := context.Background()
+
+	if err := client.ClaimWorkersDevSubdomain(ctx, "acct-claim", "apresmoi"); err != nil {
+		t.Fatalf("ClaimWorkersDevSubdomain() error = %v", err)
+	}
+
+	subdomain, claimed, err := client.WorkersDevSubdomain(ctx, "acct-claim")
+	if err != nil {
+		t.Fatalf("WorkersDevSubdomain() error = %v", err)
+	}
+	if !claimed || subdomain != "apresmoi" {
+		t.Fatalf("WorkersDevSubdomain() after claim = (%q, %v), want (apresmoi, true)", subdomain, claimed)
+	}
+}
+
+func TestClientClaimWorkersDevSubdomainRejectsUnavailableName(t *testing.T) {
+	t.Parallel()
+	fake := newFakeCloudflareServer(t, fakeCloudflareConfig{
+		accountID:      "acct-claim-taken",
+		authOK:         true,
+		claimSubdomain: "the-only-name-the-fake-accepts",
+	})
+	client := fake.client()
+
+	err := client.ClaimWorkersDevSubdomain(context.Background(), "acct-claim-taken", "someone-already-has-this")
+	if err == nil {
+		t.Fatal("ClaimWorkersDevSubdomain() error = nil, want the fake to reject a name it wasn't configured to accept")
+	}
+	var apiErr *CloudflareAPIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("ClaimWorkersDevSubdomain() error type = %T, want *CloudflareAPIError", err)
 	}
 }
 

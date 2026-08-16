@@ -303,3 +303,42 @@ func (c *Client) WorkersDevSubdomain(ctx context.Context, accountID string) (sub
 	}
 	return result.Subdomain, true, nil
 }
+
+// ClaimWorkersDevSubdomain registers subdomain as accountID's account-level
+// workers.dev subdomain (PUT /accounts/{account_id}/workers/subdomain,
+// Cloudflare's "Create Subdomain" operation) — the one-time claim
+// WorkersDevSubdomain above reads back afterward. It is the API call the
+// interactive claim prompt (cmd/moltnet's `relay deploy`) makes after an
+// operator types a name in response to ErrWorkersDevSubdomainUnclaimed;
+// callers should normalize and validate the name against
+// NormalizeWorkersDevSubdomainName / ValidateWorkersDevSubdomainName before
+// calling this, to avoid spending a round trip on an obviously invalid one.
+//
+// Cloudflare documents two error codes this call can return that callers
+// should branch on rather than treat identically: 10031 ("subdomain already
+// exists" — the name is taken by some account, this one included) is
+// retryable with a different name; 10036 ("account already has a
+// subdomain", HTTP 409 — this account has already claimed one, and
+// Cloudflare allows exactly one per account, ever) is not a failure at all
+// — the caller should re-read the existing claim via WorkersDevSubdomain
+// and continue as already claimed (cmd/moltnet's interactive claim prompt
+// does both). Any other rejection surfaces as a *CloudflareAPIError
+// carrying whatever message Cloudflare returned, shown verbatim.
+func (c *Client) ClaimWorkersDevSubdomain(ctx context.Context, accountID, subdomain string) error {
+	payload, err := json.Marshal(struct {
+		Subdomain string `json:"subdomain"`
+	}{Subdomain: subdomain})
+	if err != nil {
+		return fmt.Errorf("encode workers.dev subdomain claim payload: %w", err)
+	}
+
+	path := fmt.Sprintf("/accounts/%s/workers/subdomain", url.PathEscape(accountID))
+	envelope, status, err := c.request(ctx, http.MethodPut, path, bytes.NewReader(payload), "application/json")
+	if err != nil {
+		return err
+	}
+	if !envelope.Success {
+		return apiError(status, envelope)
+	}
+	return nil
+}

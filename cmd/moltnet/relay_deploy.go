@@ -5,15 +5,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 
 	"github.com/noopolis/moltnet/internal/app"
 	"github.com/noopolis/moltnet/internal/relaydeploy"
 )
-
-const cloudflareDashboardTokenURL = "https://dash.cloudflare.com/profile/api-tokens"
 
 // newRelayDeployClient constructs the Cloudflare API client `relay deploy`
 // deploys through. It's a var, not a direct relaydeploy.NewClient call, so
@@ -30,38 +27,6 @@ var newRelayDeployClient = func(token string) *relaydeploy.Client {
 // live lookup against a hostname (script.acme.workers.dev in the fake
 // tests) that was never actually deployed.
 var resolveRelayDeployHostname func(ctx context.Context, hostname string) bool
-
-// cloudflareTokenTemplateName pre-fills the "Token name" field on the
-// Cloudflare API-token-creation deep link below.
-const cloudflareTokenTemplateName = "moltnet-relay-deploy"
-
-// cloudflareTokenDeepLinkPermissions is the permissionGroupKeys JSON for
-// Account > Workers Scripts > Edit — the one permission group
-// `moltnet relay deploy` actually needs (script upload, RELAY_TOKEN secret,
-// workers.dev route; see internal/relaydeploy/client.go and deploy.go). It
-// matches Cloudflare's own minimal "Workers development" token-template deep
-// link verbatim:
-// https://developers.cloudflare.com/fundamentals/api/how-to/account-owned-token-template/
-const cloudflareTokenDeepLinkPermissions = `[{"key":"workers_scripts","type":"edit"}]`
-
-// buildCloudflareTokenDeepLink returns a Cloudflare API-token-creation URL
-// that pre-selects the Account > Workers Scripts > Edit permission group and
-// pre-fills the token name, following Cloudflare's documented user-token
-// template URL format (same reference as above):
-//
-//	https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=<url-encoded JSON>&accountId=*&zoneId=all&name=<name>
-//
-// A pure function, kept separate from buildMissingCloudflareTokenGuidance so
-// its exact encoded output can be pinned by a unit test.
-func buildCloudflareTokenDeepLink(name string) string {
-	return fmt.Sprintf("%s?permissionGroupKeys=%s&accountId=%s&zoneId=%s&name=%s",
-		cloudflareDashboardTokenURL,
-		url.QueryEscape(cloudflareTokenDeepLinkPermissions),
-		url.QueryEscape("*"),
-		url.QueryEscape("all"),
-		url.QueryEscape(name),
-	)
-}
 
 // runRelayDeploy implements `moltnet relay deploy`: it deploys the embedded,
 // pre-bundled relay Worker (see relay/dist and relay/embed.go) via the
@@ -184,17 +149,59 @@ func runRelayDeploy(args []string) error {
 		priorToken = existing.Token
 	}
 
+	ctx := context.Background()
 	client := newRelayDeployClient(apiToken)
-	result, err := relaydeploy.Deploy(context.Background(), client, relaydeploy.Options{
+	deployOpts := relaydeploy.Options{
 		ScriptName:      scriptName,
 		ExistingToken:   existingToken,
 		PriorToken:      priorToken,
 		ResolveHostname: resolveRelayDeployHostname,
 		StoredTokenPath: storedTokenPathForDeploy,
-	})
+	}
+	result, err := relaydeploy.Deploy(ctx, client, deployOpts)
+	var claimedSubdomainName string
+	var claimPropagationPending bool
+	if err != nil && errors.Is(err, relaydeploy.ErrWorkersDevSubdomainUnclaimed) && isInteractive() && isOutputTerminal() {
+		fmt.Fprint(stdout, buildWorkersDevSubdomainClaimIntro())
+		// result.AccountID is already resolved here even though this Deploy
+		// call itself failed: every step that can return
+		// ErrWorkersDevSubdomainUnclaimed runs after account resolution
+		// (see Result's doc comment, deploy.go) — attemptInteractiveWorkersDevSubdomainClaim
+		// reuses it instead of resolving the account a second time.
+		name, ok, pending := attemptInteractiveWorkersDevSubdomainClaim(ctx, client, result.AccountID)
+		if ok {
+			claimedSubdomainName = name
+			// The claim succeeded; re-run Deploy in full rather than trying
+			// to resume mid-flight — see attemptInteractiveWorkersDevSubdomainClaim's
+			// doc comment for why that's the simplest correct choice here.
+			result, err = relaydeploy.Deploy(ctx, client, deployOpts)
+		} else {
+			claimPropagationPending = pending
+		}
+	}
 	if err != nil {
 		if errors.Is(err, relaydeploy.ErrWorkersDevSubdomainUnclaimed) {
-			fmt.Fprint(stdout, buildWorkersDevSubdomainGuidance(config.NetworkID))
+			switch {
+			case claimedSubdomainName != "":
+				// The claim PUT itself already succeeded (claimedSubdomainName
+				// was only set on a successful attemptInteractiveWorkersDevSubdomainClaim
+				// call); this redeploy failing again with the same sentinel
+				// means Cloudflare's own read-after-write lag, not an
+				// unclaimed account — printing the generic "has not claimed"
+				// guidance here would be actively misleading (P2 post-claim
+				// lag messaging fix).
+				fmt.Fprint(stdout, buildWorkersDevSubdomainClaimLagGuidance(claimedSubdomainName, config.NetworkID))
+			case claimPropagationPending:
+				// attemptInteractiveWorkersDevSubdomainClaim already printed
+				// its own specific propagation-lag reason (the 10036 PUT
+				// rejection whose follow-up GET recheck still reported the
+				// account unclaimed); printing the generic "has not claimed
+				// one yet" guidance on top of that would directly contradict
+				// it, since Cloudflare has already told us the account does
+				// have a subdomain.
+			default:
+				fmt.Fprint(stdout, buildWorkersDevSubdomainGuidance(config.NetworkID))
+			}
 		}
 		return err
 	}
@@ -235,94 +242,4 @@ func runRelayDeploy(args []string) error {
 
 	printRelayDeployNextSteps(config.NetworkID)
 	return nil
-}
-
-// printRelayDeployNextSteps prints the "Next:" block a successful `moltnet
-// relay deploy` ends with: a filled-in `pair invite` command for the
-// resolved network, or (P1-4) a re-init nudge when the network is still on
-// the default id, since `pair invite` refuses to run against it (two
-// default installs would collide) and printing it here would hand out a
-// command that can never succeed. Split out from runRelayDeploy so the
-// branch can be exercised directly without a real Cloudflare deploy.
-func printRelayDeployNextSteps(networkID string) {
-	if networkID == app.DefaultNetworkID {
-		printNextSteps([]nextStep{
-			{
-				command:     "moltnet init --id <network-id>",
-				description: "re-init with a real network id before pairing",
-			},
-		})
-		return
-	}
-
-	printNextSteps([]nextStep{
-		{
-			command:     fmt.Sprintf("moltnet pair invite --network-id %s --room chat", networkID),
-			description: "invite a friend over this relay",
-		},
-	})
-}
-
-// buildMissingCloudflareTokenGuidance is what `relay deploy` prints when
-// CLOUDFLARE_API_TOKEN is not set: a Cloudflare token-creation deep link
-// that pre-selects the one permission group the deploy flow needs (Account >
-// Workers Scripts > Edit — see cloudflareTokenDeepLinkPermissions above),
-// with the plain dashboard URL kept as a manual fallback. On a TTY, an extra
-// dim hint line explains what the pre-filled page looks like; piped output
-// (tests, scripts, CI logs) skips it.
-func buildMissingCloudflareTokenGuidance(id string) string {
-	var b strings.Builder
-	b.WriteString("CLOUDFLARE_API_TOKEN is not set.\n\n")
-	b.WriteString(cloudflareTokenCreationGuidance())
-	b.WriteString("\nOr create one manually at:\n")
-	fmt.Fprintf(&b, "  %s\n\n", cloudflareDashboardTokenURL)
-	b.WriteString("Required scope:\n")
-	b.WriteString("  - Account > Workers Scripts > Edit\n\n")
-	b.WriteString("Then export it and retry:\n")
-	b.WriteString("  export CLOUDFLARE_API_TOKEN=...\n")
-	fmt.Fprintf(&b, "  moltnet relay deploy --id %s\n", id)
-	return b.String()
-}
-
-// cloudflareTokenCreationGuidance is the token-creation guidance essentials
-// shared by buildMissingCloudflareTokenGuidance's non-interactive block and
-// maybePromptForCloudflareToken's interactive prompt intro: the deep link
-// pre-selecting the one required permission group, plus (on a TTY) a dim
-// hint about what the pre-filled page looks like. Kept separate so both
-// callers stay byte-identical for this shared portion rather than drifting
-// apart over time.
-func cloudflareTokenCreationGuidance() string {
-	var b strings.Builder
-	b.WriteString("Create a Cloudflare API token (pre-filled with the required permission):\n")
-	fmt.Fprintf(&b, "  %s\n", buildCloudflareTokenDeepLink(cloudflareTokenTemplateName))
-	if isOutputTerminal() {
-		fmt.Fprintf(&b, "  %s\n", dim("(opens pre-filled — just Continue → Create Token → copy)"))
-	}
-	return b.String()
-}
-
-func buildWorkersDevSubdomainGuidance(id string) string {
-	return fmt.Sprintf(`This Cloudflare account has not claimed a workers.dev subdomain yet, and
-the API cannot claim one on your behalf. One-time step:
-
-  1. Open https://dash.cloudflare.com and choose this account
-  2. Go to Workers & Pages
-  3. Claim (or confirm) this account's workers.dev subdomain
-
-Then rerun: moltnet relay deploy --id %s
-`, id)
-}
-
-func buildRelayDeployManual(scriptName string) string {
-	return fmt.Sprintf(`Equivalent manual steps (wrangler), run from relay/:
-
-  npm install
-  npx wrangler login
-  npx wrangler deploy --name %s
-  npx wrangler secret put RELAY_TOKEN --name %s
-
-If this Cloudflare account has never claimed a workers.dev subdomain, claim
-one in the dashboard (Workers & Pages) before the *.workers.dev route is
-reachable.
-`, scriptName, scriptName)
 }

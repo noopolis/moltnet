@@ -32,6 +32,23 @@ type fakeCloudflareConfig struct {
 	// returning 10007), as opposed to the primary path where
 	// WorkersDevSubdomain already reports the account unclaimed.
 	forceEnableRouteUnclaimed bool
+
+	// forceUpload10063 makes handleUploadWorker fail with Cloudflare error
+	// code 10063 ("You need a workers.dev subdomain in order to proceed."),
+	// the field-observed failure mode: a minimal-scope token whose auth
+	// itself succeeds, but where Cloudflare rejects the worker upload
+	// itself — before Deploy ever reaches the WorkersDevSubdomain check —
+	// on an account with no claimed subdomain.
+	forceUpload10063 bool
+
+	// claimSubdomain, when set, is the only subdomain name
+	// handleClaimSubdomain (PUT) accepts; any other name (including empty)
+	// is rejected with Cloudflare's documented error code 10031 ("name
+	// already taken"). Once claimed, subsequent GET /workers/subdomain
+	// calls report it via claimedSubdomain (set on a successful PUT),
+	// regardless of the static cfg.subdomain configured above — mirroring
+	// the real account-level claim's effect on every later call.
+	claimSubdomain string
 }
 
 // fakeCloudflareServer is a stdlib net/http/httptest stand-in for the
@@ -46,6 +63,7 @@ type fakeCloudflareServer struct {
 	uploadedMetadata []byte
 	secrets          map[string]string
 	routeEnabled     bool
+	claimedSubdomain string // set by a successful handleClaimSubdomain PUT
 }
 
 func newFakeCloudflareServer(t *testing.T, cfg fakeCloudflareConfig) *fakeCloudflareServer {
@@ -63,6 +81,7 @@ func newFakeCloudflareServer(t *testing.T, cfg fakeCloudflareConfig) *fakeCloudf
 	mux.HandleFunc("PUT /accounts/{account}/workers/scripts/{script}/secrets", fake.handleSetSecret)
 	mux.HandleFunc("POST /accounts/{account}/workers/scripts/{script}/subdomain", fake.handleEnableRoute)
 	mux.HandleFunc("GET /accounts/{account}/workers/subdomain", fake.handleWorkersDevSubdomain)
+	mux.HandleFunc("PUT /accounts/{account}/workers/subdomain", fake.handleClaimSubdomain)
 
 	fake.Server = httptest.NewServer(mux)
 	t.Cleanup(fake.Server.Close)
@@ -116,6 +135,10 @@ func (f *fakeCloudflareServer) handleAccounts(w http.ResponseWriter, r *http.Req
 
 func (f *fakeCloudflareServer) handleUploadWorker(w http.ResponseWriter, r *http.Request) {
 	f.record(r)
+	if f.cfg.forceUpload10063 {
+		writeCloudflareEnvelope(w, http.StatusBadRequest, false, nil, []CloudflareMessage{{Code: 10063, Message: "You need a workers.dev subdomain in order to proceed."}})
+		return
+	}
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -224,12 +247,17 @@ func (f *fakeCloudflareServer) handleSetSecret(w http.ResponseWriter, r *http.Re
 
 func (f *fakeCloudflareServer) handleEnableRoute(w http.ResponseWriter, r *http.Request) {
 	f.record(r)
+	f.mu.Lock()
+	claimed := f.claimedSubdomain
+	f.mu.Unlock()
 	// Mirrors the real Cloudflare API: enabling a script's workers.dev route
 	// fails with error code 10007 when the account has never claimed a
 	// workers.dev subdomain, so the P1 fix (checking WorkersDevSubdomain
 	// first) and its belt-and-braces 10007 handling both have a scenario to
-	// exercise.
-	if f.cfg.subdomain == "" || f.cfg.forceEnableRouteUnclaimed {
+	// exercise. claimed (set by a prior handleClaimSubdomain PUT, exercising
+	// the interactive-claim-then-redeploy path) counts as claimed even when
+	// cfg.subdomain was configured empty.
+	if (f.cfg.subdomain == "" && claimed == "") || f.cfg.forceEnableRouteUnclaimed {
 		writeCloudflareEnvelope(w, http.StatusBadRequest, false, nil, []CloudflareMessage{{Code: 10007, Message: "workers.dev subdomain required"}})
 		return
 	}
@@ -241,6 +269,13 @@ func (f *fakeCloudflareServer) handleEnableRoute(w http.ResponseWriter, r *http.
 
 func (f *fakeCloudflareServer) handleWorkersDevSubdomain(w http.ResponseWriter, r *http.Request) {
 	f.record(r)
+	f.mu.Lock()
+	claimed := f.claimedSubdomain
+	f.mu.Unlock()
+	if claimed != "" {
+		writeCloudflareEnvelope(w, http.StatusOK, true, json.RawMessage(fmt.Sprintf(`{"subdomain":%q}`, claimed)), nil)
+		return
+	}
 	if f.cfg.subdomain == "" {
 		status := f.cfg.subdomainStatus
 		if status == 0 {
@@ -250,6 +285,32 @@ func (f *fakeCloudflareServer) handleWorkersDevSubdomain(w http.ResponseWriter, 
 		return
 	}
 	result := json.RawMessage(fmt.Sprintf(`{"subdomain":%q}`, f.cfg.subdomain))
+	writeCloudflareEnvelope(w, http.StatusOK, true, result, nil)
+}
+
+// handleClaimSubdomain backs Client.ClaimWorkersDevSubdomain (PUT). Only
+// f.cfg.claimSubdomain — when set — is accepted; anything else is rejected
+// with Cloudflare's documented error code 10031 ("name already taken" —
+// see fakeCloudflareConfig.claimSubdomain). Cloudflare's own request body
+// shape ({"subdomain": "..."}) is decoded and validated, matching
+// Client.ClaimWorkersDevSubdomain's payload exactly.
+func (f *fakeCloudflareServer) handleClaimSubdomain(w http.ResponseWriter, r *http.Request) {
+	f.record(r)
+	var payload struct {
+		Subdomain string `json:"subdomain"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if f.cfg.claimSubdomain == "" || payload.Subdomain != f.cfg.claimSubdomain {
+		writeCloudflareEnvelope(w, http.StatusBadRequest, false, nil, []CloudflareMessage{{Code: 10031, Message: "subdomain already exists"}})
+		return
+	}
+	f.mu.Lock()
+	f.claimedSubdomain = payload.Subdomain
+	f.mu.Unlock()
+	result := json.RawMessage(fmt.Sprintf(`{"subdomain":%q}`, payload.Subdomain))
 	writeCloudflareEnvelope(w, http.StatusOK, true, result, nil)
 }
 
