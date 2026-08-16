@@ -29,10 +29,16 @@ pairings: []
 `, networkID, networkName)
 }
 
-// bearerMoltnetConfig is defaultMoltnetConfig plus `--init --bearer`'s
-// generated operator token: auth.mode: bearer with one auth.tokens[] entry
-// scoped for observing, writing, admin commands, and pairing.
-func bearerMoltnetConfig(networkID, networkName, operatorToken string) string {
+// bearerMoltnetConfig is defaultMoltnetConfig plus `--init --bearer`'s two
+// generated tokens: auth.mode: bearer with an "operator" auth.tokens[]
+// entry scoped for observing, writing, admin commands, and pairing, plus a
+// "console" entry scoped to exactly [observe] — the read-only credential
+// `moltnet console` requires before it will ever put a token in the
+// browser's URL bar (consoleObserveToken, console.go). Minting both up
+// front means the canonical `init --bearer` -> `console` flow never lands
+// an operator on a raw 401: the console token already exists by the time
+// `moltnet console` runs.
+func bearerMoltnetConfig(networkID, networkName, operatorToken, consoleToken string) string {
 	return fmt.Sprintf(`version: moltnet.v1
 
 network:
@@ -55,10 +61,13 @@ auth:
     - id: operator
       value: %q
       scopes: [observe, write, admin, pair]
+    - id: console
+      value: %q
+      scopes: [observe]
 
 rooms: []
 pairings: []
-`, networkID, networkName, operatorToken)
+`, networkID, networkName, operatorToken, consoleToken)
 }
 
 // defaultMoltnetNodeConfig renders the canonical MoltnetNode config

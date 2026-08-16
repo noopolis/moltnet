@@ -97,10 +97,10 @@ func printInitSummaryVerbose(summary initSummary) {
 
 	switch {
 	case summary.bearer && summary.serverCreated:
-		fmt.Fprintf(stdout, "  %s operator token stored in Moltnet (0600) — local admin\n", green("✓"))
+		fmt.Fprintf(stdout, "  %s operator + console tokens stored in Moltnet (0600) — full access + read-only console\n", green("✓"))
 		fmt.Fprintln(stdout, "    commands pick it up automatically")
 	case summary.bearer && summary.bearerAdded:
-		fmt.Fprintf(stdout, "  %s operator token added to %s (0600) — local admin\n", green("✓"), abbreviateHome(summary.serverPath))
+		fmt.Fprintf(stdout, "  %s operator + console tokens added to %s (0600) — full access + read-only console\n", green("✓"), abbreviateHome(summary.serverPath))
 		fmt.Fprintln(stdout, "    commands pick it up automatically")
 	case summary.bearer && summary.bearerAddErr != nil:
 		// The reason varies (auth.tokens already has entries, or the config

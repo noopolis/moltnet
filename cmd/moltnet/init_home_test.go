@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/noopolis/moltnet/internal/app"
 )
 
 func TestRunInitGlobalHomeRequiresIDNonInteractively(t *testing.T) {
@@ -87,8 +89,8 @@ func TestRunInitBearerStoresTokenWithoutEverPrintingIt(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "operator token stored in Moltnet") {
-		t.Fatalf("expected a note that the operator token was stored, got %q", output)
+	if !strings.Contains(output, "operator + console tokens stored in Moltnet") {
+		t.Fatalf("expected a note that both tokens were stored, got %q", output)
 	}
 	if !strings.Contains(output, "auth: bearer") {
 		t.Fatalf("expected the auth mode summary in output, got %q", output)
@@ -105,16 +107,56 @@ func TestRunInitBearerStoresTokenWithoutEverPrintingIt(t *testing.T) {
 	if !strings.Contains(string(contents), "scopes: [observe, write, admin, pair]") {
 		t.Fatalf("expected operator token scopes in config, got:\n%s", contents)
 	}
+	if !strings.Contains(string(contents), "id: console") || !strings.Contains(string(contents), "scopes: [observe]") {
+		t.Fatalf("expected a console token scoped to exactly [observe] in config, got:\n%s", contents)
+	}
+
+	// The reload check backs item 5's "reload asserts real plaintext
+	// values, distinct, correct scopes": load the config the same way the
+	// server does and inspect the two auth.tokens[] entries directly,
+	// rather than only pattern-matching the raw YAML.
+	reloaded, err := app.LoadConfigForPath(serverPath, "")
+	if err != nil {
+		t.Fatalf("LoadConfigForPath(%q) error = %v", serverPath, err)
+	}
+	if len(reloaded.Auth.Tokens) != 2 {
+		t.Fatalf("expected exactly 2 auth.tokens[], got %d: %+v", len(reloaded.Auth.Tokens), reloaded.Auth.Tokens)
+	}
+	var operatorValue, consoleValue string
+	for _, token := range reloaded.Auth.Tokens {
+		switch token.ID {
+		case "operator":
+			operatorValue = token.Value
+			if len(token.Scopes) != 4 {
+				t.Fatalf("expected the operator token to keep all 4 scopes, got %v", token.Scopes)
+			}
+		case "console":
+			consoleValue = token.Value
+			if len(token.Scopes) != 1 || string(token.Scopes[0]) != "observe" {
+				t.Fatalf("expected the console token to carry exactly [observe], got %v", token.Scopes)
+			}
+		default:
+			t.Fatalf("unexpected token id %q", token.ID)
+		}
+	}
+	if operatorValue == "" || consoleValue == "" {
+		t.Fatalf("expected both tokens to have non-empty values, got operator=%q console=%q", operatorValue, consoleValue)
+	}
+	if operatorValue == consoleValue {
+		t.Fatalf("expected the operator and console tokens to be distinct values, both were %q", operatorValue)
+	}
 
 	// The token must never be printed (PLAN.md: "NEVER print the token
-	// value"): extract the generated value from disk and confirm it is
-	// absent from the captured stdout.
-	match := regexp.MustCompile(`value: "([^"]+)"`).FindStringSubmatch(string(contents))
-	if len(match) != 2 {
-		t.Fatalf("could not find generated token value in config:\n%s", contents)
+	// value"): extract every generated value from disk and confirm none of
+	// them are present in the captured stdout.
+	matches := regexp.MustCompile(`value: "([^"]+)"`).FindAllStringSubmatch(string(contents), -1)
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 generated token values in config, got %d:\n%s", len(matches), contents)
 	}
-	if strings.Contains(output, match[1]) {
-		t.Fatalf("expected the operator token to never be printed, but found it in output %q", output)
+	for _, match := range matches {
+		if strings.Contains(output, match[1]) {
+			t.Fatalf("expected no token to ever be printed, but found one in output %q", output)
+		}
 	}
 }
 

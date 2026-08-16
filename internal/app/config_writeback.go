@@ -17,11 +17,6 @@ import (
 // exists in the target Moltnet config file.
 var ErrPairingExists = errors.New("pairing already exists")
 
-// ErrAuthTokensExist indicates auth.tokens[] in the target Moltnet config
-// already has at least one entry, so AddOperatorToken refuses rather than
-// risk creating an unwanted second admin-scoped credential.
-var ErrAuthTokensExist = errors.New("auth.tokens already has entries")
-
 // PairingWriteback is the plaintext pairings[] entry a pair command appends
 // to a Moltnet config file. It uses plain strings instead of
 // protocol.SecretString on purpose: SecretString marshals as [REDACTED], so
@@ -92,50 +87,6 @@ func WritePairing(path string, pairing PairingWriteback, authToken AuthTokenWrit
 	}
 	upsertAuthToken(doc, authToken)
 	upsertSharedRooms(doc, roomIDs, pairing.ID)
-
-	out, err := encodeWritebackDocument(format, doc)
-	if err != nil {
-		return fmt.Errorf("encode Moltnet config %q: %w", path, err)
-	}
-
-	return atomicWriteConfigFile(path, out)
-}
-
-// AddOperatorToken sets auth.mode to bearer and appends a single operator
-// auth.tokens[] entry into the Moltnet config file at path, reusing the same
-// plaintext-preserving writeback machinery as WritePairing (untyped map
-// edit, atomic write, mode 0600, symlink-refusing target). It refuses with
-// ErrAuthTokensExist when auth.tokens already has any entries, so `moltnet
-// init --bearer` rerun against an existing config only ever adds a token to
-// a genuinely token-less config, never silently appends a second
-// admin-scoped credential next to one an operator already set up by hand.
-func AddOperatorToken(path string, token AuthTokenWriteback) error {
-	if err := rejectSymlinkedConfigPath(path); err != nil {
-		return err
-	}
-
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read Moltnet config %q: %w", path, err)
-	}
-
-	format := configFormat(path)
-	doc, err := decodeWritebackDocument(format, contents)
-	if err != nil {
-		return fmt.Errorf("decode Moltnet config %q: %w", path, err)
-	}
-
-	if auth, ok := doc["auth"].(map[string]any); ok && len(asMapSlice(auth["tokens"])) > 0 {
-		return fmt.Errorf("%w in %s", ErrAuthTokensExist, path)
-	}
-
-	auth, _ := doc["auth"].(map[string]any)
-	if auth == nil {
-		auth = map[string]any{}
-	}
-	auth["mode"] = "bearer"
-	doc["auth"] = auth
-	upsertAuthToken(doc, token)
 
 	out, err := encodeWritebackDocument(format, doc)
 	if err != nil {

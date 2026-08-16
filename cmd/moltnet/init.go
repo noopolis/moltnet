@@ -194,11 +194,22 @@ func runInit(ctx context.Context, args []string) error {
 
 	serverContents := defaultMoltnetConfig(id, name)
 	if *bearerFlag && !serverExists {
+		// Two tokens, always minted together: the operator token (unchanged
+		// id/scopes/behavior) plus a "console" token scoped to exactly
+		// [observe] -- the credential `moltnet console` requires before it
+		// will ever hand the browser a token (consoleObserveToken,
+		// console.go). Neither is ever printed. Without the console token,
+		// the canonical init --bearer -> console flow used to land on a raw
+		// 401; minting both here closes that gap on the fresh-config path.
 		operatorToken, tokenErr := app.GenerateRandomToken(256)
 		if tokenErr != nil {
 			return tokenErr
 		}
-		serverContents = bearerMoltnetConfig(id, name, operatorToken)
+		consoleToken, tokenErr := app.GenerateRandomToken(256)
+		if tokenErr != nil {
+			return tokenErr
+		}
+		serverContents = bearerMoltnetConfig(id, name, operatorToken, consoleToken)
 	}
 
 	serverCreated, err := writeFileIfMissing(serverPath, serverContents)
@@ -222,7 +233,19 @@ func runInit(ctx context.Context, args []string) error {
 			// commands use — refusing only when auth.tokens already has
 			// entries, so this never silently appends a second admin-scoped
 			// credential next to one an operator already set up by hand.
+			//
+			// It mints the console token (id "console", scopes [observe]) in
+			// the same atomic write, for the same reason as the fresh-config
+			// branch above: a config that gets bearer auth for the first time
+			// must always end up with a token `moltnet console` is allowed to
+			// use. AddOperatorToken's own guard (auth.tokens must be empty)
+			// means auth.tokens is genuinely empty here, so "console" can
+			// never collide with an id already in the file.
 			operatorToken, tokenErr := app.GenerateRandomToken(256)
+			if tokenErr != nil {
+				return tokenErr
+			}
+			consoleToken, tokenErr := app.GenerateRandomToken(256)
 			if tokenErr != nil {
 				return tokenErr
 			}
@@ -230,6 +253,10 @@ func runInit(ctx context.Context, args []string) error {
 				ID:     "operator",
 				Value:  operatorToken,
 				Scopes: []string{"observe", "write", "admin", "pair"},
+			}, app.AuthTokenWriteback{
+				ID:     "console",
+				Value:  consoleToken,
+				Scopes: consoleTokenScopes,
 			}); writeErr != nil {
 				if !errors.Is(writeErr, app.ErrAuthTokensExist) {
 					return writeErr
@@ -355,33 +382,6 @@ func checkoutWarning(root string) string {
 		"  %s %s looks like a source checkout (found %s); writing Moltnet config here is unusual for a runtime install — did you mean a different --dir, or the default ~/.moltnet/ home?",
 		yellow("warning:"), root, strings.Join(found, ", "),
 	)
-}
-
-// addOperatorTokenWithRollback calls app.AddOperatorToken and then re-runs
-// the same full config load the server uses at startup (env-merge included)
-// as a post-write check, restoring the file to its prior contents if that
-// reload fails — the same snapshot/reload/restore backstop
-// writePairingWithRollback (pair.go) gives every WritePairing caller,
-// applied here so `moltnet init --bearer` against an existing config gets
-// the identical guarantee.
-func addOperatorTokenWithRollback(path string, token app.AuthTokenWriteback) error {
-	snapshot, err := snapshotFile(path)
-	if err != nil {
-		return err
-	}
-
-	if err := app.AddOperatorToken(path, token); err != nil {
-		return err
-	}
-
-	if _, err := app.LoadConfigForPath(path, ""); err != nil {
-		if restoreErr := snapshot.restore(path); restoreErr != nil {
-			return fmt.Errorf("added operator token but the config failed to reload (%v); restore also failed: %w", err, restoreErr)
-		}
-		return fmt.Errorf("added operator token but the config failed to reload; rolled back: %w", err)
-	}
-
-	return nil
 }
 
 func writeFileIfMissing(path string, contents string) (bool, error) {

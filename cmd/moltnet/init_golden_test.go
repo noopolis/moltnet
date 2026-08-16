@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noopolis/moltnet/internal/app"
 )
 
 // The tests in this file pin `moltnet init`'s full output for the scenarios
@@ -56,7 +58,7 @@ func TestRunInitGoldenIDBearerFresh(t *testing.T) {
 		"  ✓ created ~/.moltnet/acme/\n" +
 		"  ✓ wrote Moltnet       network: acme · auth: bearer\n" +
 		"  ✓ wrote MoltnetNode\n" +
-		"  ✓ operator token stored in Moltnet (0600) — local admin\n" +
+		"  ✓ operator + console tokens stored in Moltnet (0600) — full access + read-only console\n" +
 		"    commands pick it up automatically\n" +
 		"\n" +
 		"  next: moltnet service install --id acme          run it as a service\n"
@@ -204,12 +206,42 @@ func TestRunInitGoldenBearerOnExistingConfig(t *testing.T) {
 		"  ✓ using ~/.moltnet/friend/\n" +
 		"  ✓ updated Moltnet     added operator token · auth: bearer\n" +
 		"  · MoltnetNode already exists (unchanged)\n" +
-		"  ✓ operator token added to ~/.moltnet/friend/Moltnet (0600) — local admin\n" +
+		"  ✓ operator + console tokens added to ~/.moltnet/friend/Moltnet (0600) — full access + read-only console\n" +
 		"    commands pick it up automatically\n" +
 		"\n" +
 		"  next: moltnet service install --id friend        run it as a service\n"
 	if verbose != wantVerbose {
 		t.Fatalf("init --bearer --verbose rerun output mismatch\n got:\n%s\nwant:\n%s", verbose, wantVerbose)
+	}
+
+	// Item 5: pin the console token's scopes on this existing-config path
+	// specifically (addOperatorTokenWithRollback's "extra" console token,
+	// init.go), not just on the fresh-config path
+	// TestRunInitBearerStoresTokenWithoutEverPrintingIt already covers --
+	// `moltnet console` trusts consoleTokenScopes to be exactly [observe]
+	// wherever a console token comes from, so a regression that widened it
+	// on this path specifically would otherwise go unnoticed by any test.
+	configPath := filepath.Join(home2, ".moltnet", "friend", "Moltnet")
+	reloaded, err := app.LoadConfigForPath(configPath, "")
+	if err != nil {
+		t.Fatalf("LoadConfigForPath(%q) error = %v", configPath, err)
+	}
+	if len(reloaded.Auth.Tokens) != 2 {
+		t.Fatalf("expected exactly 2 auth.tokens[] on the existing-config path, got %d: %+v", len(reloaded.Auth.Tokens), reloaded.Auth.Tokens)
+	}
+	for _, token := range reloaded.Auth.Tokens {
+		switch token.ID {
+		case "operator":
+			if len(token.Scopes) != 4 {
+				t.Fatalf("expected the operator token to keep all 4 scopes on the existing-config path, got %v", token.Scopes)
+			}
+		case "console":
+			if len(token.Scopes) != 1 || string(token.Scopes[0]) != "observe" {
+				t.Fatalf("expected the console token to carry exactly [observe] on the existing-config path, got %v", token.Scopes)
+			}
+		default:
+			t.Fatalf("unexpected token id %q on the existing-config path", token.ID)
+		}
 	}
 }
 
