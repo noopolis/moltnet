@@ -130,15 +130,12 @@ func runPairInvite(ctx context.Context, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(stdout, "wrote pairing %q to %s\n", id, path)
-	fmt.Fprintln(stdout, code)
-
-	return printPairAftercare(ctx, config, path, pairAftercareOptions{
+	return printPairInviteAftercare(ctx, config, path, code, id, pairAftercareOptions{
 		restart: *restart,
 		roomIDs: invite.SharedRooms,
-		// remoteNetworkID is unknown here: pair invite never learns the
-		// friend's network id (no round trip); `pair <code>` on their side
-		// prints the real, filled-in command instead.
+		// remoteNetworkID/remoteNetworkName are unknown here: pair invite
+		// never learns the friend's identity (no round trip); `pair <code>`
+		// on their side prints the real, filled-in command instead.
 	})
 }
 

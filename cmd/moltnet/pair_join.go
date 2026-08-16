@@ -82,12 +82,11 @@ func runPairJoin(ctx context.Context, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(stdout, "wrote pairing %q (remote network %q) to %s\n", pairing.ID, pairing.RemoteNetworkID, path)
-
-	return printPairAftercare(ctx, config, path, pairAftercareOptions{
-		restart:         *restart,
-		roomIDs:         invite.SharedRooms,
-		remoteNetworkID: invite.NetworkID,
+	return printPairJoinAftercare(ctx, config, path, pairing.ID, pairAftercareOptions{
+		restart:           *restart,
+		roomIDs:           invite.SharedRooms,
+		remoteNetworkID:   invite.NetworkID,
+		remoteNetworkName: invite.NetworkName,
 	})
 }
 
