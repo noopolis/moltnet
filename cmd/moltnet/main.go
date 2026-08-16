@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +21,18 @@ var stderr io.Writer = os.Stderr
 
 func main() {
 	if err := runMain(os.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			// Every flag.FlagSet in this CLI is built with
+			// flags.SetOutput(stdout), so Go's flag package has already
+			// printed usage to stdout by the time Parse returns ErrHelp
+			// (its parseOne special-cases "-h"/"-help"/"--help": it calls
+			// f.usage() itself before returning the sentinel). `--help` is
+			// a request, never a failure, so this is the one place that
+			// turns it into a clean exit 0 with no "error: ..." line on
+			// top of the usage text that already printed — the same
+			// sentinel-matching pattern as context.Canceled below.
+			os.Exit(0)
+		}
 		if errors.Is(err, context.Canceled) {
 			// A command aborted on ctx.Err() after SIGINT/SIGTERM (runCLI's
 			// signal.NotifyContext, cli.go) — e.g. runInit mid-animation or

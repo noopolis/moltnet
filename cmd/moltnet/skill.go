@@ -15,7 +15,7 @@ func runSkillCommand(args []string) error {
 	if len(args) == 0 {
 		return errors.New("skill subcommand required")
 	}
-	if args[0] == "help" {
+	if isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildSkillUsage())
 		return nil
 	}

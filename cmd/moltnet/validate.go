@@ -11,6 +11,10 @@ import (
 )
 
 func runValidate(args []string) error {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		fmt.Fprint(stdout, buildValidateUsage())
+		return nil
+	}
 	if len(args) > 1 {
 		return os.ErrInvalid
 	}

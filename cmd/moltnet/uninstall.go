@@ -43,7 +43,7 @@ var currentExecutable = func() (string, error) {
 // state too) after a second, more explicit confirmation naming the
 // networks it destroys.
 func runUninstallCommand(ctx context.Context, args []string) error {
-	if len(args) > 0 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildUninstallUsage())
 		return nil
 	}

@@ -11,10 +11,11 @@ func runRelayCommand(args []string) error {
 		fmt.Fprint(stdout, buildRelayUsage())
 		return errors.New("relay requires a subcommand (deploy)")
 	}
-	switch args[0] {
-	case "help", "--help", "-h":
+	if isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildRelayUsage())
 		return nil
+	}
+	switch args[0] {
 	case "deploy":
 		return runRelayDeploy(args[1:])
 	default:

@@ -19,7 +19,7 @@ func runPairCommand(ctx context.Context, args []string) error {
 		fmt.Fprint(stdout, buildPairUsage())
 		return errors.New("pair requires an invite code, or the invite subcommand")
 	}
-	if args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+	if isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildPairUsage())
 		return nil
 	}

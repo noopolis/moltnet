@@ -21,7 +21,7 @@ var newServiceManager = service.New
 // (PLAN.md phase 4, item 2): a launchd LaunchAgent on macOS, a systemd user
 // unit on Linux, generated for and managing the resolved network's server.
 func runServiceCommand(ctx context.Context, args []string) error {
-	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+	if len(args) == 0 || isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildServiceUsage())
 		return nil
 	}

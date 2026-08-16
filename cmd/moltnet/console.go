@@ -59,7 +59,7 @@ var openURLFunc = defaultOpenURL
 // server's /healthz before ever opening a browser: a browser is only
 // launched against a server that is demonstrably answering.
 func runConsole(ctx context.Context, args []string) error {
-	if len(args) > 0 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+	if len(args) > 0 && isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildConsoleUsage())
 		return nil
 	}

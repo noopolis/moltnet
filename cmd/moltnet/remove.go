@@ -98,8 +98,20 @@ func splitApplyArgs(args []string) ([]string, string, error) {
 	return flagArgs, path, nil
 }
 
+// isHelpArg reports whether arg is one of the three spellings this CLI's
+// subcommand dispatchers (admin, pair, relay, service, skill, uninstall,
+// console) treat as a help request before ever reaching a flag.FlagSet —
+// "help", "--help", and "-h". Centralizing the three-way check here means a
+// dispatcher can't accidentally recognize only "help" (a real bug: a router
+// with unrecognized-argument behavior fails when an operator naturally
+// types the same "--help"/"-h" every one of this CLI's flag.FlagSet-backed
+// leaf commands already accepts).
+func isHelpArg(arg string) bool {
+	return arg == "help" || arg == "--help" || arg == "-h"
+}
+
 func runAdminCommand(args []string) error {
-	if len(args) == 0 || args[0] == "help" {
+	if len(args) == 0 || isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildAdminUsage())
 		return nil
 	}
@@ -117,7 +129,7 @@ func runAdminCommand(args []string) error {
 }
 
 func runAdminAgentCommand(args []string) error {
-	if len(args) == 0 || args[0] == "help" {
+	if len(args) == 0 || isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildAdminUsage())
 		return nil
 	}
@@ -128,7 +140,7 @@ func runAdminAgentCommand(args []string) error {
 }
 
 func runAdminRoomCommand(args []string) error {
-	if len(args) == 0 || args[0] == "help" {
+	if len(args) == 0 || isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildAdminUsage())
 		return nil
 	}
@@ -195,7 +207,7 @@ func runAdminRemoveRoom(args []string) error {
 }
 
 func runAdminRoomMembers(args []string) error {
-	if len(args) == 0 || args[0] == "help" {
+	if len(args) == 0 || isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildAdminUsage())
 		return nil
 	}

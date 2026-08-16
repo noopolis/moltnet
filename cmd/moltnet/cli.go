@@ -98,7 +98,7 @@ func runNodeCommand(ctx context.Context, args []string) error {
 	if args[0] == "start" {
 		return runNode(ctx, args[1:])
 	}
-	if args[0] == "help" {
+	if isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildNodeUsage())
 		return nil
 	}
@@ -110,7 +110,7 @@ func runAttachmentCommand(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("attachment runner config path required")
 	}
-	if args[0] == "help" {
+	if isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildAttachmentUsage())
 		return nil
 	}
@@ -125,7 +125,7 @@ func runBridgeCommand(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("bridge runner config path required")
 	}
-	if args[0] == "help" {
+	if isHelpArg(args[0]) {
 		fmt.Fprint(stdout, buildBridgeUsage())
 		return nil
 	}

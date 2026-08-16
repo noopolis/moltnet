@@ -317,3 +317,14 @@ func buildSkillUsage() string {
 This installs the canonical Moltnet skill into a runtime workspace.
 `
 }
+
+func buildValidateUsage() string {
+	return `Usage:
+  moltnet validate [path]
+
+Validates the Moltnet and/or MoltnetNode config file(s) at path: a
+directory is scanned for both (the same discovery order start/node use), a
+single file is validated as whichever config it parses as. Defaults to the
+current directory.
+`
+}
