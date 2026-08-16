@@ -21,21 +21,20 @@ Create a Cloudflare API token scoped to `Account > Workers Scripts > Edit` — t
 
 Or create one manually at <https://dash.cloudflare.com/profile/api-tokens> with that same scope.
 
-Export it once, then deploy and save it for future deploys:
-
-```bash
-export CLOUDFLARE_API_TOKEN=...
-moltnet relay deploy --save-token
-```
-
-`moltnet relay deploy` uploads the relay Worker (embedded in the `moltnet` binary — no clone, no Node.js, no `wrangler` needed) via the Cloudflare REST API. It resolves your account, uploads the `RelayRoom` Durable Object worker, generates a `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves the resulting URL and token to `.moltnet/relay.json`. `--save-token` additionally saves the Cloudflare API token itself to `.moltnet/cloudflare.json` (mode `0600`, one per network):
+You don't need to export anything first — just run the command, click the link, and paste the token back in when it asks. (The `.moltnet/...` paths below are shown relative to the network's own directory for readability — the command actually prints the full resolved path, e.g. `~/.moltnet/my-network/.moltnet/relay.json`.)
 
 ```text
-$ moltnet relay deploy --id my-network --save-token
+$ moltnet relay deploy --id my-network
+Create a Cloudflare API token (pre-filled with the required permission):
+  https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&accountId=%2A&zoneId=all&name=moltnet-relay-deploy
+  (opens pre-filled — just Continue → Create Token → copy)
+
+  paste token (input hidden): 
   deployed relay Worker "moltnet-relay"
   relay url: wss://moltnet-relay.acme.workers.dev
   saved relay credentials to .moltnet/relay.json
   warning: rotating RELAY_TOKEN (redeploying with a new --token-env value) breaks every pairing on this relay at once
+  save to .moltnet/cloudflare.json (0600)? [Y/n] 
   saved Cloudflare API token to .moltnet/cloudflare.json
 
   Next:
@@ -43,9 +42,11 @@ $ moltnet relay deploy --id my-network --save-token
                                                    invite a friend over this relay
 ```
 
-Those saved credentials are what let `moltnet pair invite` run with zero relay flags afterward — see [You own the relay](#you-own-the-relay) below. The saved Cloudflare API token means the *next* `relay deploy` for this network needs no `CLOUDFLARE_API_TOKEN` either — see [Cloudflare API token storage](#cloudflare-api-token-storage) below.
+`moltnet relay deploy` uploads the relay Worker (embedded in the `moltnet` binary — no clone, no Node.js, no `wrangler` needed) via the Cloudflare REST API. It resolves your account, uploads the `RelayRoom` Durable Object worker, generates a `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves the resulting URL and token to `.moltnet/relay.json`. The pasted token itself is never echoed to the screen, printed in output, or logged anywhere. (If a terminal ever gets left with echo off — an ungraceful kill of the process while the prompt was active — running `stty sane` or `reset` puts it back.)
 
-If `CLOUDFLARE_API_TOKEN` isn't set, the command prints the same deep link and exits without contacting Cloudflare:
+The save prompt at the end defaults to yes — just hit Enter, or type `y`; type `n` to skip saving it this one time. Accepting saves the token to `.moltnet/cloudflare.json` (mode `0600`, one per network), so the *next* `relay deploy` for this network needs no token at all, pasted or exported — see [Cloudflare API token storage](#cloudflare-api-token-storage) below. Those saved relay credentials (`.moltnet/relay.json`) are also what let `moltnet pair invite` run with zero relay flags afterward — see [You own the relay](#you-own-the-relay) below.
+
+Running `relay deploy` non-interactively — piped, a script, CI — never prompts. With no token available it prints the same deep link and exits without contacting Cloudflare:
 
 ```text
 $ moltnet relay deploy
@@ -63,6 +64,13 @@ Required scope:
 Then export it and retry:
   export CLOUDFLARE_API_TOKEN=...
   moltnet relay deploy --id my-network
+```
+
+`CLOUDFLARE_API_TOKEN` still works exactly as before — it's the right choice for CI and other automation, where nothing is there to answer a prompt. Set it and `--save-token` deploys and saves in one shot, no prompt at all:
+
+```bash
+export CLOUDFLARE_API_TOKEN=...
+moltnet relay deploy --save-token
 ```
 
 Useful flags:
@@ -111,31 +119,41 @@ Credentials are already saved at this point — just wait a few minutes and cont
 
 The Cloudflare API token that authenticates `relay deploy` itself (not `RELAY_TOKEN`, which authenticates the relay's WebSocket connections) can also be stored per network, separately from `.moltnet/relay.json`, at `.moltnet/cloudflare.json` (mode `0600`). Resolution order:
 
-1. `CLOUDFLARE_API_TOKEN` env — always wins, even when a token is already stored.
+1. `CLOUDFLARE_API_TOKEN` env — always wins, even when a token is already stored. Mainly useful for CI and other automation.
 2. A token stored at `.moltnet/cloudflare.json` for this network.
-3. Neither set — the token-creation guidance (deep link) shown above.
+3. Neither set, on an interactive terminal — prompt for a pasted token (see [Deploy a relay](#deploy-a-relay) above).
+4. Neither set, non-interactively — the token-creation guidance (deep link) and an error.
 
-`--save-token` stores the env token used by a successful deploy:
+A token gets stored to `.moltnet/cloudflare.json` in one of three ways:
 
-```bash
-export CLOUDFLARE_API_TOKEN=...
-moltnet relay deploy --save-token
-```
+- **Accepting the paste prompt's save offer** (default yes — Enter accepts). This is the normal path now; see [Deploy a relay](#deploy-a-relay) above.
+- **`--save-token`**, which saves whichever token the deploy actually used — env or a freshly pasted one — unconditionally, no prompt:
 
-Without `--save-token`, a successful deploy that used the env token offers to save it once — only on an interactive terminal, and only when nothing is stored yet:
+  ```bash
+  export CLOUDFLARE_API_TOKEN=...
+  moltnet relay deploy --save-token
+  ```
 
-```text
-  save this token to .moltnet/cloudflare.json (0600) for future deploys? [y/N] y
-  saved Cloudflare API token to .moltnet/cloudflare.json
-```
+- **The env-token save offer**: if `CLOUDFLARE_API_TOKEN` is set and nothing is stored yet, a successful deploy on an interactive terminal offers to save it too — but defaults to *no* this time, since that token already lives in the environment somewhere and saving it is optional, not the reason you ran the command:
 
-Declining, or running non-interactively (scripts, CI), never saves it, and the token itself is never printed either way. Once stored, deploys reusing it print a one-line reminder of the source instead of a silent skip:
+  ```text
+    save this token to .moltnet/cloudflare.json (0600) for future deploys? [y/N] y
+    saved Cloudflare API token to .moltnet/cloudflare.json
+  ```
+
+Declining any of these, or running non-interactively (scripts, CI), never saves a token, and the token itself is never printed either way. Once stored, deploys reusing it print a one-line reminder of the source instead of a silent skip:
 
 ```text
   using stored Cloudflare API token from .moltnet/cloudflare.json
 ```
 
-`moltnet relay deploy --forget-token` deletes the stored token without deploying; `moltnet uninstall --purge` removes it too, along with the rest of `~/.moltnet/<id>/`. If Cloudflare rejects a stored token (expired, revoked, or re-scoped), the error names the file and suggests the fix:
+`moltnet relay deploy --forget-token` deletes the stored token without deploying; `moltnet uninstall --purge` removes it too, along with the rest of `~/.moltnet/<id>/`. A token Cloudflare rejects (401/403 — expired, revoked, re-scoped, or a mistyped paste) produces a clear error, is never saved, and is not re-prompted for in the same run:
+
+```text
+error: verify Cloudflare API token: cloudflare api error (http 401): 9109: invalid token
+```
+
+When the rejected token specifically came from `.moltnet/cloudflare.json`, the error additionally names the file and suggests the fix:
 
 ```text
 error: verify Cloudflare API token: cloudflare api error (http 401): 9109: invalid token
@@ -233,12 +251,11 @@ moltnet service install --id bob-net
 **Alice** deploys the relay, then generates an invite for a `chat` room:
 
 ```bash
-export CLOUDFLARE_API_TOKEN=...   # scoped to Workers Scripts Edit
 moltnet relay deploy --id alice-net
 moltnet pair invite --network-id alice-net --room chat --restart
 ```
 
-`relay deploy` saves the new relay's URL and token to `.moltnet/relay.json`, so `pair invite` picks them up with no relay flags (see [Deploy a relay](#deploy-a-relay) and [You own the relay](#you-own-the-relay) above). `--room chat` creates a `chat` room in Alice's config with `federation` wired to allow this pairing; `--restart` restarts her `moltnet service`-managed server once the pairing is written. `pair invite` also prints the `moltnet admin room members add` command Alice will run once Bob tells her his agent id (see [Finish wiring a shared room](#finish-wiring-a-shared-room) below). She sends Bob the printed `moltnet-invite:...` code over a private channel.
+The first `relay deploy` for this network prints the token-creation deep link and prompts Alice to paste the token in (see [Deploy a relay](#deploy-a-relay) above); accepting the save offer afterward means she won't be asked again. It saves the new relay's URL and token to `.moltnet/relay.json`, so `pair invite` picks them up with no relay flags (see [You own the relay](#you-own-the-relay) above). `--room chat` creates a `chat` room in Alice's config with `federation` wired to allow this pairing; `--restart` restarts her `moltnet service`-managed server once the pairing is written. `pair invite` also prints the `moltnet admin room members add` command Alice will run once Bob tells her his agent id (see [Finish wiring a shared room](#finish-wiring-a-shared-room) below). She sends Bob the printed `moltnet-invite:...` code over a private channel.
 
 **Bob** consumes it:
 

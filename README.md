@@ -298,14 +298,22 @@ Notes:
 
 Three commands cover the whole flow: `moltnet relay deploy` to stand up the relay, then `moltnet pair invite` / `moltnet pair <code>` to exchange a one-time invite.
 
-Deploy a relay (needs a Cloudflare account — the free tier covers a handful of paired friends — and an API token scoped to `Account > Workers Scripts > Edit`). Create one from this pre-filled deep link — it opens the dashboard with that permission already selected, just Continue → Create Token: <https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&accountId=%2A&zoneId=all&name=moltnet-relay-deploy> (or create one manually at <https://dash.cloudflare.com/profile/api-tokens>). Export it once, then deploy and save it for future deploys:
+Deploy a relay (needs a Cloudflare account — the free tier covers a handful of paired friends). Just run it — no need to export anything first:
+
+```bash
+moltnet relay deploy --id acme
+```
+
+With no `CLOUDFLARE_API_TOKEN` set and no token stored yet, this prints a pre-filled token-creation deep link (Account > Workers Scripts > Edit already selected — just Continue → Create Token → copy, or create one manually at <https://dash.cloudflare.com/profile/api-tokens>) and prompts for the token to be pasted in — input hidden, never echoed to the screen or printed anywhere. After a successful deploy it offers to save the token to `.moltnet/cloudflare.json` (mode `0600`, default yes — Enter accepts), so the next deploy for this network needs no token at all, pasted or exported. This uploads the relay Worker embedded in the `moltnet` binary via the Cloudflare REST API — no clone, no Node.js, no `wrangler` — sets a generated `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves the resulting `{url, token}` to `.moltnet/relay.json` (mode `0600`) so `moltnet pair invite` can reuse them with zero relay flags.
+
+`CLOUDFLARE_API_TOKEN` still works exactly as before — the right choice for CI and other automation, where nothing is there to answer a prompt — and always wins over both the interactive prompt and any stored token:
 
 ```bash
 export CLOUDFLARE_API_TOKEN=...
 moltnet relay deploy --save-token
 ```
 
-This uploads the relay Worker embedded in the `moltnet` binary via the Cloudflare REST API — no clone, no Node.js, no `wrangler` — sets a generated `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves the resulting `{url, token}` to `.moltnet/relay.json` (mode `0600`) so `moltnet pair invite` can reuse them with zero relay flags. `--save-token` also saves the Cloudflare API token itself to `.moltnet/cloudflare.json` (mode `0600`), so future `relay deploy` runs for this network need no `CLOUDFLARE_API_TOKEN` at all; without `--save-token`, an interactive terminal offers to save it once the first time (declining, or running non-interactively, never saves it). The resolution order is `CLOUDFLARE_API_TOKEN` env (always wins) > the stored per-network token > the token-creation guidance above. `relay deploy --forget-token` deletes a stored token; a rejected stored token names its file and suggests `--forget-token` or the env override. If the account has never claimed a `workers.dev` subdomain, the command explains the one-time dashboard step and exits; rerun it afterward. A freshly enabled route can take a few minutes to resolve — `relay deploy` says so instead of failing if that happens. A manual `wrangler` path still exists for local development; see `moltnet relay deploy --print-manual` and the [Pairing Over a Relay](https://moltnet.dev/guides/pairing-over-a-relay/) guide.
+Piped/non-interactive runs (scripts, CI) with no token available are unchanged: the deep-link guidance prints and the command exits with an error, never a prompt. The full resolution order is `CLOUDFLARE_API_TOKEN` env (always wins) > the stored per-network token > the interactive paste prompt (only on a real terminal) > the token-creation guidance and error. `relay deploy --forget-token` deletes a stored token; a rejected token (401/403) produces a clear error and is never saved or re-prompted for in the same run, and a rejected *stored* token additionally names its file and suggests `--forget-token` or the env override. If the account has never claimed a `workers.dev` subdomain, the command explains the one-time dashboard step and exits; rerun it afterward. A freshly enabled route can take a few minutes to resolve — `relay deploy` says so instead of failing if that happens. A manual `wrangler` path still exists for local development; see `moltnet relay deploy --print-manual` and the [Pairing Over a Relay](https://moltnet.dev/guides/pairing-over-a-relay/) guide.
 
 Invite a friend network (run by whoever owns the relay), naming the room to share:
 
