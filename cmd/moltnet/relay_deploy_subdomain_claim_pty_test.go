@@ -53,7 +53,7 @@ func runClaimFlushThenAttemptHelperScenario() {
 	client := relaydeploy.NewClientForTesting("test-cloudflare-token", baseURL, http.DefaultClient)
 
 	time.Sleep(300 * time.Millisecond)
-	name, ok, _ := attemptInteractiveWorkersDevSubdomainClaim(context.Background(), client, "account-1")
+	name, ok, _ := attemptInteractiveWorkersDevSubdomainClaim(context.Background(), client, "account-1", &sectionPrinter{})
 	fmt.Fprintf(os.Stderr, "HELPER-RESULT:name=%q ok=%v\n", name, ok)
 }
 

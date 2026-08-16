@@ -55,6 +55,19 @@ func runRelayDeploy(args []string) error {
 		return fmt.Errorf("--save-token and --forget-token cannot be used together")
 	}
 
+	// Validated before any config load or output, including the "Deploying
+	// relay for <id>" header below: --token-env naming an empty/unset
+	// variable is an immediate, config-independent usage error, and printing
+	// a header ahead of it would suggest a deploy attempt actually started
+	// (P3 no-header-on-immediate-error fix).
+	var existingToken string
+	if strings.TrimSpace(*tokenEnv) != "" {
+		existingToken = strings.TrimSpace(os.Getenv(*tokenEnv))
+		if existingToken == "" {
+			return fmt.Errorf("environment variable %q named by --token-env is empty or not set", *tokenEnv)
+		}
+	}
+
 	scriptName := strings.TrimSpace(*name)
 	if scriptName == "" {
 		scriptName = relaydeploy.DefaultScriptName
@@ -80,13 +93,14 @@ func runRelayDeploy(args []string) error {
 		return runRelayDeployForgetToken(tokenPath)
 	}
 
-	var existingToken string
-	if strings.TrimSpace(*tokenEnv) != "" {
-		existingToken = strings.TrimSpace(os.Getenv(*tokenEnv))
-		if existingToken == "" {
-			return fmt.Errorf("environment variable %q named by --token-env is empty or not set", *tokenEnv)
-		}
-	}
+	// Everything from here on is an actual attempt to deploy (never
+	// --print-manual or --forget-token, both already returned above), so
+	// this is the one place the "Deploying relay for <id>" header prints.
+	// sections then tracks blank-line separation between whichever of this
+	// run's phases — corrupt-token warning, token prompt, subdomain claim,
+	// results, relay url, token save — actually produce output.
+	fmt.Fprintf(stdout, "  Deploying relay for %s\n\n", config.NetworkID)
+	sections := &sectionPrinter{}
 
 	envToken := strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN"))
 
@@ -102,12 +116,18 @@ func runRelayDeploy(args []string) error {
 		if envToken == "" && !(isInteractive() && isOutputTerminal()) {
 			return fmt.Errorf("%w; run `moltnet relay deploy --forget-token` to remove it", loadErr)
 		}
-		fmt.Fprintln(stdout, yellow(fmt.Sprintf("warning: %v", loadErr)))
+		sections.start()
+		// P2-3: loadErr's message embeds tokenPath as a raw absolute path
+		// (relaydeploy.LoadCloudflareToken's own decode error) — abbreviate
+		// it for display here, at the presentation layer, rather than in
+		// internal/relaydeploy: that package's own tests pin the raw path in
+		// what it returns to its callers.
+		fmt.Fprintf(stdout, "  %s %s\n", yellow("warning:"), abbreviatePathInMessage(loadErr, tokenPath))
 		storedToken, storedTokenOK = "", false
 	}
 	apiToken, tokenSource := resolveCloudflareAPIToken(envToken, storedToken, storedTokenOK)
 	if apiToken == "" {
-		pastedToken, promptErr := maybePromptForCloudflareToken()
+		pastedToken, promptErr := maybePromptForCloudflareToken(sections)
 		// errTerminalEchoUnavailable is not itself fatal — it means the
 		// prompt was never even shown (echo could not be reliably disabled,
 		// P0 fail-open-echo fix), so this falls through to the same
@@ -126,6 +146,7 @@ func runRelayDeploy(args []string) error {
 				// anything.
 				return errors.New("no token pasted")
 			}
+			sections.start()
 			fmt.Fprint(stdout, buildMissingCloudflareTokenGuidance(config.NetworkID))
 			return errors.New("CLOUDFLARE_API_TOKEN is not set")
 		}
@@ -135,7 +156,8 @@ func runRelayDeploy(args []string) error {
 	var storedTokenPathForDeploy string
 	if tokenSource == cloudflareTokenSourceStored {
 		storedTokenPathForDeploy = tokenPath
-		fmt.Fprintln(stdout, dim(fmt.Sprintf("  using stored Cloudflare API token from %s", tokenPath)))
+		sections.start()
+		fmt.Fprintln(stdout, dim(fmt.Sprintf("  using stored Cloudflare API token from %s", abbreviateHome(tokenPath))))
 	}
 
 	// Only reuse a stored relay token when it belongs to this same --name: a
@@ -162,13 +184,14 @@ func runRelayDeploy(args []string) error {
 	var claimedSubdomainName string
 	var claimPropagationPending bool
 	if err != nil && errors.Is(err, relaydeploy.ErrWorkersDevSubdomainUnclaimed) && isInteractive() && isOutputTerminal() {
+		sections.start()
 		fmt.Fprint(stdout, buildWorkersDevSubdomainClaimIntro())
 		// result.AccountID is already resolved here even though this Deploy
 		// call itself failed: every step that can return
 		// ErrWorkersDevSubdomainUnclaimed runs after account resolution
 		// (see Result's doc comment, deploy.go) — attemptInteractiveWorkersDevSubdomainClaim
 		// reuses it instead of resolving the account a second time.
-		name, ok, pending := attemptInteractiveWorkersDevSubdomainClaim(ctx, client, result.AccountID)
+		name, ok, pending := attemptInteractiveWorkersDevSubdomainClaim(ctx, client, result.AccountID, sections)
 		if ok {
 			claimedSubdomainName = name
 			// The claim succeeded; re-run Deploy in full rather than trying
@@ -190,6 +213,7 @@ func runRelayDeploy(args []string) error {
 				// unclaimed account — printing the generic "has not claimed"
 				// guidance here would be actively misleading (P2 post-claim
 				// lag messaging fix).
+				sections.start()
 				fmt.Fprint(stdout, buildWorkersDevSubdomainClaimLagGuidance(claimedSubdomainName, config.NetworkID))
 			case claimPropagationPending:
 				// attemptInteractiveWorkersDevSubdomainClaim already printed
@@ -200,30 +224,56 @@ func runRelayDeploy(args []string) error {
 				// it, since Cloudflare has already told us the account does
 				// have a subdomain.
 			default:
+				sections.start()
 				fmt.Fprint(stdout, buildWorkersDevSubdomainGuidance(config.NetworkID))
 			}
 		}
-		return err
+		// P2-3: when this deploy used a stored per-network token
+		// (storedTokenPathForDeploy set) and Cloudflare rejected it,
+		// wrapStoredTokenError (internal/relaydeploy/deploy.go) already named
+		// the file in err's message using its raw absolute path — abbreviate
+		// that here, at the presentation layer, rather than in
+		// internal/relaydeploy itself: that package's own tests pin the raw
+		// path in what it returns to its callers, so the returned error
+		// value only gets rewritten when it actually mentions the path (a
+		// no-op, and err returned unchanged, for every other error shape,
+		// including relaydeploy.ErrWorkersDevSubdomainUnclaimed above).
+		return abbreviatePathError(err, storedTokenPathForDeploy)
 	}
 
 	if err := relaydeploy.SaveCredentials(credentialsPath, relaydeploy.RelayCredentials{URL: result.URL, Token: result.Token, ScriptName: result.ScriptName}); err != nil {
 		return fmt.Errorf("deployed relay Worker %q but failed to save relay credentials: %w", result.ScriptName, err)
 	}
 
-	fmt.Fprintf(stdout, "  deployed relay Worker %q\n", result.ScriptName)
+	// When a claim just happened, attemptInteractiveWorkersDevSubdomainClaim
+	// already opened this results block with its own "✓ claimed ..." line
+	// (and its own leading blank line via sections.start()); the ✓ lines
+	// below continue that same block, not a new one.
+	if claimedSubdomainName == "" {
+		sections.start()
+	}
+	printInitConfigCheckLine(fmt.Sprintf("deployed relay Worker %q", result.ScriptName), "")
+	printInitConfigCheckLine("saved relay credentials", abbreviateHome(credentialsPath))
+
+	sections.start()
 	// P2-3: the relay URL itself must stay at full contrast — it is the
 	// value an operator copies out of this line — so only the "relay url:"
 	// label is dimmed, not the URL.
 	fmt.Fprintf(stdout, "  %s %s\n", dim("relay url:"), result.URL)
 	if !result.HostnameResolved {
-		fmt.Fprintf(stdout, "  %s %s is not resolving yet; workers.dev DNS can take a few minutes to propagate, retry `moltnet pair invite` shortly if it fails\n", yellow("note:"), result.Hostname)
+		// P2-5: name the detected hostname itself, not just the generic
+		// "DNS can take a few minutes" reason — the guide's own prose
+		// ("it says so") promises this note names what isn't resolving yet.
+		fmt.Fprintf(stdout, "    %s %s is not resolving yet — workers.dev DNS can take a few minutes; retry `moltnet pair invite` shortly if it fails\n", yellow("note:"), result.Hostname)
 	}
-	fmt.Fprintln(stdout, dim(fmt.Sprintf("  saved relay credentials to %s", credentialsPath)))
+	// P3: this warning is about --token-env / rotation in general, not about
+	// the relay url line above it, so it sits at the same top-level indent
+	// as "relay url:" rather than nested under it.
 	fmt.Fprintf(stdout, "  %s rotating RELAY_TOKEN (redeploying with a new --token-env value) breaks every pairing on this relay at once\n", yellow("warning:"))
 
 	switch tokenSource {
 	case cloudflareTokenSourceEnv:
-		if err := maybeSaveCloudflareToken(tokenPath, apiToken, *saveToken, storedTokenOK); err != nil {
+		if err := maybeSaveCloudflareToken(sections, tokenPath, apiToken, *saveToken, storedTokenOK); err != nil {
 			return fmt.Errorf("deployed relay Worker %q but failed to save the Cloudflare API token: %w", result.ScriptName, err)
 		}
 	case cloudflareTokenSourceStored:
@@ -232,14 +282,62 @@ func runRelayDeploy(args []string) error {
 		// instead of silently doing nothing, so the flag never looks like it
 		// was ignored.
 		if *saveToken {
-			fmt.Fprintf(stdout, "  token already stored at %s; nothing to save\n", tokenPath)
+			sections.start()
+			fmt.Fprintf(stdout, "  %s token already stored at %s; nothing to save\n", yellow("note:"), abbreviateHome(tokenPath))
 		}
 	case cloudflareTokenSourcePasted:
-		if err := maybeSavePastedCloudflareToken(tokenPath, apiToken, *saveToken); err != nil {
+		if err := maybeSavePastedCloudflareToken(sections, tokenPath, apiToken, *saveToken); err != nil {
 			return fmt.Errorf("deployed relay Worker %q but failed to save the Cloudflare API token: %w", result.ScriptName, err)
 		}
 	}
 
 	printRelayDeployNextSteps(config.NetworkID)
 	return nil
+}
+
+// abbreviatePathInMessage returns err's message with every occurrence of
+// rawPath rewritten to its ~-abbreviated form (abbreviateHome), for display
+// only (P2-3). This is a presentation-layer transform: it never changes what
+// relaydeploy itself returns to its own callers — internal/relaydeploy's own
+// tests pin the raw absolute path in the errors it returns — it only cleans
+// up the copy this CLI prints or returns as its own top-level error, so a
+// path shown here reads consistently with every other ~-abbreviated path in
+// this output. A targeted string replace, not a general parser: err or an
+// empty rawPath returns err's message (or "") unchanged, and a message that
+// never mentions rawPath comes back byte-identical.
+func abbreviatePathInMessage(err error, rawPath string) string {
+	if err == nil {
+		return ""
+	}
+	if rawPath == "" {
+		return err.Error()
+	}
+	abbreviated := abbreviateHome(rawPath)
+	if abbreviated == rawPath {
+		return err.Error()
+	}
+	return strings.ReplaceAll(err.Error(), rawPath, abbreviated)
+}
+
+// abbreviatePathError is abbreviatePathInMessage's error-returning
+// counterpart, for a returned (rather than printed) error: the rejected-
+// stored-token error wrapStoredTokenError (internal/relaydeploy/deploy.go)
+// produces, which this CLI returns rather than printing directly, so
+// whatever eventually prints it (main.go's top-level error path) shows the
+// abbreviated path too. Returns err itself, unchanged, whenever rawPath is
+// empty (no stored token was in play) or never appears in err's message —
+// which also means every unrelated error (including
+// relaydeploy.ErrWorkersDevSubdomainUnclaimed, handled just above every call
+// site of this function) passes through with its errors.Is/errors.As chain
+// intact; only the one shape that actually names rawPath gets rebuilt as a
+// plain error carrying the rewritten text.
+func abbreviatePathError(err error, rawPath string) error {
+	if err == nil || rawPath == "" {
+		return err
+	}
+	rewritten := abbreviatePathInMessage(err, rawPath)
+	if rewritten == err.Error() {
+		return err
+	}
+	return errors.New(rewritten)
 }

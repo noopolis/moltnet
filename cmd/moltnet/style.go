@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/mattn/go-isatty"
@@ -97,3 +98,28 @@ func yellow(s string) string { return styled(colorEnabled(), ansiYellow, s) }
 func bold(s string) string   { return styled(colorEnabled(), ansiBold, s) }
 func dim(s string) string    { return styled(colorEnabled(), ansiDim, s) }
 func red(s string) string    { return styled(errorColorEnabled(), ansiRed, s) }
+
+// sectionPrinter prints a blank line to stdout before every call after its
+// first, so a sequence of start() calls across a command's conditional
+// output phases (a token prompt, a subdomain claim, a results block, ...)
+// produces exactly one blank line between the phases that actually printed
+// something, and none before the first phase or when a phase prints nothing
+// at all — the house block style `moltnet relay deploy` shares with
+// `init`/`uninstall` (see printInitSummary, printUninstallPlan). The zero
+// value is ready to use; callers create one fresh per command invocation
+// (see runRelayDeploy) so state never leaks between unrelated commands or
+// test calls.
+//
+// Each phase-printing function calls start() itself, immediately before its
+// own first write, rather than the orchestrator guessing in advance whether
+// a given phase will print anything — a phase that turns out to print
+// nothing (e.g. maybeSaveCloudflareToken's silent non-interactive no-op)
+// then correctly costs no blank line at all.
+type sectionPrinter struct{ started bool }
+
+func (s *sectionPrinter) start() {
+	if s.started {
+		fmt.Fprintln(stdout)
+	}
+	s.started = true
+}

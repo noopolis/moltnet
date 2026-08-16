@@ -165,7 +165,13 @@ func TestRunRelayDeployInteractivePromptPastedTokenSaveTokenFlag(t *testing.T) {
 	if got := cloudflareTokenFileContents(t, tokenPath); got != "pasted-cf-token" {
 		t.Fatalf("saved token = %q, want pasted-cf-token", got)
 	}
-	if !strings.Contains(output, "saved Cloudflare API token to "+tokenPath) {
+	// The path now prints through printInitConfigCheckLine's dim "extra"
+	// column (P3 unify ✓-line path treatment), so it carries its own ANSI
+	// escapes here — this test forces isOutputTerminal true — rather than
+	// sitting inline in the plain "what" text; dim(tokenPath) renders
+	// exactly what the real call produces, since tokenPath (under t.TempDir,
+	// not $HOME) never abbreviates.
+	if !strings.Contains(output, "saved Cloudflare API token to "+dim(tokenPath)) {
 		t.Fatalf("expected a save confirmation naming %q, got %q", tokenPath, output)
 	}
 }
@@ -258,8 +264,8 @@ func TestRunRelayDeployPromptRequiresBothStdinAndStdoutTTY(t *testing.T) {
 	if strings.Contains(output, "paste token") {
 		t.Fatalf("expected no paste prompt when stdout is not a TTY, got %q", output)
 	}
-	if output != buildMissingCloudflareTokenGuidance("acme-net") {
-		t.Fatalf("guidance output = %q, want byte-identical to buildMissingCloudflareTokenGuidance()", output)
+	if want := "  Deploying relay for acme-net\n\n" + buildMissingCloudflareTokenGuidance("acme-net"); output != want {
+		t.Fatalf("guidance output = %q, want the header followed by byte-identical buildMissingCloudflareTokenGuidance() = %q", output, want)
 	}
 }
 

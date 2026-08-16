@@ -49,6 +49,10 @@ func TestRunRelayDeployInteractiveSubdomainClaimInvalidNameThenRetrySucceeds(t *
 	if !strings.Contains(output, "must not start or end with a hyphen") {
 		t.Fatalf("expected the local validation error to be printed, got %q", output)
 	}
+	// P2-2: a note: prefix, not a whole-line-yellow message with none.
+	if !strings.Contains(output, yellow("note:")+` subdomain name "-not-valid-"`) {
+		t.Fatalf("expected the validation error to carry a note: prefix, got %q", output)
+	}
 	if !strings.Contains(output, `claimed workers.dev subdomain "apresmoi"`) {
 		t.Fatalf("expected the retry with a valid name to succeed, got %q", output)
 	}
@@ -76,6 +80,10 @@ func TestRunRelayDeployInteractiveSubdomainClaimTakenNameRetries(t *testing.T) {
 	})
 	if !strings.Contains(output, `could not claim "already-taken"`) {
 		t.Fatalf("expected the rejected name to be named in the retry message, got %q", output)
+	}
+	// P2-2: a note: prefix, not a whole-line-yellow message with none.
+	if !strings.Contains(output, yellow("note:")+` could not claim "already-taken"`) {
+		t.Fatalf("expected the name-taken message to carry a note: prefix, got %q", output)
 	}
 	if !strings.Contains(output, `claimed workers.dev subdomain "apresmoi"`) {
 		t.Fatalf("expected the second attempt to succeed, got %q", output)
@@ -135,8 +143,8 @@ func TestRunRelayDeployNonInteractiveWorkersDevSubdomainUnclaimedNeverPrompts(t 
 	if !errors.Is(err, relaydeploy.ErrWorkersDevSubdomainUnclaimed) {
 		t.Fatalf("run() relay deploy error = %v, want ErrWorkersDevSubdomainUnclaimed", err)
 	}
-	if output != buildWorkersDevSubdomainGuidance("acme-net") {
-		t.Fatalf("guidance output = %q, want byte-identical to buildWorkersDevSubdomainGuidance()", output)
+	if want := "  Deploying relay for acme-net\n\n" + buildWorkersDevSubdomainGuidance("acme-net"); output != want {
+		t.Fatalf("guidance output = %q, want the header followed by byte-identical buildWorkersDevSubdomainGuidance() = %q", output, want)
 	}
 	if strings.Contains(output, "choose a workers.dev subdomain") {
 		t.Fatalf("expected no claim prompt on a non-interactive run, got %q", output)
@@ -221,7 +229,7 @@ func TestAttemptInteractiveWorkersDevSubdomainClaimAccountAlreadyHasSubdomainCon
 	var name string
 	var ok bool
 	output := captureStdout(t, func() {
-		name, ok, _ = attemptInteractiveWorkersDevSubdomainClaim(context.Background(), client, "account-1")
+		name, ok, _ = attemptInteractiveWorkersDevSubdomainClaim(context.Background(), client, "account-1", &sectionPrinter{})
 	})
 	if !ok {
 		t.Fatalf("attemptInteractiveWorkersDevSubdomainClaim() ok = false, want true (10036 continues as already claimed), output = %q", output)
@@ -251,7 +259,7 @@ func TestAttemptInteractiveWorkersDevSubdomainClaimPropagationLagStopsRetrying(t
 	var name string
 	var ok, pending bool
 	output := captureStdout(t, func() {
-		name, ok, pending = attemptInteractiveWorkersDevSubdomainClaim(context.Background(), client, "account-1")
+		name, ok, pending = attemptInteractiveWorkersDevSubdomainClaim(context.Background(), client, "account-1", &sectionPrinter{})
 	})
 	if ok {
 		t.Fatalf("attemptInteractiveWorkersDevSubdomainClaim() ok = true, want false (propagation lag, not a success), output = %q", output)

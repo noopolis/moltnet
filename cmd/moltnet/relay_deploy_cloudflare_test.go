@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -301,6 +302,42 @@ func withRelayDeployFakeCloudflare(t *testing.T, fake *fakeCloudflareCLIServer) 
 	previousResolve := resolveRelayDeployHostname
 	resolveRelayDeployHostname = func(ctx context.Context, hostname string) bool { return true }
 	t.Cleanup(func() { resolveRelayDeployHostname = previousResolve })
+}
+
+// TestRunRelayDeployNotResolvingNoteNamesHostname covers the P2-5 fix: when
+// the freshly deployed hostname is not resolving yet
+// (Result.HostnameResolved false), the printed note must name the specific
+// hostname that isn't resolving, not just the generic "DNS can take a few
+// minutes" reason — restoring the detected fact the guide's own prose
+// ("it says so") promises. Unlike withRelayDeployFakeCloudflare's default
+// stub (always resolved, so most tests never hit a live DNS lookup), this
+// overrides resolveRelayDeployHostname to report unresolved instead.
+func TestRunRelayDeployNotResolvingNoteNamesHostname(t *testing.T) {
+	t.Setenv("CLOUDFLARE_API_TOKEN", "env-cf-token")
+	directory := t.TempDir()
+	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
+
+	fake := startFakeCloudflareCLIServer(t, "env-cf-token")
+	withRelayDeployFakeCloudflare(t, fake)
+	previousResolve := resolveRelayDeployHostname
+	resolveRelayDeployHostname = func(ctx context.Context, hostname string) bool { return false }
+	t.Cleanup(func() { resolveRelayDeployHostname = previousResolve })
+
+	output := captureStdout(t, func() {
+		if err := run(context.Background(), []string{"relay", "deploy", "--config", path}, "test"); err != nil {
+			t.Fatalf("run() relay deploy error = %v", err)
+		}
+	})
+	// startFakeCloudflareCLIServer's default subdomain is "acme" and the
+	// default script name is moltnet-relay, so the deployed hostname is
+	// deterministic.
+	const wantHostname = "moltnet-relay.acme.workers.dev"
+	if !strings.Contains(output, wantHostname+" is not resolving yet") {
+		t.Fatalf("expected the note to name %q as not resolving yet, got %q", wantHostname, output)
+	}
+	if !strings.Contains(output, "workers.dev DNS can take a few minutes") {
+		t.Fatalf("expected the note to keep the DNS-propagation reason, got %q", output)
+	}
 }
 
 // cloudflareTokenFileContents reads back the token saved at path,

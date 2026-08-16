@@ -50,7 +50,7 @@ func TestMaybeSaveCloudflareTokenSavesWithFlag(t *testing.T) {
 	tokenPath := relaydeploy.CloudflareTokenPath(directory + "/Moltnet")
 
 	output := captureStdout(t, func() {
-		if err := maybeSaveCloudflareToken(tokenPath, "cf-token", true, false); err != nil {
+		if err := maybeSaveCloudflareToken(&sectionPrinter{}, tokenPath, "cf-token", true, false); err != nil {
 			t.Fatalf("maybeSaveCloudflareToken() error = %v", err)
 		}
 	})
@@ -74,7 +74,7 @@ func TestMaybeSaveCloudflareTokenPromptYesSaves(t *testing.T) {
 	withInteractiveOutput(t)
 	withPromptAnswers(t, "y")
 	output := captureStdout(t, func() {
-		if err := maybeSaveCloudflareToken(tokenPath, "cf-token", false, false); err != nil {
+		if err := maybeSaveCloudflareToken(&sectionPrinter{}, tokenPath, "cf-token", false, false); err != nil {
 			t.Fatalf("maybeSaveCloudflareToken() error = %v", err)
 		}
 	})
@@ -93,7 +93,7 @@ func TestMaybeSaveCloudflareTokenPromptNoSkipsSave(t *testing.T) {
 	withInteractiveOutput(t)
 	withPromptAnswers(t, "n")
 	captureStdout(t, func() {
-		if err := maybeSaveCloudflareToken(tokenPath, "cf-token", false, false); err != nil {
+		if err := maybeSaveCloudflareToken(&sectionPrinter{}, tokenPath, "cf-token", false, false); err != nil {
 			t.Fatalf("maybeSaveCloudflareToken() error = %v", err)
 		}
 	})
@@ -111,7 +111,7 @@ func TestMaybeSaveCloudflareTokenNonInteractiveNeverPrompts(t *testing.T) {
 	t.Cleanup(func() { isInteractive = previousInteractive })
 
 	output := captureStdout(t, func() {
-		if err := maybeSaveCloudflareToken(tokenPath, "cf-token", false, false); err != nil {
+		if err := maybeSaveCloudflareToken(&sectionPrinter{}, tokenPath, "cf-token", false, false); err != nil {
 			t.Fatalf("maybeSaveCloudflareToken() error = %v", err)
 		}
 	})
@@ -136,7 +136,7 @@ func TestMaybeSaveCloudflareTokenSkipsOfferWhenAlreadyStored(t *testing.T) {
 	// prompt attempt here would hang reading EOF from os.Stdin — proof it
 	// was skipped, not just declined).
 	output := captureStdout(t, func() {
-		if err := maybeSaveCloudflareToken(tokenPath, "cf-token", false, true); err != nil {
+		if err := maybeSaveCloudflareToken(&sectionPrinter{}, tokenPath, "cf-token", false, true); err != nil {
 			t.Fatalf("maybeSaveCloudflareToken() error = %v", err)
 		}
 	})
@@ -248,7 +248,7 @@ func TestMaybeSavePastedCloudflareTokenDeclinePrintsNotSaved(t *testing.T) {
 
 	withPromptAnswers(t, "nope")
 	output := captureStdout(t, func() {
-		if err := maybeSavePastedCloudflareToken(tokenPath, "cf-token", false); err != nil {
+		if err := maybeSavePastedCloudflareToken(&sectionPrinter{}, tokenPath, "cf-token", false); err != nil {
 			t.Fatalf("maybeSavePastedCloudflareToken() error = %v", err)
 		}
 	})

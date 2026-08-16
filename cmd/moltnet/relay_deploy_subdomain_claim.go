@@ -105,7 +105,7 @@ func cloudflareAPIErrorHasCode(err error, code int) bool {
 // workers.dev subdomain yet" guidance — that would contradict the message
 // already shown, which says the opposite (the account does have one;
 // Cloudflare just has not reported it back yet).
-func attemptInteractiveWorkersDevSubdomainClaim(ctx context.Context, client *relaydeploy.Client, accountID string) (name string, claimed bool, propagationPending bool) {
+func attemptInteractiveWorkersDevSubdomainClaim(ctx context.Context, client *relaydeploy.Client, accountID string, sections *sectionPrinter) (name string, claimed bool, propagationPending bool) {
 	// The deploy that hit ErrWorkersDevSubdomainUnclaimed just spent time
 	// against the real Cloudflare API; discard anything typed during that
 	// window before reading the answer, so mid-deploy typeahead (most
@@ -125,24 +125,34 @@ func attemptInteractiveWorkersDevSubdomainClaim(ctx context.Context, client *rel
 				// print "must not be empty" on every remaining attempt.
 				return "", false, false
 			}
-			fmt.Fprintln(stdout, yellow(fmt.Sprintf("  warning: %v", err)))
+			// P2-2: yellow() must wrap only the "warning:" tag, not the whole
+			// line — the indent stays outside the color span, matching the
+			// note:/warning: convention every other styled line in this
+			// package uses.
+			fmt.Fprintf(stdout, "  %s %v\n", yellow("warning:"), err)
 			return "", false, false
 		}
 		name = relaydeploy.NormalizeWorkersDevSubdomainName(name)
 		if err := relaydeploy.ValidateWorkersDevSubdomainName(name); err != nil {
-			fmt.Fprintln(stdout, yellow(fmt.Sprintf("  %v", err)))
+			fmt.Fprintf(stdout, "  %s %v\n", yellow("note:"), err)
 			continue
 		}
 
 		claimErr := client.ClaimWorkersDevSubdomain(ctx, accountID, name)
 		if claimErr == nil {
-			fmt.Fprintf(stdout, "  claimed workers.dev subdomain %q\n", name)
+			// A blank line ahead of this confirmation, not the retry
+			// messages above it: it's the start of the results block the
+			// caller (runRelayDeploy) prints next (deployed/saved lines),
+			// not a continuation of the prompt loop.
+			sections.start()
+			printInitConfigCheckLine(fmt.Sprintf("claimed workers.dev subdomain %q", name), "")
 			return name, true, false
 		}
 
 		if cloudflareAPIErrorHasCode(claimErr, cloudflareErrorAccountAlreadyHasSubdomain) {
 			if existing, claimed, readErr := client.WorkersDevSubdomain(ctx, accountID); readErr == nil && claimed {
-				fmt.Fprintf(stdout, "  this account already has a workers.dev subdomain %q; continuing\n", existing)
+				sections.start()
+				printInitConfigCheckLine(fmt.Sprintf("this account already has a workers.dev subdomain %q; continuing", existing), "")
 				return existing, true, false
 			}
 			// The follow-up GET still reports the account as unclaimed —
@@ -154,14 +164,15 @@ func attemptInteractiveWorkersDevSubdomainClaim(ctx context.Context, client *rel
 			// propagationPending=true so the caller prints this specific
 			// reason instead of its generic (and, here, self-contradictory)
 			// "has not claimed one yet" guidance.
-			fmt.Fprintln(stdout, yellow("  account already has a subdomain; Cloudflare can take a moment to report it — rerun in a minute"))
+			sections.start()
+			fmt.Fprintf(stdout, "  %s account already has a subdomain; Cloudflare can take a moment to report it — rerun in a minute\n", yellow("note:"))
 			return "", false, true
 		}
 		if cloudflareAPIErrorHasCode(claimErr, cloudflareErrorSubdomainNameTaken) {
-			fmt.Fprintln(stdout, yellow(fmt.Sprintf("  could not claim %q: that name is taken, try another", name)))
+			fmt.Fprintf(stdout, "  %s could not claim %q: that name is taken, try another\n", yellow("note:"), name)
 			continue
 		}
-		fmt.Fprintln(stdout, yellow(fmt.Sprintf("  could not claim %q: %v", name, claimErr)))
+		fmt.Fprintf(stdout, "  %s could not claim %q: %v\n", yellow("warning:"), name, claimErr)
 	}
 	return "", false, false
 }

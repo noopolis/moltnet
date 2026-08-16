@@ -76,23 +76,23 @@ func printRelayDeployNextSteps(networkID string) {
 }
 
 // buildMissingCloudflareTokenGuidance is what `relay deploy` prints when
-// CLOUDFLARE_API_TOKEN is not set: a Cloudflare token-creation deep link
-// that pre-selects the one permission group the deploy flow needs (Account >
-// Workers Scripts > Edit — see cloudflareTokenDeepLinkPermissions above),
-// with the plain dashboard URL kept as a manual fallback. On a TTY, an extra
-// dim hint line explains what the pre-filled page looks like; piped output
-// (tests, scripts, CI logs) skips it.
+// CLOUDFLARE_API_TOKEN is not set and the run is non-interactive (or the
+// interactive paste prompt itself came up empty): the same token-creation
+// deep link cloudflareTokenCreationGuidance prints for the interactive
+// prompt, plus the manual-dashboard fallback and the export-and-retry
+// steps needed since there is no prompt to answer here. House block style —
+// two-space indent, four-space nested items — matching the rest of `relay
+// deploy`'s output; the caller (runRelayDeploy) is what prints the
+// "Deploying relay for <id>" header and blank line ahead of this.
 func buildMissingCloudflareTokenGuidance(id string) string {
 	var b strings.Builder
-	b.WriteString("CLOUDFLARE_API_TOKEN is not set.\n\n")
 	b.WriteString(cloudflareTokenCreationGuidance())
-	b.WriteString("\nOr create one manually at:\n")
-	fmt.Fprintf(&b, "  %s\n\n", cloudflareDashboardTokenURL)
-	b.WriteString("Required scope:\n")
-	b.WriteString("  - Account > Workers Scripts > Edit\n\n")
-	b.WriteString("Then export it and retry:\n")
-	b.WriteString("  export CLOUDFLARE_API_TOKEN=...\n")
-	fmt.Fprintf(&b, "  moltnet relay deploy --id %s\n", id)
+	b.WriteString("  Or create one manually at:\n")
+	fmt.Fprintf(&b, "    %s\n", cloudflareDashboardTokenURL)
+	b.WriteString("  Required scope: Account > Workers Scripts > Edit\n\n")
+	b.WriteString("  Then export it and retry:\n")
+	b.WriteString("    export CLOUDFLARE_API_TOKEN=...\n")
+	fmt.Fprintf(&b, "    moltnet relay deploy --id %s\n", id)
 	return b.String()
 }
 
@@ -105,10 +105,10 @@ func buildMissingCloudflareTokenGuidance(id string) string {
 // apart over time.
 func cloudflareTokenCreationGuidance() string {
 	var b strings.Builder
-	b.WriteString("Create a Cloudflare API token (pre-filled with the required permission):\n")
-	fmt.Fprintf(&b, "  %s\n", buildCloudflareTokenDeepLink(cloudflareTokenTemplateName))
+	b.WriteString("  No Cloudflare API token found — create one (pre-filled):\n")
+	fmt.Fprintf(&b, "    %s\n", buildCloudflareTokenDeepLink(cloudflareTokenTemplateName))
 	if isOutputTerminal() {
-		fmt.Fprintf(&b, "  %s\n", dim("(opens pre-filled — just Continue → Create Token → copy)"))
+		fmt.Fprintf(&b, "    %s\n", dim("(opens pre-filled — just Continue → Create Token → copy)"))
 	}
 	return b.String()
 }
@@ -118,7 +118,7 @@ func cloudflareTokenCreationGuidance() string {
 // (attemptInteractiveWorkersDevSubdomainClaim): it explains why the prompt
 // is happening at all before the operator is asked to type a name.
 func buildWorkersDevSubdomainClaimIntro() string {
-	return "This Cloudflare account has not claimed a workers.dev subdomain yet; claim one now:\n"
+	return "  This account has no workers.dev subdomain yet.\n"
 }
 
 // buildWorkersDevSubdomainGuidance is what `relay deploy` prints on
@@ -129,15 +129,15 @@ func buildWorkersDevSubdomainClaimIntro() string {
 // retry budget. The one-time dashboard step is always the correct fallback
 // in both cases, so the same text covers both.
 func buildWorkersDevSubdomainGuidance(id string) string {
-	return fmt.Sprintf(`This Cloudflare account has not claimed a workers.dev subdomain yet. Run
-this command interactively (both stdin and stdout attached to a terminal)
-and you will be prompted to claim one in place. Otherwise, claim it by hand:
+	return fmt.Sprintf(`  This account has not claimed a workers.dev subdomain yet. Run this
+  command interactively (both stdin and stdout attached to a terminal) and
+  you will be prompted to claim one in place. Otherwise, claim it by hand:
 
-  1. Open https://dash.cloudflare.com and choose this account
-  2. Go to Workers & Pages
-  3. Claim (or confirm) this account's workers.dev subdomain
+    1. Open https://dash.cloudflare.com and choose this account
+    2. Go to Workers & Pages
+    3. Claim (or confirm) this account's workers.dev subdomain
 
-Then rerun: moltnet relay deploy --id %s
+  Then rerun: moltnet relay deploy --id %s
 `, id)
 }
 
@@ -152,19 +152,19 @@ Then rerun: moltnet relay deploy --id %s
 // guidance here would send the operator back to the dashboard to claim a
 // name that is, in fact, already theirs.
 func buildWorkersDevSubdomainClaimLagGuidance(name, id string) string {
-	return fmt.Sprintf("claimed %q; Cloudflare can take a moment to propagate — rerun `moltnet relay deploy --id %s` in a minute.\n", name, id)
+	return fmt.Sprintf("  %s claimed %q; Cloudflare can take a moment to propagate — rerun `moltnet relay deploy --id %s` in a minute\n", yellow("note:"), name, id)
 }
 
 func buildRelayDeployManual(scriptName string) string {
-	return fmt.Sprintf(`Equivalent manual steps (wrangler), run from relay/:
+	return fmt.Sprintf(`  Equivalent manual steps (wrangler), run from relay/:
 
-  npm install
-  npx wrangler login
-  npx wrangler deploy --name %s
-  npx wrangler secret put RELAY_TOKEN --name %s
+    npm install
+    npx wrangler login
+    npx wrangler deploy --name %s
+    npx wrangler secret put RELAY_TOKEN --name %s
 
-If this Cloudflare account has never claimed a workers.dev subdomain, claim
-one in the dashboard (Workers & Pages) before the *.workers.dev route is
-reachable.
+  If this Cloudflare account has never claimed a workers.dev subdomain,
+  claim one in the dashboard (Workers & Pages) before the *.workers.dev
+  route is reachable.
 `, scriptName, scriptName)
 }

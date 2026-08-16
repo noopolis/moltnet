@@ -81,8 +81,8 @@ func TestRunRelayDeployGuidanceUnchangedWhenNothingStored(t *testing.T) {
 			t.Fatalf("run() relay deploy error = %v, want CLOUDFLARE_API_TOKEN guidance error", err)
 		}
 	})
-	if output != buildMissingCloudflareTokenGuidance("acme-net") {
-		t.Fatalf("guidance output = %q, want byte-identical to buildMissingCloudflareTokenGuidance()", output)
+	if want := "  Deploying relay for acme-net\n\n" + buildMissingCloudflareTokenGuidance("acme-net"); output != want {
+		t.Fatalf("guidance output = %q, want the header followed by byte-identical buildMissingCloudflareTokenGuidance() = %q", output, want)
 	}
 }
 

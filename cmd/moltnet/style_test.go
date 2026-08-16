@@ -121,16 +121,50 @@ func alignmentInvariantCase(t *testing.T) string {
 	})
 }
 
+// relayDeploySummaryAlignmentInvariantCase renders the two `relay deploy`
+// success-path checkmarks (printInitConfigCheckLine) plus a "Next:" block.
+//
+// P2-1: an earlier version of this case also hand-wrote the relay url/note:/
+// warning: lines `relay deploy` itself prints (relay_deploy.go), styled with
+// dim()/yellow() directly rather than through any production helper. That
+// pinned nothing about alignment — those lines carry no column computation
+// at all, just a fixed indent — and, being copied literals rather than a
+// call into relay_deploy.go, silently drifted out of sync with the real
+// wording whenever that file changed (see the P2-5 hostname-in-the-DNS-note
+// fix, which would have needed a matching hand-edit here forever). Trimmed
+// down to just the two printInitConfigCheckLine calls: real production
+// code, not a copy of it, and the second call's long "what" string is
+// deliberately chosen to land on printInitConfigCheckLine's single-space
+// fallback column (extra starting at a bare space, not padded to
+// configLineColumn) — a branch alignmentInvariantCase above never reaches,
+// since every "what" string it uses is short enough to hit the padded
+// branch instead.
+func relayDeploySummaryAlignmentInvariantCase(t *testing.T) string {
+	t.Helper()
+	return captureStdout(t, func() {
+		printInitConfigCheckLine(`deployed relay Worker "moltnet-relay"`, "")
+		printInitConfigCheckLine("saved relay credentials", "/home/example/.moltnet/acme-friends/.moltnet/relay.json")
+		printNextSteps([]nextStep{
+			{command: "moltnet pair invite --network-id acme-friends --room chat", description: "invite a friend over this relay"},
+		})
+	})
+}
+
 // TestAlignmentIsPlainWidthInvariant is the P2-1 regression test: it forces
 // the isOutputTerminal seam to true so printInitConfigCheckLine and
 // formatNextStep take their styled path (NO_COLOR unset), captures their
 // combined output, strips every ANSI escape code, and asserts the result is
 // byte-identical to the same calls' plain output (isOutputTerminal at its
-// default false, i.e. NO_COLOR/non-TTY). Column widths in both helpers are
-// computed from the plain (unstyled) prefix by design — see
-// printInitConfigCheckLine's and formatNextStep's doc comments — so ANSI
-// codes must never shift where padding lands; this pins that invariant
-// directly rather than relying on it holding by construction.
+// default false, i.e. NO_COLOR/non-TTY) — i.e. that ANSI styling never
+// changes where padding lands, and that stripping it back out is lossless.
+// Column widths in both helpers are computed from the plain (unstyled)
+// prefix by design — see printInitConfigCheckLine's and formatNextStep's doc
+// comments — so ANSI codes must never shift where padding lands; this pins
+// that invariant directly rather than relying on it holding by construction.
+// It checks both the `init` summary shape (alignmentInvariantCase) and
+// `relay deploy`'s own checkmark lines (relayDeploySummaryAlignmentInvariantCase,
+// see its doc comment for why that case is narrower than its name once
+// implied).
 func TestAlignmentIsPlainWidthInvariant(t *testing.T) {
 	// Guarantee the styled path is actually styled regardless of the
 	// ambient environment: NO_COLOR must be absent and TERM must be a
@@ -151,22 +185,29 @@ func TestAlignmentIsPlainWidthInvariant(t *testing.T) {
 	})
 	t.Setenv("TERM", "xterm-256color")
 
-	previousTerminal := isOutputTerminal
-	isOutputTerminal = func() bool { return true }
-	styledOutput := alignmentInvariantCase(t)
-	isOutputTerminal = previousTerminal
+	for name, run := range map[string]func(t *testing.T) string{
+		"init":        alignmentInvariantCase,
+		"relayDeploy": relayDeploySummaryAlignmentInvariantCase,
+	} {
+		t.Run(name, func(t *testing.T) {
+			previousTerminal := isOutputTerminal
+			isOutputTerminal = func() bool { return true }
+			styledOutput := run(t)
+			isOutputTerminal = previousTerminal
 
-	if !strings.ContainsRune(styledOutput, '\x1b') {
-		t.Fatalf("styledOutput = %q, want at least one ANSI escape code from the TTY-styled path", styledOutput)
-	}
+			if !strings.ContainsRune(styledOutput, '\x1b') {
+				t.Fatalf("styledOutput = %q, want at least one ANSI escape code from the TTY-styled path", styledOutput)
+			}
 
-	plainOutput := alignmentInvariantCase(t)
-	if strings.ContainsRune(plainOutput, '\x1b') {
-		t.Fatalf("plainOutput = %q, want no ANSI escape codes from the non-TTY default path", plainOutput)
-	}
+			plainOutput := run(t)
+			if strings.ContainsRune(plainOutput, '\x1b') {
+				t.Fatalf("plainOutput = %q, want no ANSI escape codes from the non-TTY default path", plainOutput)
+			}
 
-	strippedStyled := ansiEscapePattern.ReplaceAllString(styledOutput, "")
-	if strippedStyled != plainOutput {
-		t.Fatalf("ANSI-stripped styled output does not byte-match plain output:\nstripped styled = %q\nplain           = %q", strippedStyled, plainOutput)
+			strippedStyled := ansiEscapePattern.ReplaceAllString(styledOutput, "")
+			if strippedStyled != plainOutput {
+				t.Fatalf("ANSI-stripped styled output does not byte-match plain output:\nstripped styled = %q\nplain           = %q", strippedStyled, plainOutput)
+			}
+		})
 	}
 }

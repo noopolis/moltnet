@@ -50,7 +50,7 @@ func TestPromptHiddenHelperProcess(t *testing.T) {
 		// the question and reads. Exercises the P3-7 fix's actual call
 		// order, and promptHidden's nested no-op re-entry into an already-
 		// suppressed disableTerminalEcho.
-		token, err := maybePromptForCloudflareToken()
+		token, err := maybePromptForCloudflareToken(&sectionPrinter{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "HELPER-ERROR:%v\n", err)
 			os.Exit(1)
@@ -91,7 +91,7 @@ func TestPromptHiddenHelperProcess(t *testing.T) {
 		ioctlGetTermios = func(fd int, req uint) (*unix.Termios, error) {
 			return nil, unix.EINVAL
 		}
-		token, err := maybePromptForCloudflareToken()
+		token, err := maybePromptForCloudflareToken(&sectionPrinter{})
 		if err == nil {
 			fmt.Fprintln(os.Stderr, "HELPER-ERROR:expected an error, got nil")
 			os.Exit(1)
@@ -300,7 +300,7 @@ func TestPromptHiddenPTYNormalPasteHiddenAndRestored(t *testing.T) {
 	// The very first output byte proves disableTerminalEcho already ran
 	// (see the ordering argument above) — check it before reading anything
 	// further.
-	_ = readMasterUntil(t, master, "Create a Cloudflare API token", 5*time.Second)
+	_ = readMasterUntil(t, master, "No Cloudflare API token found", 5*time.Second)
 	if masterEcho(t, master) {
 		t.Fatal("ECHO is still on after the first byte of guidance output; disableTerminalEcho did not run before printing")
 	}

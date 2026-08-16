@@ -53,7 +53,7 @@ const (
 // back to the non-interactive token-guidance-and-error path rather than
 // risking a pasted secret echoing to the screen under an
 // "(input hidden)" label.
-func maybePromptForCloudflareToken() (string, error) {
+func maybePromptForCloudflareToken(sections *sectionPrinter) (string, error) {
 	if !isInteractive() || !isOutputTerminal() {
 		return "", nil
 	}
@@ -61,11 +61,17 @@ func maybePromptForCloudflareToken() (string, error) {
 	restore, ok := disableTerminalEcho()
 	defer restore()
 	if !ok {
-		fmt.Fprintln(stdout, yellow("warning: cannot disable terminal echo; falling back to token guidance"))
+		sections.start()
+		fmt.Fprintf(stdout, "  %s cannot disable terminal echo; falling back to token guidance\n", yellow("warning:"))
 		return "", errTerminalEchoUnavailable
 	}
 
+	sections.start()
 	fmt.Fprint(stdout, cloudflareTokenCreationGuidance())
+	// P3: a blank line separates the guidance block from the prompt itself,
+	// matching the guide transcript — without it, the deep link and the
+	// "(opens pre-filled...)" hint read as if they were part of the same
+	// line group as the prompt rather than the guidance ahead of it.
 	fmt.Fprintln(stdout)
 	return promptHidden("  paste token (input hidden): ")
 }
@@ -96,10 +102,13 @@ func resolveCloudflareAPIToken(envToken, storedToken string, storedTokenOK bool)
 // blocking on stdin) and only when nothing is stored yet, it offers the
 // save once via promptYesNo; declining or running non-interactively leaves
 // the token unsaved. Never prints apiToken itself.
-func maybeSaveCloudflareToken(tokenPath, apiToken string, saveToken, storedTokenOK bool) error {
+func maybeSaveCloudflareToken(sections *sectionPrinter, tokenPath, apiToken string, saveToken, storedTokenOK bool) error {
+	path := abbreviateHome(tokenPath)
+	prompted := false
 	switch {
 	case saveToken:
-		// fall through to save below
+		// fall through to save below — no prompt, so the confirmation below
+		// is the only place the destination path appears and must name it.
 	case !storedTokenOK && isInteractive() && isOutputTerminal():
 		// The deploy this save offer follows can take several seconds
 		// against the real Cloudflare API; discard anything typed during
@@ -107,13 +116,15 @@ func maybeSaveCloudflareToken(tokenPath, apiToken string, saveToken, storedToken
 		// (most commonly a stray Enter) never silently answers this prompt
 		// (P0 mid-deploy-typeahead fix).
 		flushPendingTerminalInput()
-		confirmed, err := promptYesNo(fmt.Sprintf("  save this token to %s (0600) for future deploys? [y/N] ", tokenPath))
+		sections.start()
+		confirmed, err := promptYesNo(fmt.Sprintf("  save this token to %s (0600) for future deploys? [y/N] ", path))
 		if err != nil {
 			return err
 		}
 		if !confirmed {
 			return nil
 		}
+		prompted = true
 	default:
 		return nil
 	}
@@ -121,7 +132,20 @@ func maybeSaveCloudflareToken(tokenPath, apiToken string, saveToken, storedToken
 	if err := relaydeploy.SaveCloudflareToken(tokenPath, apiToken); err != nil {
 		return err
 	}
-	fmt.Fprintln(stdout, dim(fmt.Sprintf("  saved Cloudflare API token to %s", tokenPath)))
+	if prompted {
+		// The prompt just above already named the destination path; a
+		// second mention on the confirmation line right under it would be
+		// redundant.
+		printInitConfigCheckLine("saved Cloudflare API token", "")
+		return nil
+	}
+	sections.start()
+	// P3: the path goes through printInitConfigCheckLine's own column-aware
+	// "extra" argument, not baked into the "what" string, so it gets the
+	// same dim treatment every other path-bearing ✓ line in this output
+	// gets (unify ✓-line path treatment) instead of printing at full
+	// contrast.
+	printInitConfigCheckLine("saved Cloudflare API token to", path)
 	return nil
 }
 
@@ -136,14 +160,17 @@ func maybeSaveCloudflareToken(tokenPath, apiToken string, saveToken, storedToken
 // called when tokenSource is cloudflareTokenSourcePasted, which by
 // construction only happens after a successful maybePromptForCloudflareToken
 // call, so no further interactivity check is needed here.
-func maybeSavePastedCloudflareToken(tokenPath, apiToken string, saveToken bool) error {
+func maybeSavePastedCloudflareToken(sections *sectionPrinter, tokenPath, apiToken string, saveToken bool) error {
+	path := abbreviateHome(tokenPath)
+	prompted := false
 	if !saveToken {
 		// See maybeSaveCloudflareToken's matching call: the deploy this
 		// save offer follows can take several seconds, and anything typed
 		// during that window must never silently answer this prompt (P0
 		// mid-deploy-typeahead fix).
 		flushPendingTerminalInput()
-		confirmed, err := promptYesNoDefaultYes(fmt.Sprintf("  save to %s (0600)? [Y/n] ", tokenPath))
+		sections.start()
+		confirmed, err := promptYesNoDefaultYes(fmt.Sprintf("  save to %s (0600)? [Y/n] ", path))
 		if err != nil {
 			return err
 		}
@@ -151,12 +178,24 @@ func maybeSavePastedCloudflareToken(tokenPath, apiToken string, saveToken bool) 
 			fmt.Fprintln(stdout, dim("  not saved"))
 			return nil
 		}
+		prompted = true
 	}
 
 	if err := relaydeploy.SaveCloudflareToken(tokenPath, apiToken); err != nil {
 		return err
 	}
-	fmt.Fprintln(stdout, dim(fmt.Sprintf("  saved Cloudflare API token to %s", tokenPath)))
+	if prompted {
+		// The prompt just above already named the destination path.
+		printInitConfigCheckLine("saved Cloudflare API token", "")
+		return nil
+	}
+	sections.start()
+	// P3: the path goes through printInitConfigCheckLine's own column-aware
+	// "extra" argument, not baked into the "what" string, so it gets the
+	// same dim treatment every other path-bearing ✓ line in this output
+	// gets (unify ✓-line path treatment) instead of printing at full
+	// contrast.
+	printInitConfigCheckLine("saved Cloudflare API token to", path)
 	return nil
 }
 
@@ -204,10 +243,17 @@ func runRelayDeployForgetToken(tokenPath string) error {
 	if err != nil {
 		return err
 	}
+	path := abbreviateHome(tokenPath)
 	if removed {
-		fmt.Fprintf(stdout, "  removed stored Cloudflare API token %s\n", tokenPath)
+		// P3: the path goes through the column-aware "extra" argument (unify
+		// ✓-line path treatment), not baked into the "what" string.
+		printInitConfigCheckLine("removed stored Cloudflare API token", path)
 	} else {
-		fmt.Fprintf(stdout, "  no stored Cloudflare API token at %s\n", tokenPath)
+		// P3: a note:, not a bare line — this still reports a fact the
+		// operator should register (there was nothing to remove), matching
+		// the note:/warning: convention every other non-checkmark line here
+		// uses.
+		fmt.Fprintf(stdout, "  %s no stored Cloudflare API token at %s\n", yellow("note:"), path)
 	}
 	return nil
 }
