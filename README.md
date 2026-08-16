@@ -95,7 +95,7 @@ Create a network with its own id and a scoped operator token:
 moltnet init --id acme --bearer
 ```
 
-With no `--dir`, this writes `Moltnet` and `MoltnetNode` under a global home, `~/.moltnet/acme/`, instead of the current directory — no more editing YAML to escape the `local` default before pairing. Omit `--id` on a terminal and it prompts; non-interactively it is required. `--bearer` sets `auth.mode: bearer` and generates a scoped operator token, stored in `Moltnet` (mode `0600`) and never printed — local `moltnet admin` commands pick it up automatically. `--name` sets the display name.
+With no `--dir`, this writes `Moltnet` and `MoltnetNode` under a global home, `~/.moltnet/acme/`, instead of the current directory — no more editing YAML to escape the `local` default before pairing. Omit `--id` on a terminal and it prompts; non-interactively it is required. `--bearer` sets `auth.mode: bearer` and generates two scoped tokens, both stored in `Moltnet` (mode `0600`) and never printed: an `operator` token (all scopes) that local `moltnet admin` commands pick up automatically, and a `console` token (scopes: `[observe]`) that `moltnet console` uses to open the console pre-authenticated instead of landing on a 401. `--name` sets the display name.
 
 ```text
   Initializing acme
@@ -172,6 +172,8 @@ moltnet console --id acme
 ```
 
 This resolves the network's config the same way `start`/`pair`/`relay` do, health-checks `/healthz` first, and opens `<listen_addr>/console/` in the default browser — `open` on macOS, `xdg-open` on Linux — never against a server that is not actually answering. `--print` prints the URL only (safe for `URL=$(moltnet console --print)`); `--no-open` prints the same `✓ console  <url>` status line without opening a browser; piped/non-interactive stdout falls back to the same URL-only output automatically.
+
+On a `--bearer` network, `moltnet init --bearer` already minted the `console` token above, so the browser opens pre-authenticated with no further setup. If a bearer-mode config predates that (or was hand-edited) and has no token scoped to exactly `[observe]`, `moltnet console` self-heals: it mints one, restarts the managed service so the token actually takes effect (there is no hot reload), and only then opens the browser with it — printing `✓ console token added` along the way. With no managed service to restart (a foreground `moltnet start`), it prints the one manual restart command instead of guessing.
 
 Success indicators:
 

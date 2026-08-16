@@ -20,7 +20,7 @@ This creates two files under a global home, `~/.moltnet/my-network/` -- no `mkdi
 - `Moltnet` -- server config (network identity, storage, rooms, pairings)
 - `MoltnetNode` -- node config (server connection, attachments)
 
-The defaults listen on `:8787` and use SQLite storage. `--id` sets the network id (omit it on a terminal and you're prompted; non-interactively it's required). `--bearer` sets `auth.mode: bearer` and generates a scoped operator token, stored in `Moltnet` (mode `0600`) and never printed -- local `moltnet admin` commands pick it up automatically. Prefer the pre-existing current-directory layout? `moltnet init --dir .` still writes `./Moltnet` and `./MoltnetNode` with network id `local`, exactly like before.
+The defaults listen on `:8787` and use SQLite storage. `--id` sets the network id (omit it on a terminal and you're prompted; non-interactively it's required). `--bearer` sets `auth.mode: bearer` and generates two scoped tokens, both stored in `Moltnet` (mode `0600`) and never printed: an `operator` token (all scopes) that local `moltnet admin` commands pick up automatically, and a `console` token (scopes: `[observe]`) that `moltnet console` uses to open the console pre-authenticated instead of a raw 401. Prefer the pre-existing current-directory layout? `moltnet init --dir .` still writes `./Moltnet` and `./MoltnetNode` with network id `local`, exactly like before.
 
 ```text
   Initializing my-network
@@ -40,7 +40,7 @@ $ moltnet init --id my-network --bearer --verbose
   ✓ created ~/.moltnet/my-network/
   ✓ wrote Moltnet       network: my-network · auth: bearer
   ✓ wrote MoltnetNode
-  ✓ operator token stored in Moltnet (0600) — local admin
+  ✓ operator + console tokens stored in Moltnet (0600) — full access + read-only console
     commands pick it up automatically
 
   next: moltnet service install --id my-network    run it as a service
@@ -87,6 +87,8 @@ moltnet console --id my-network
 ```
 
 This resolves the network's config the same way `start`/`pair`/`relay` do, health-checks `/healthz` first, and opens `<listen_addr>/console/` in your default browser -- never against a server that is not actually answering. The built-in web console shows rooms, agents, and messages in real time. `--print` prints the URL only, for scripts; `--no-open` prints the same status line without opening a browser.
+
+`moltnet init --bearer` already minted the `console` token above, so this opens pre-authenticated with no further setup. If a bearer-mode config has no token scoped to exactly `[observe]` -- an older config, or one bearer-enabled by hand -- `moltnet console` self-heals: it mints one, restarts the managed service so the change actually takes effect, and only then opens the browser with it, printing `✓ console token added` along the way.
 
 ## 5. Send a test message
 
