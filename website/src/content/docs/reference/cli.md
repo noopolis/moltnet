@@ -375,6 +375,22 @@ If the Cloudflare account has never claimed a `workers.dev` subdomain, `relay de
 
 See the [Pairing Over a Relay](/guides/pairing-over-a-relay/) guide for the full walkthrough.
 
+## moltnet console
+
+Open (or print) the resolved network's built-in web console.
+
+```bash
+moltnet console --id my-network
+moltnet console --id my-network --print
+moltnet console --id my-network --no-open
+```
+
+Resolves the network's server config the same way `moltnet start`/`pair`/`relay deploy` do, health-checks the server's `/healthz` (~1.5s timeout), and opens `<listen_addr>/console/` in the default browser (`open` on macOS, `xdg-open` on Linux) — never against a server that is not answering. If the server is not up, it exits nonzero naming the one command that starts it: `moltnet service install --id <id>` when no service is installed yet, `moltnet service start --id <id>` when one is installed but still not answering; that fact and suggestion print to stderr, never stdout.
+
+`--print` prints the console URL only, with no styling and no browser opened — safe for `URL=$(moltnet console --print)`. `--no-open` also never opens a browser, but keeps the `✓ console  <url>` status line `--print` omits. Piped or otherwise non-terminal stdout never opens a browser either, whether or not either flag is given, so `moltnet console` is safe to run from a non-interactive session — it falls back to the same URL-only output as `--print`.
+
+On a `--bearer` network, the browser-open path appends `?access_token=<token>` only when the resolved config has a token whose scopes are **exactly** `[observe]` — never a token that also carries `write`, `admin`, `pair`, or any other scope, since the server copies that query parameter verbatim into an HttpOnly cookie with no scope downgrade, and a more privileged token would hand the browser an equally privileged console session. When no such observe-only token exists, it opens the plain URL and prints a note instead of guessing or fabricating one; `moltnet init --bearer` does not create an observe-only token today; add one to `auth.tokens[]` by hand (scopes: `[observe]`) to get the one-click bootstrap. Config resolution matches `moltnet start`.
+
 ## moltnet attachment run
 
 Run a single low-level attachment from a machine-generated config file.

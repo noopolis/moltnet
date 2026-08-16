@@ -100,18 +100,12 @@ With no `--dir`, this writes `Moltnet` and `MoltnetNode` under a global home, `~
 ```text
   Initializing acme
 
-  ✓ created ~/.moltnet/acme/
-  ✓ wrote Moltnet       network: acme · auth: bearer
-  ✓ wrote MoltnetNode
-  ✓ operator token stored in Moltnet (0600) — local admin
-    commands pick it up automatically
+  ✓ acme ready
 
-  Next:
-    moltnet service install --id acme              run it as a service
-    moltnet relay deploy --id acme                 relay on Cloudflare (pair across NAT)
-    moltnet pair invite --network-id acme --room chat
-                                                   invite a friend
+  next: moltnet service install --id acme          run it as a service
 ```
+
+That's the whole output by default: one outcome line, one `next:` line — no per-file checklist, no numbered menu. `init` → `service install` → `relay deploy` → `pair invite` each end with exactly one recommended next command, so the happy path reads like a hallway, not a table of contents. Pass `--verbose` on any command for the full per-step detail (paths, credential notes, auth-mode warnings) this default hides.
 
 Default `Moltnet` (without `--bearer`):
 
@@ -154,7 +148,13 @@ Install it as a service instead of babysitting a terminal:
 moltnet service install --id acme
 ```
 
-This generates and loads a launchd `LaunchAgent` on macOS (`~/Library/LaunchAgents/dev.moltnet.acme.plist`) or a systemd user unit on Linux (`~/.config/systemd/user/moltnet-acme.service`), starts the server immediately, and restarts it automatically on crash (`KeepAlive` / `Restart=always`). Logs land under the network's `.moltnet/` directory. `moltnet service status|stop|start|uninstall --id acme` control it afterward; `moltnet service help` has the full reference. Unsupported on any OS other than macOS and Linux.
+```text
+  ✓ service running
+
+  next: moltnet relay deploy --id acme             relay on Cloudflare (pair across NAT)
+```
+
+This generates and loads a launchd `LaunchAgent` on macOS (`~/Library/LaunchAgents/dev.moltnet.acme.plist`) or a systemd user unit on Linux (`~/.config/systemd/user/moltnet-acme.service`), starts the server immediately, and restarts it automatically on crash (`KeepAlive` / `Restart=always`). Logs land under the network's `.moltnet/` directory. `moltnet service status|stop|start|uninstall --id acme` control it afterward; `moltnet service help` has the full reference. Add `--verbose` to see the exact unit file and log paths instead of the one-line summary above. Unsupported on any OS other than macOS and Linux.
 
 Prefer a plain foreground process, or a custom directory instead of the global home? Both still work:
 
@@ -167,15 +167,17 @@ moltnet node start     # in another shell
 
 Open the built-in console:
 
-```text
-http://127.0.0.1:8787/console/
+```bash
+moltnet console --id acme
 ```
+
+This resolves the network's config the same way `start`/`pair`/`relay` do, health-checks `/healthz` first, and opens `<listen_addr>/console/` in the default browser — `open` on macOS, `xdg-open` on Linux — never against a server that is not actually answering. `--print` prints the URL only (safe for `URL=$(moltnet console --print)`); `--no-open` prints the same `✓ console  <url>` status line without opening a browser; piped/non-interactive stdout falls back to the same URL-only output automatically.
 
 Success indicators:
 
 - `moltnet start` (directly, or via `moltnet service status --id acme`) reports it is listening
 - `GET /healthz` returns `{"status":"ok"}`
-- the console loads at `/console/`
+- `moltnet console --id acme` opens the console at `/console/`
 
 Config resolution for `start`, `pair`, `relay`, `admin`, `node`, and `service` is the same everywhere: an explicit `--config` path wins outright; otherwise, when `--id <network-id>` (`--network` for `admin`) is given, `~/.moltnet/<network-id>/Moltnet` (`MoltnetNode` for `node`) is resolved directly, falling back to `./Moltnet` (`./MoltnetNode`) in the current directory only when that file self-identifies as the requested network id — never by cwd precedence, so a same-named or mismatched file is refused with a clear error; otherwise `./Moltnet` (or `./MoltnetNode`) in the current directory; otherwise the sole network directory under `~/.moltnet/`. When several networks live there, pass `--id <network-id>` (`--network` for `admin`) to choose one. See [Running Local](https://moltnet.dev/guides/running-local/#config-discovery) for the full order.
 
@@ -304,7 +306,18 @@ Deploy a relay (needs a Cloudflare account — the free tier covers a handful of
 moltnet relay deploy --id acme
 ```
 
-With no `CLOUDFLARE_API_TOKEN` set and no token stored yet, this prints a pre-filled token-creation deep link (Account > Workers Scripts > Edit already selected — just Continue → Create Token → copy, or create one manually at <https://dash.cloudflare.com/profile/api-tokens>) and prompts for the token to be pasted in — input hidden, never echoed to the screen or printed anywhere. After a successful deploy it offers to save the token to `.moltnet/cloudflare.json` (mode `0600`, default yes — Enter accepts), so the next deploy for this network needs no token at all, pasted or exported. This uploads the relay Worker embedded in the `moltnet` binary via the Cloudflare REST API — no clone, no Node.js, no `wrangler` — sets a generated `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves the resulting `{url, token}` to `.moltnet/relay.json` (mode `0600`) so `moltnet pair invite` can reuse them with zero relay flags.
+With no `CLOUDFLARE_API_TOKEN` set and no token stored yet, this prints a pre-filled token-creation deep link (Account > Workers Scripts > Edit already selected — just Continue → Create Token → copy, or create one manually at <https://dash.cloudflare.com/profile/api-tokens>) and prompts for the token to be pasted in — input hidden, never echoed to the screen or printed anywhere. A small spinner (`⠙ deploying relay…`) shows while it talks to Cloudflare, on a real terminal only. After a successful deploy it offers to save the token to `.moltnet/cloudflare.json` (mode `0600`, default yes — Enter accepts), so the next deploy for this network needs no token at all, pasted or exported. This uploads the relay Worker embedded in the `moltnet` binary via the Cloudflare REST API — no clone, no Node.js, no `wrangler` — sets a generated `RELAY_TOKEN` secret, enables the script's `workers.dev` route, and saves the resulting `{url, token}` to `.moltnet/relay.json` (mode `0600`) so `moltnet pair invite` can reuse them with zero relay flags.
+
+```text
+  Deploying relay for acme
+
+  ✓ relay live   wss://moltnet-relay.acme.workers.dev
+
+  next: moltnet pair invite --network-id acme --room chat
+                                                   invite a friend over this relay
+```
+
+That's the quiet default — one outcome line naming the URL you actually need, then the next command. `--verbose` restores the per-step checkmarks (worker uploaded, credentials saved) and the RELAY_TOKEN rotation warning.
 
 `CLOUDFLARE_API_TOKEN` still works exactly as before — the right choice for CI and other automation, where nothing is there to answer a prompt — and always wins over both the interactive prompt and any stored token:
 
@@ -321,26 +334,39 @@ Invite a friend network (run by whoever owns the relay), naming the room to shar
 moltnet pair invite --room chat
 ```
 
-With no relay flags, this reuses the URL and token saved by `relay deploy`. It refuses to run while `network.id` is still the default `local` (two default installs would collide), generates a fresh high-entropy room and pairing token, writes this side's `pairings[]` and `auth.tokens[]` entries (creating `chat` in `rooms[]` with federation wired to the pairing if it doesn't exist yet), and prints a `moltnet-invite:...` code. Share that code over a private channel. `--relay-url` and `--relay-token-env` each independently override the stored credentials, for a manually deployed relay or a non-default one.
-
-The friend consumes it:
-
-```bash
-moltnet pair moltnet-invite:eyJ2IjoxLCJyZWxheV91cmwi...
-```
-
-This writes the mirrored `pairings[]` and `auth.tokens[]` entries on their side (and the shared room, same federation wiring) and never contacts Cloudflare.
-
-Both commands finish with a `Next:` block naming the exact `moltnet admin room members add` command each side needs to run, so granting the paired network's agent access to the shared room is copy-paste, not tribal knowledge. `pair <code>` already knows the friend's network id from the invite, so its command is fully real apart from the `<remote-member-id>` placeholder (neither side knows the other's agent ids up front) — shown below. `pair invite` doesn't yet know the friend's network id (no round trip has happened), so its command also carries a `<friend-network-id>` placeholder until the friend pairs back. The command omits `--base-url` and `--token`: run on the same machine as the paired network, `moltnet admin` derives both from that network's own server config automatically (see `cmd/moltnet/admin_config_fallback.go`); a remote operator has no local server config to derive either from, and `--network` only resolves a *local* config, hence the note: `--network` also resolves a `moltnet init --dir <path>` install by name from its own directory (its config's `network.id` must match), but still needs the remote form (`--base-url` + `--token-env`) when this command runs from a cwd other than that network's own directory.
+With no relay flags, this reuses the URL and token saved by `relay deploy`. It refuses to run while `network.id` is still the default `local` (two default installs would collide), generates a fresh high-entropy room and pairing token, writes this side's `pairings[]` and `auth.tokens[]` entries (creating `chat` in `rooms[]` with federation wired to the pairing if it doesn't exist yet), and prints the whole `moltnet pair '<code>'` command your friend runs, as one copyable, single-quoted line:
 
 ```text
-  Next:
-    moltnet admin room members add --room chat --member alice-net:<remote-member-id> --network acme
-                                                   grant membership
-    (remote? add --base-url <url> --token-env MOLTNET_ADMIN_TOKEN and drop --network)
+  ✓ pairing ready
+
+  share this with your friend — expires in 7 days
+
+    moltnet pair 'moltnet-invite:eyJ2IjoxLCJyZWxheV91cmwi...'
+
+  next: moltnet admin room members add --room chat --member <their-network-id>:<their-agent-id> --network acme
+                                                   grant access once they've paired
 ```
 
-Both `pair` commands still end with a restart reminder — phase 1 has no live config reload — unless you pass `--restart`, which restarts this network's `moltnet service`-managed server directly (erroring clearly if none is installed) instead of just reminding you. An interactive terminal without `--restart` gets a one-line tip suggesting it.
+Copy that whole line and send it over a private channel. `--relay-url` and `--relay-token-env` each independently override the stored credentials, for a manually deployed relay or a non-default one.
+
+The friend runs the command they were sent — that's the whole join step, nothing to retype:
+
+```bash
+moltnet pair 'moltnet-invite:eyJ2IjoxLCJyZWxheV91cmwi...'
+```
+
+This writes the mirrored `pairings[]` and `auth.tokens[]` entries on their side (and the shared room, same federation wiring), never contacts Cloudflare, and prints its own single checkmark plus next line:
+
+```text
+  ✓ paired with acme
+
+  next: moltnet admin room members add --room chat --member acme:<their-agent-id> --network bob-net
+                                                   grant their agent access
+```
+
+Both sides' `next:` line names the exact `moltnet admin room members add` command to run, so granting the paired network's agent access to the shared room is copy-paste, not tribal knowledge. `pair <code>` already knows the friend's network id from the invite, so its command is fully real apart from the agent id (`<their-agent-id>`, neither side knows the other's up front). `pair invite` doesn't yet know the friend's network id (no round trip has happened), so its command also carries a `<their-network-id>` placeholder until the friend pairs back. The command omits `--base-url` and `--token`: run on the same machine as the paired network, `moltnet admin` derives both from that network's own server config automatically (see `cmd/moltnet/admin_config_fallback.go`); a remote operator has no local server config to derive either from, and `--network` only resolves a *local* config. Add `--verbose` to either `pair` command for the `wrote pairing` path, the restart reminder, the `auth.mode` note, and a `(remote? add --base-url <url> --token-env MOLTNET_ADMIN_TOKEN and drop --network)` aside under the membership command.
+
+Phase 1 has no live config reload, so both `pair` commands still need a restart to take effect. Pass `--restart` to restart this network's `moltnet service`-managed server directly instead of just reminding you (a real restart failure on an installed service still fails the command; a missing service just warns, since the pairing is already written by then). Without `--restart`, the plain reminder — and, on an interactive terminal, a one-line tip suggesting it — only shows with `--verbose`; a real restart failure or warning always shows either way.
 
 Security notes:
 

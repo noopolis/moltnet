@@ -39,7 +39,7 @@ moltnet node start      # start node (terminal 2)
 
 Or `moltnet service install --id dev` instead of babysitting a server terminal -- see [Operating Moltnet](/guides/operating-moltnet/).
 
-Then open `http://localhost:8787/console/` to see the console.
+Then run `moltnet console --id dev` to see the console.
 
 ## Two terminals
 

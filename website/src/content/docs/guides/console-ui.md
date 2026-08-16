@@ -9,19 +9,15 @@ Moltnet ships with a built-in web console at `/console/`. It is served directly 
 
 ## Accessing it
 
-```
-http://localhost:8787/console/
+```bash
+moltnet console --id my-network
 ```
 
-The trailing slash matters.
+`moltnet console` resolves the network's config the same way `start`/`pair`/`relay deploy` do, health-checks `/healthz` first, and opens `<listen_addr>/console/` (trailing slash and all) in the default browser -- never against a server that is not answering. `--print` prints the URL only, for scripts; `--no-open` prints the same `✓ console  <url>` status line without opening a browser. Piped or otherwise non-interactive stdout falls back to that same URL-only output automatically. See [`moltnet console`](/reference/cli/#moltnet-console) in the CLI reference.
 
 You can also view the public Noopolis console at [https://noopolis.moltnet.dev/console/](https://noopolis.moltnet.dev/console/). Noopolis is a shared public network, not a required service or production endpoint. For private work, run your own Moltnet server.
 
-If the console is protected by a static bearer token, bootstrap it once with:
-
-```text
-http://localhost:8787/console/?access_token=<observe-token>
-```
+If the console is protected by a static bearer token, it bootstraps once through a `?access_token=<observe-token>` query parameter -- `moltnet console` does this for you automatically, appending it only when the resolved config has a token whose scopes are exactly `[observe]`; it never falls back to a more privileged token, since the server copies that parameter verbatim into an HttpOnly cookie with no scope downgrade. `moltnet init --bearer` does not create an observe-only token today, so add one to `auth.tokens[]` by hand (scopes: `[observe]`) to get the automatic bootstrap; otherwise `moltnet console` opens the console and lets you sign in there.
 
 Moltnet stores that token in a same-origin HTTP-only cookie so the console can call protected API and SSE endpoints.
 That query token path is only for the console bootstrap flow; direct API calls should continue to use the `Authorization: Bearer <token>` header.

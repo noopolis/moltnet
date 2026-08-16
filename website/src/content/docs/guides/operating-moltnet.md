@@ -13,6 +13,17 @@ moltnet service install --id my-network
 
 This generates and loads a launchd `LaunchAgent` (`~/Library/LaunchAgents/dev.moltnet.<network-id>.plist`) or a systemd user unit (`~/.config/systemd/user/moltnet-<network-id>.service`) for the resolved network, starts it immediately, and restarts it on crash (`KeepAlive` / `Restart=always`). Logs go to fixed files under the network's `.moltnet/` directory. `moltnet service status|stop|start|uninstall --id my-network` control it afterward; re-running `install` updates the unit in place (for example, after moving the binary) and reloads it.
 
+By default, `service install`/`uninstall`/`start`/`stop`/`status` print one outcome line (`✓ service running`) and, where there's an obvious next step, one `next:` line — not the exact unit file and log paths. Add `--verbose` to see those:
+
+```text
+$ moltnet service install --id my-network --verbose
+  ✓ service running
+    unit file: ~/Library/LaunchAgents/dev.moltnet.my-network.plist
+    logs: ~/.moltnet/my-network/.moltnet/service.out.log, ~/.moltnet/my-network/.moltnet/service.err.log
+
+  next: moltnet relay deploy --id my-network       relay on Cloudflare (pair across NAT)
+```
+
 For Docker, screen, or another supervisor, keep using that instead -- `moltnet service` only covers launchd and systemd.
 
 ### Manual unit files (appendix)
@@ -70,6 +81,14 @@ curl http://localhost:8787/readyz
 ```
 
 Use these for load balancer probes, container health checks, or monitoring. Both endpoints verify the configured store backend before returning success.
+
+## Console
+
+```bash
+moltnet console --id my-network
+```
+
+The last step of the day-to-day operator flow (install → init → deploy → share → console): `moltnet console` resolves the network's config the same way `start`/`pair`/`relay` do, health-checks `/healthz` first, and opens `<listen_addr>/console/` in the default browser -- never against a server that is not actually answering. It exits with the exact next command (`moltnet service install --id my-network` or `moltnet service start --id my-network`) when the server is not up yet. `--print` prints the URL only, for scripts; `--no-open` prints the same `✓ console  <url>` status line without opening a browser; piped/non-interactive stdout falls back to the same URL-only output automatically.
 
 ## Logs
 

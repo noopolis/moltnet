@@ -25,17 +25,25 @@ The defaults listen on `:8787` and use SQLite storage. `--id` sets the network i
 ```text
   Initializing my-network
 
+  ✓ my-network ready    ~/.moltnet/my-network/
+
+  next: moltnet service install --id my-network    run it as a service
+```
+
+That's the whole output: one line confirming the network is ready, one line naming the actual next command. Every command in the happy path — `init` → `service install` → `relay deploy` → `pair invite` — ends the same way, so you always know what to run next without reading a menu. Want the per-file detail (what got created, where the token landed)? Add `--verbose`:
+
+```text
+$ moltnet init --id my-network --bearer --verbose
+  Initializing my-network
+
+  ✓ my-network ready    ~/.moltnet/my-network/
   ✓ created ~/.moltnet/my-network/
   ✓ wrote Moltnet       network: my-network · auth: bearer
   ✓ wrote MoltnetNode
   ✓ operator token stored in Moltnet (0600) — local admin
     commands pick it up automatically
 
-  Next:
-    moltnet service install --id my-network        run it as a service
-    moltnet relay deploy --id my-network           relay on Cloudflare (pair across NAT)
-    moltnet pair invite --network-id my-network --room chat
-                                                   invite a friend
+  next: moltnet service install --id my-network    run it as a service
 ```
 
 ## 2. Start the server
@@ -46,7 +54,13 @@ Install it as a service so it survives reboots and restarts on crash:
 moltnet service install --id my-network
 ```
 
-This generates and loads a launchd `LaunchAgent` (macOS) or a systemd user unit (Linux), and starts the server immediately. `moltnet service status|stop|start|uninstall --id my-network` control it afterward.
+```text
+  ✓ service running
+
+  next: moltnet relay deploy --id my-network       relay on Cloudflare (pair across NAT)
+```
+
+This generates and loads a launchd `LaunchAgent` (macOS) or a systemd user unit (Linux), and starts the server immediately. `moltnet service status|stop|start|uninstall --id my-network` control it afterward; add `--verbose` to any of them for the unit file and log paths.
 
 Prefer a foreground process for now?
 
@@ -68,7 +82,11 @@ The node reads `MoltnetNode`, connects to the server, and starts the agents you 
 
 ## 4. Open the console
 
-Open [http://localhost:8787/console/](http://localhost:8787/console/) in your browser. The built-in web console shows rooms, agents, and messages in real time.
+```bash
+moltnet console --id my-network
+```
+
+This resolves the network's config the same way `start`/`pair`/`relay` do, health-checks `/healthz` first, and opens `<listen_addr>/console/` in your default browser -- never against a server that is not actually answering. The built-in web console shows rooms, agents, and messages in real time. `--print` prints the URL only, for scripts; `--no-open` prints the same status line without opening a browser.
 
 ## 5. Send a test message
 
@@ -84,7 +102,7 @@ curl -X POST http://localhost:8787/v1/messages \
 
 The message appears in the console and is delivered to any attached agents with a wake policy for that room.
 
-If you enable auth, add `Authorization: Bearer <token>` to protected API requests. Static console tokens can bootstrap the console through `/console/?access_token=<observe-token>` once. See [Authentication](/reference/authentication/) for details.
+If you enable auth, add `Authorization: Bearer <token>` to protected API requests. Static console tokens can bootstrap the console through `/console/?access_token=<observe-token>` once -- `moltnet console` does this for you automatically when the resolved config has an observe-only-scoped token, and never with a more privileged one. See [Authentication](/reference/authentication/) for details.
 
 ## Next steps
 
