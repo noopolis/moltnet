@@ -26,8 +26,8 @@ the characters in place.
 
 ## banner-frames.txt / banner-frames-loop.txt
 
-`banner-frames.txt` (16 frames) and `banner-frames-loop.txt` (24 frames,
-copied in for a later "waiting" idle animation — not wired into any command
+`banner-frames.txt` (16 frames) and `banner-frames-loop.txt` (7 frames,
+kept in for a later "waiting" idle animation — not wired into any command
 yet) are animation frame sets for `banner.txt`'s wordmark, embedded and
 played by `cmd/moltnet/banner_player.go`. Same glyphcss pipeline as
 `banner.txt` above (`compileScene` direct, Roboto-Bold, lowercase
@@ -43,10 +43,29 @@ from the static banner's render:
   frame has identical row placement/height and only the column width
   foreshortens — a horizontal "turntable" effect. `banner-frames.txt` eases
   `rotY` from -25° to 0° (fast start, decelerating into rest — frame 15,
-  the last, is the frontal pose, `t=1`). `banner-frames-loop.txt` sweeps
-  `rotY = 18·sin(2πi/24)` for `i = 0..23`, one full period, looping
-  seamlessly frame 23 → frame 0 (frame 0 is itself the frontal pose,
-  `rotY=0`).
+  the last, is the frontal pose, `t=1`). `banner-frames-loop.txt` was
+  originally rendered as a full-period pendulum, `rotY = 18·sin(2πi/24)` for
+  `i = 0..23` — but a pendulum swinging left is indistinguishable, frame by
+  frame, from the same pendulum swinging right (foreshortening only ever
+  narrows the sign; the render carries no sign of its own), so the
+  negative-rotY half of that render (`i = 13..23`) came out byte-identical
+  to the positive half reversed (frame `i` == frame `24-i mod 24` for every
+  `i`, only 7 distinct rows of glyphs among the 24 frames). The same
+  symmetry recurs one level down: that non-redundant half-period, `i =
+  0..12` (sweeping `0° → peak (+18° at i=6) → 0°`), is itself symmetric
+  about its own peak — `sin(θ)` is symmetric about `θ=π/2`, so frame `i =
+  6+k` came out byte-identical to frame `i = 6-k` for every `k = 1..6`
+  (frame 7 == frame 5, frame 8 == frame 4, … frame 12 == frame 0). What
+  ships here is just the non-redundant quarter: **7 frames,
+  `rotY = 18·sin(2πi/24)` for `i = 0..6`** — a quarter-period sweeping `0° →
+  peak (+18° at i=6)`, frame 0 the frontal pose. A player reconstructs the
+  `0° → peak → 0°` half-swing this file used to ship outright by
+  ping-ponging these 7 frames (forward `0..6` then backward `5..0`, repeat —
+  the full cycle of one swing direction); the full back-and-forth pendulum
+  needs the same trick one level up on top of that (play the reconstructed
+  half-swing forward, then backward again) rather than looping either level
+  forward-only, which would show only a quarter or a half of the swing
+  before jumping back to frame 0.
 
 Both files render every frame at a **fixed 40×8 canvas** (a tight common
 content box across every frame of that file — frames 7-15 of
