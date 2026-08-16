@@ -371,6 +371,8 @@ The Cloudflare API token used to authenticate the deploy itself is resolved in t
 
 Re-running `relay deploy` is idempotent: it updates the deployed script and keeps the existing `RELAY_TOKEN` unless `--token-env` supplies a new one. Rotating `RELAY_TOKEN` breaks every pairing already using this relay at once.
 
+If the Cloudflare account has never claimed a `workers.dev` subdomain, `relay deploy` catches that mid-deploy: on an interactive terminal it prompts for a subdomain name (yours forever, e.g. `apresmoi`), claims it via the Cloudflare API, and re-runs the deploy; an invalid or already-claimed name gets one retry before falling back to the one-time manual dashboard step (Workers & Pages → claim the subdomain). A non-interactive run (CI, piped) skips the prompt and only prints the dashboard step. See [One-time workers.dev subdomain claim](/guides/pairing-over-a-relay/#one-time-workersdev-subdomain-claim) in the pairing guide for the full transcript.
+
 See the [Pairing Over a Relay](/guides/pairing-over-a-relay/) guide for the full walkthrough.
 
 ## moltnet attachment run

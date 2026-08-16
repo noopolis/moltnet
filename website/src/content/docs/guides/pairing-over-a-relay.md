@@ -84,11 +84,34 @@ Useful flags:
 
 ### One-time workers.dev subdomain claim
 
-Cloudflare accounts that have never deployed a Worker before haven't claimed a `workers.dev` subdomain yet, and the API can't claim one on your behalf. If that's the case, `relay deploy` uploads the Worker, then stops with:
+Cloudflare accounts that have never deployed a Worker before haven't claimed a `workers.dev` subdomain yet, and the API can't claim one without a name to give it. On an interactive terminal, `relay deploy` catches this mid-deploy and prompts you to claim one right there instead of stopping:
 
 ```text
-This Cloudflare account has not claimed a workers.dev subdomain yet, and
-the API cannot claim one on your behalf. One-time step:
+This Cloudflare account has not claimed a workers.dev subdomain yet; claim one now:
+  choose a workers.dev subdomain (yours forever, e.g. "apresmoi"): apresmoi
+  claimed workers.dev subdomain "apresmoi"
+```
+
+Once claimed, `relay deploy` re-runs the whole deploy from scratch to pick up from there — that's safe, since re-running it is already how every redeploy works (idempotent). A typed name is lowercased automatically, then checked against wrangler's own de-facto naming rule (Cloudflare publishes no official rules for this specific subdomain): lowercase letters, digits, and hyphens only, 1–63 characters, never starting or ending with a hyphen. A name the API itself refuses is branched on Cloudflare's own error code: already claimed by another account gets one retry with a different name; this account already having a subdomain is not treated as a failure at all — the existing claim is picked up and the deploy continues. If that re-check itself still can't confirm the claim (Cloudflare's own propagation lag on the very claim it just reported), `relay deploy` says so directly instead of retrying with a different name or falling back to the generic "hasn't claimed one yet" guidance:
+
+```text
+account already has a subdomain; Cloudflare can take a moment to report it — rerun in a minute
+```
+
+Closing input (Ctrl-D) at the prompt declines straight to the manual dashboard steps below, without spending a second attempt.
+
+If the claim itself succeeds but the redeploy right after it still reports the account unclaimed, that's Cloudflare's own claim taking a moment to propagate, not a failed claim:
+
+```text
+claimed "apresmoi"; Cloudflare can take a moment to propagate — rerun `moltnet relay deploy --id my-network` in a minute.
+```
+
+Running non-interactively (piped, a script, CI) skips the prompt entirely and prints those dashboard steps instead:
+
+```text
+This Cloudflare account has not claimed a workers.dev subdomain yet. Run
+this command interactively (both stdin and stdout attached to a terminal)
+and you will be prompted to claim one in place. Otherwise, claim it by hand:
 
   1. Open https://dash.cloudflare.com and choose this account
   2. Go to Workers & Pages
@@ -96,8 +119,6 @@ the API cannot claim one on your behalf. One-time step:
 
 Then rerun: moltnet relay deploy --id my-network
 ```
-
-Claim the subdomain once in the dashboard, then rerun `moltnet relay deploy` — it re-uploads the same script and finishes.
 
 ### DNS propagation
 
