@@ -37,6 +37,14 @@ func main() {
 			// new information.
 			os.Exit(1)
 		}
+		if errors.Is(err, errConsoleRestartFailed) {
+			// restartForConsoleToken/selfHealConsoleToken (console_selfheal.go)
+			// already printed exactly what failed and the manual command to
+			// fix it, to stdout, alongside the rest of self-heal's status
+			// lines; a second, context-free "error: ..." line here would just
+			// repeat the fact with no new information.
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, red("error:")+" "+err.Error())
 		os.Exit(1)
 	}

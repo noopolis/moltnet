@@ -75,7 +75,7 @@ given, the command lists the candidates and asks you to pass one.
 
 func buildConsoleUsage() string {
 	return `Usage:
-  moltnet console [--id <network-id>] [--config <path>] [--print] [--no-open]
+  moltnet console [--id <network-id>] [--config <path>] [--print] [--no-open] [--no-restart]
 
 Opens the resolved network's built-in web console (<listen_addr>/console/)
 in the default browser: macOS "open", Linux "xdg-open". It health-checks
@@ -85,9 +85,21 @@ the one command that starts it -- "moltnet service install --id <id>" when
 no service is installed yet, "moltnet service start --id <id>" when one is
 installed but still not answering.
 
+On a bearer-mode network, a console-safe token (scoped to exactly
+[observe]) is required before a browser is ever opened; one is minted
+automatically if none exists. Either way, the token is always probed
+against the live server (a real request carrying it) before it is put in a
+browser URL -- a token merely present in the config file is not enough,
+since the server only reloads auth.tokens[] on restart. When that probe
+fails, nothing is opened: the exact one command to load the token is
+printed instead, and the command still exits 0 unless it itself attempted
+and failed a restart on your behalf, in which case it exits nonzero.
+
 --print prints the console URL only, with no styling and without opening a
 browser -- for scripts. --no-open also never opens a browser, but keeps the
-"✓ console  <url>" status line --print omits. Piped/non-terminal stdout (no
+"✓ console  <url>" status line --print omits. --no-restart writes a fresh
+console token when one is needed but never restarts the service itself;
+it prints the exact restart command instead. Piped/non-terminal stdout (no
 TTY) never opens a browser either, whether or not either flag is given, so
 "moltnet console" is safe to run from a non-interactive session -- it falls
 back to the same URL-only output as --print only when neither flag was

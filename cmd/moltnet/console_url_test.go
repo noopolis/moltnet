@@ -166,48 +166,16 @@ func writeConsoleRawTestConfig(t *testing.T, path, body string) {
 	}
 }
 
-// TestRunConsoleBearerNetworkWithPrivilegedTokenNeverAppendsIt is the P1
-// security regression test: a token whose scopes merely INCLUDE "observe"
-// alongside a privileged scope (here "admin") must never be selected by
-// consoleObserveToken. An earlier version of this test (then named
-// TestRunConsoleBearerNetworkOpensURLWithObserveToken) encoded the wrong
-// contract by asserting the opposite — that this exact [observe, admin]
-// config's token WAS appended — which is precisely the P1: the server
-// copies ?access_token= verbatim into an HttpOnly cookie with no scope
-// downgrade (maybeSetConsoleAuthCookie, internal/transport/auth.go), so
-// handing the browser this token would open an admin-capable console
-// session. Fixed: no matching token exists (none of this config's tokens
-// carry exactly [observe]), so runConsole must fall back to the plain URL
-// plus the same missing-observe-token note as
-// TestRunConsoleBearerNetworkNoObserveTokenOpensPlainURLWithNote below —
-// never fabricate or widen the search to a privileged token instead.
-func TestRunConsoleBearerNetworkWithPrivilegedTokenNeverAppendsIt(t *testing.T) {
-	withConsoleFakeServiceManager(t, "linux")
-	opened := withFakeOpenURL(t, nil)
-	withOutputTerminal(t, true)
-	t.Setenv("HOME", t.TempDir())
-
-	server := healthzServer(t, http.StatusOK)
-	configPath := filepath.Join(t.TempDir(), "Moltnet")
-	writeConsoleBearerTestConfig(t, configPath, "jill-net", listenAddrOf(t, server), "jill-observe-secret", []authn.Scope{authn.ScopeObserve, authn.ScopeAdmin})
-
-	wantURL := "http://" + listenAddrOf(t, server) + "/console/"
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"console", "--config", configPath}, "test"); err != nil {
-			t.Fatalf("console error = %v", err)
-		}
-	})
-
-	if len(*opened) != 1 || (*opened)[0] != wantURL {
-		t.Fatalf("expected exactly one plain browser open of %q (no token appended for a privileged-scope token), got %v", wantURL, *opened)
-	}
-	if strings.Contains(output, "jill-observe-secret") {
-		t.Fatalf("expected the printed output to never contain the privileged token, got %q", output)
-	}
-	if !strings.Contains(output, "note") || !strings.Contains(output, "observe") {
-		t.Fatalf("expected the missing-observe-only-token note, got %q", output)
-	}
-}
+// The old TestRunConsoleBearerNetworkWithPrivilegedTokenNeverAppendsIt (a
+// bearer network whose only token carried more than [observe], e.g.
+// [observe, admin]) and TestRunConsoleBearerNetworkNoObserveTokenOpensPlainURLWithNote
+// (a bearer network whose only token carried [write]) both moved to
+// console_selfheal_test.go: `moltnet console` no longer just prints a note
+// in either case, it self-heals by minting and writing a fresh
+// observe-only token — the P1 security invariant they pin (a
+// privileged-scoped token must never be the one appended to the browser
+// URL) still holds and is still asserted there, alongside the new
+// self-heal behavior.
 
 // TestRunConsoleBearerNetworkOpensURLWithObserveOnlyToken covers the one
 // case consoleObserveToken must still say yes to: a token whose scopes are
@@ -219,7 +187,10 @@ func TestRunConsoleBearerNetworkOpensURLWithObserveOnlyToken(t *testing.T) {
 	withOutputTerminal(t, true)
 	t.Setenv("HOME", t.TempDir())
 
-	server := healthzServer(t, http.StatusOK)
+	// probeConsoleToken (the P1 fix) must see the token accepted before
+	// runConsole ever appends it -- consoleTestServer's /v1/rooms answers 200
+	// so this exercises the "already works" branch, not the down-server one.
+	server := consoleTestServer(t, http.StatusOK, http.StatusOK)
 	configPath := filepath.Join(t.TempDir(), "Moltnet")
 	writeConsoleBearerTestConfig(t, configPath, "jill-net", listenAddrOf(t, server), "jill-observe-only-secret", []authn.Scope{authn.ScopeObserve})
 
@@ -241,6 +212,47 @@ func TestRunConsoleBearerNetworkOpensURLWithObserveOnlyToken(t *testing.T) {
 	}
 	if !strings.Contains(output, wantBaseURL) {
 		t.Fatalf("expected the ready line to still name the bare console URL, got %q", output)
+	}
+}
+
+// TestRunConsoleBearerNetworkObserveOnlyTokenNotYetLoadedGivesActionableLine
+// is the P1 field bug's "run 2" shape: an observe-only token already sits in
+// the config (written by an earlier run, by init --bearer, or by hand), but
+// the live server has never actually loaded it (consoleTestServer's
+// /v1/rooms answers 401, simulating a server that has not reloaded
+// auth.tokens[] since this token was written). Before this fix, runConsole
+// appended it to the browser URL unconditionally on the strength of the
+// config file alone -- opening a 307-then-401 behind a bare green
+// checkmark. Now: no browser open at all, and the one actionable next
+// command printed instead, exit 0 (nothing this command itself attempted
+// failed).
+func TestRunConsoleBearerNetworkObserveOnlyTokenNotYetLoadedGivesActionableLine(t *testing.T) {
+	withConsoleFakeServiceManager(t, "linux")
+	opened := withFakeOpenURL(t, nil)
+	withOutputTerminal(t, true)
+	t.Setenv("HOME", t.TempDir())
+
+	server := consoleTestServer(t, http.StatusOK, http.StatusUnauthorized)
+	configPath := filepath.Join(t.TempDir(), "Moltnet")
+	writeConsoleBearerTestConfig(t, configPath, "morgan-net", listenAddrOf(t, server), "morgan-observe-only-secret", []authn.Scope{authn.ScopeObserve})
+
+	output := captureStdout(t, func() {
+		if err := run(context.Background(), []string{"console", "--config", configPath}, "test"); err != nil {
+			t.Fatalf("console error = %v", err)
+		}
+	})
+
+	if len(*opened) != 0 {
+		t.Fatalf("expected no browser open when the live server has not loaded the token, got %v", *opened)
+	}
+	if !strings.Contains(output, "has not loaded it yet") {
+		t.Fatalf("expected the token-not-loaded note, got %q", output)
+	}
+	if !strings.Contains(output, "moltnet start") {
+		t.Fatalf("expected the one exact command to load the token, got %q", output)
+	}
+	if strings.Contains(output, "morgan-observe-only-secret") {
+		t.Fatalf("expected the token to never be printed, got %q", output)
 	}
 }
 
@@ -291,36 +303,5 @@ func TestRunConsoleOpenModeNetworkNeverAppendsAccessToken(t *testing.T) {
 	}
 	if !strings.Contains(output, wantURL) {
 		t.Fatalf("expected the ready line to name the console URL, got %q", output)
-	}
-}
-
-func TestRunConsoleBearerNetworkNoObserveTokenOpensPlainURLWithNote(t *testing.T) {
-	withConsoleFakeServiceManager(t, "linux")
-	opened := withFakeOpenURL(t, nil)
-	withOutputTerminal(t, true)
-	t.Setenv("HOME", t.TempDir())
-
-	server := healthzServer(t, http.StatusOK)
-	configPath := filepath.Join(t.TempDir(), "Moltnet")
-	// The only token in this config carries "write", never "observe" -- no
-	// token here can legitimately view the console, so runConsole must not
-	// fabricate one.
-	writeConsoleBearerTestConfig(t, configPath, "mona-net", listenAddrOf(t, server), "mona-write-secret", []authn.Scope{authn.ScopeWrite})
-
-	wantURL := "http://" + listenAddrOf(t, server) + "/console/"
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"console", "--config", configPath}, "test"); err != nil {
-			t.Fatalf("console error = %v", err)
-		}
-	})
-
-	if len(*opened) != 1 || (*opened)[0] != wantURL {
-		t.Fatalf("expected exactly one plain browser open of %q, got %v", wantURL, *opened)
-	}
-	if strings.Contains(output, "mona-write-secret") {
-		t.Fatalf("expected the printed output to never contain the write-scoped token, got %q", output)
-	}
-	if !strings.Contains(output, "note") || !strings.Contains(output, "observe") {
-		t.Fatalf("expected a one-line note about the missing observe-scoped token, got %q", output)
 	}
 }

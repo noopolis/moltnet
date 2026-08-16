@@ -92,6 +92,29 @@ func healthzServer(t *testing.T, status int) *httptest.Server {
 	return server
 }
 
+// consoleTestServer starts an httptest server whose /healthz answers with
+// healthzStatus and /v1/rooms -- the endpoint probeConsoleToken hits with an
+// Authorization: Bearer header, console_selfheal.go -- answers with
+// probeStatus, letting a test control the health check and the live-token
+// probe independently. It ignores the Authorization header entirely (real
+// auth correctness is console_e2e_test.go's job, against a real server);
+// this is only ever used to steer probeConsoleToken's true/false outcome.
+func consoleTestServer(t *testing.T, healthzStatus, probeStatus int) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/healthz":
+			response.WriteHeader(healthzStatus)
+		case "/v1/rooms":
+			response.WriteHeader(probeStatus)
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
 func listenAddrOf(t *testing.T, server *httptest.Server) string {
 	t.Helper()
 	addr := strings.TrimPrefix(server.URL, "http://")

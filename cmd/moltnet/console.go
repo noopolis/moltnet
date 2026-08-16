@@ -43,9 +43,10 @@ var consoleHTTPClient = &http.Client{}
 var openURLFunc = defaultOpenURL
 
 // runConsole implements `moltnet console [--id <network-id>] [--config
-// <path>] [--print] [--no-open]`, the last step of the "install -> init ->
-// deploy -> share -> console" flow: the server has served the built-in web
-// console at <listen_addr>/console/ since it first existed
+// <path>] [--print] [--no-open] [--no-restart]`, the last step of the
+// "install -> init -> deploy -> share -> console" flow: the server has
+// served the built-in web console at <listen_addr>/console/ since it first
+// existed
 // (internal/transport/ui.go), and `moltnet service install` already starts
 // that server, but nothing told the operator the console existed or opened
 // it for them.
@@ -70,6 +71,7 @@ func runConsole(ctx context.Context, args []string) error {
 		id         = flags.String("id", "", "network id to select under ~/.moltnet when several exist")
 		printOnly  = flags.Bool("print", false, "print the console URL only; never open a browser")
 		noOpen     = flags.Bool("no-open", false, "print the console status line without opening a browser")
+		noRestart  = flags.Bool("no-restart", false, "self-heal may write a fresh console token but never restarts the service; print the exact restart command instead")
 	)
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -140,12 +142,37 @@ func runConsole(ctx context.Context, args []string) error {
 		// openURLFunc sees openTarget: the stdout ready line below,
 		// --print, and --no-open all keep using the bare consoleURL so no
 		// script capturing this command's output can ever see the token.
+		//
+		// A config-file token, self-healed or already present, is not
+		// enough on its own: the server only reloads auth.tokens[] on
+		// restart, so a token that is genuinely on disk can still be one
+		// the running process has never seen (the field bug this fix
+		// closes -- a repeat run finding the token in the config and
+		// appending it unconditionally, opening a 307-then-401 behind a
+		// green checkmark). resolveConsoleAccessToken (console_selfheal.go)
+		// is the one place that decides this: it never hands back a token
+		// that has not been probe-confirmed live against the actual
+		// running server, and it never leaves this command claiming ready
+		// when it isn't.
 		openTarget := consoleURL
-		if token, ok := consoleObserveToken(cfg); ok {
+		if cfg.Auth.Mode == authn.ModeBearer {
+			token, ok, resolveErr := resolveConsoleAccessToken(ctx, absPath, cfg, base, *noRestart)
+			if resolveErr != nil {
+				// A restart this command itself attempted did not
+				// verifiably come back -- a real command failure (nonzero
+				// exit), never a browser open against a server already
+				// known not to be answering.
+				return resolveErr
+			}
+			if !ok {
+				// Nothing is safe to open yet, but nothing this command
+				// tried actually failed (an unloaded existing token, or no
+				// managed service to self-heal-restart): the one exact
+				// next command is already printed. Opening the browser
+				// here would just trade that honest note for a raw 401.
+				return nil
+			}
 			openTarget = consoleURL + "?access_token=" + url.QueryEscape(token)
-		} else if cfg.Auth.Mode == authn.ModeBearer {
-			fmt.Fprintln(stdout, "  note: no observe-only-scoped token in this config; the console will ask you to sign in.")
-			fmt.Fprintln(stdout, "  note: `moltnet init --bearer` does not create an observe-only token today.")
 		}
 		if err := openURLFunc(openTarget); err != nil {
 			// The opener is missing or failed (headless box, unknown
