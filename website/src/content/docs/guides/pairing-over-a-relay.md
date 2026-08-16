@@ -21,21 +21,26 @@ Create a Cloudflare API token scoped to `Account > Workers Scripts > Edit` — t
 
 Or create one manually at <https://dash.cloudflare.com/profile/api-tokens> with that same scope.
 
-You don't need to export anything first — just run the command, click the link, and paste the token back in when it asks. (The `.moltnet/...` paths below are shown relative to the network's own directory for readability — the command actually prints the full resolved path, e.g. `~/.moltnet/my-network/.moltnet/relay.json`.)
+You don't need to export anything first — just run the command, click the link, and paste the token back in when it asks. The command abbreviates paths under your home directory with `~`, same as the shell; a network under a custom `--dir` instead prints its full path unabbreviated.
 
 ```text
 $ moltnet relay deploy --id my-network
-Create a Cloudflare API token (pre-filled with the required permission):
-  https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&accountId=%2A&zoneId=all&name=moltnet-relay-deploy
-  (opens pre-filled — just Continue → Create Token → copy)
+  Deploying relay for my-network
+
+  No Cloudflare API token found — create one (pre-filled):
+    https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&accountId=%2A&zoneId=all&name=moltnet-relay-deploy
+    (opens pre-filled — just Continue → Create Token → copy)
 
   paste token (input hidden): 
-  deployed relay Worker "moltnet-relay"
+
+  ✓ deployed relay Worker "moltnet-relay"
+  ✓ saved relay credentials ~/.moltnet/my-network/.moltnet/relay.json
+
   relay url: wss://moltnet-relay.acme.workers.dev
-  saved relay credentials to .moltnet/relay.json
   warning: rotating RELAY_TOKEN (redeploying with a new --token-env value) breaks every pairing on this relay at once
-  save to .moltnet/cloudflare.json (0600)? [Y/n] 
-  saved Cloudflare API token to .moltnet/cloudflare.json
+
+  save to ~/.moltnet/my-network/.moltnet/cloudflare.json (0600)? [Y/n] y
+  ✓ saved Cloudflare API token
 
   Next:
     moltnet pair invite --network-id my-network --room chat
@@ -50,20 +55,17 @@ Running `relay deploy` non-interactively — piped, a script, CI — never promp
 
 ```text
 $ moltnet relay deploy
-CLOUDFLARE_API_TOKEN is not set.
+  Deploying relay for my-network
 
-Create a Cloudflare API token (pre-filled with the required permission):
-  https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&accountId=%2A&zoneId=all&name=moltnet-relay-deploy
+  No Cloudflare API token found — create one (pre-filled):
+    https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&accountId=%2A&zoneId=all&name=moltnet-relay-deploy
+  Or create one manually at:
+    https://dash.cloudflare.com/profile/api-tokens
+  Required scope: Account > Workers Scripts > Edit
 
-Or create one manually at:
-  https://dash.cloudflare.com/profile/api-tokens
-
-Required scope:
-  - Account > Workers Scripts > Edit
-
-Then export it and retry:
-  export CLOUDFLARE_API_TOKEN=...
-  moltnet relay deploy --id my-network
+  Then export it and retry:
+    export CLOUDFLARE_API_TOKEN=...
+    moltnet relay deploy --id my-network
 ```
 
 `CLOUDFLARE_API_TOKEN` still works exactly as before — it's the right choice for CI and other automation, where nothing is there to answer a prompt. Set it and `--save-token` deploys and saves in one shot, no prompt at all:
@@ -87,15 +89,16 @@ Useful flags:
 Cloudflare accounts that have never deployed a Worker before haven't claimed a `workers.dev` subdomain yet, and the API can't claim one without a name to give it. On an interactive terminal, `relay deploy` catches this mid-deploy and prompts you to claim one right there instead of stopping:
 
 ```text
-This Cloudflare account has not claimed a workers.dev subdomain yet; claim one now:
+  This account has no workers.dev subdomain yet.
   choose a workers.dev subdomain (yours forever, e.g. "apresmoi"): apresmoi
-  claimed workers.dev subdomain "apresmoi"
+
+  ✓ claimed workers.dev subdomain "apresmoi"
 ```
 
 Once claimed, `relay deploy` re-runs the whole deploy from scratch to pick up from there — that's safe, since re-running it is already how every redeploy works (idempotent). A typed name is lowercased automatically, then checked against wrangler's own de-facto naming rule (Cloudflare publishes no official rules for this specific subdomain): lowercase letters, digits, and hyphens only, 1–63 characters, never starting or ending with a hyphen. A name the API itself refuses is branched on Cloudflare's own error code: already claimed by another account gets one retry with a different name; this account already having a subdomain is not treated as a failure at all — the existing claim is picked up and the deploy continues. If that re-check itself still can't confirm the claim (Cloudflare's own propagation lag on the very claim it just reported), `relay deploy` says so directly instead of retrying with a different name or falling back to the generic "hasn't claimed one yet" guidance:
 
 ```text
-account already has a subdomain; Cloudflare can take a moment to report it — rerun in a minute
+  note: account already has a subdomain; Cloudflare can take a moment to report it — rerun in a minute
 ```
 
 Closing input (Ctrl-D) at the prompt declines straight to the manual dashboard steps below, without spending a second attempt.
@@ -103,21 +106,21 @@ Closing input (Ctrl-D) at the prompt declines straight to the manual dashboard s
 If the claim itself succeeds but the redeploy right after it still reports the account unclaimed, that's Cloudflare's own claim taking a moment to propagate, not a failed claim:
 
 ```text
-claimed "apresmoi"; Cloudflare can take a moment to propagate — rerun `moltnet relay deploy --id my-network` in a minute.
+  note: claimed "apresmoi"; Cloudflare can take a moment to propagate — rerun `moltnet relay deploy --id my-network` in a minute
 ```
 
 Running non-interactively (piped, a script, CI) skips the prompt entirely and prints those dashboard steps instead:
 
 ```text
-This Cloudflare account has not claimed a workers.dev subdomain yet. Run
-this command interactively (both stdin and stdout attached to a terminal)
-and you will be prompted to claim one in place. Otherwise, claim it by hand:
+  This account has not claimed a workers.dev subdomain yet. Run this
+  command interactively (both stdin and stdout attached to a terminal) and
+  you will be prompted to claim one in place. Otherwise, claim it by hand:
 
-  1. Open https://dash.cloudflare.com and choose this account
-  2. Go to Workers & Pages
-  3. Claim (or confirm) this account's workers.dev subdomain
+    1. Open https://dash.cloudflare.com and choose this account
+    2. Go to Workers & Pages
+    3. Claim (or confirm) this account's workers.dev subdomain
 
-Then rerun: moltnet relay deploy --id my-network
+  Then rerun: moltnet relay deploy --id my-network
 ```
 
 ### DNS propagation
@@ -125,7 +128,7 @@ Then rerun: moltnet relay deploy --id my-network
 A freshly enabled `workers.dev` route can take a few minutes to resolve. If `relay deploy` finishes but the hostname isn't resolving yet, it says so instead of failing:
 
 ```text
-  note: moltnet-relay.acme.workers.dev is not resolving yet; workers.dev DNS can take a few minutes to propagate, retry `moltnet pair invite` shortly if it fails
+    note: moltnet-relay.acme.workers.dev is not resolving yet — workers.dev DNS can take a few minutes; retry `moltnet pair invite` shortly if it fails
 ```
 
 Credentials are already saved at this point — just wait a few minutes and continue to `moltnet pair invite`.
@@ -158,14 +161,14 @@ A token gets stored to `.moltnet/cloudflare.json` in one of three ways:
 - **The env-token save offer**: if `CLOUDFLARE_API_TOKEN` is set and nothing is stored yet, a successful deploy on an interactive terminal offers to save it too — but defaults to *no* this time, since that token already lives in the environment somewhere and saving it is optional, not the reason you ran the command:
 
   ```text
-    save this token to .moltnet/cloudflare.json (0600) for future deploys? [y/N] y
-    saved Cloudflare API token to .moltnet/cloudflare.json
+    save this token to ~/.moltnet/my-network/.moltnet/cloudflare.json (0600) for future deploys? [y/N] y
+    ✓ saved Cloudflare API token
   ```
 
 Declining any of these, or running non-interactively (scripts, CI), never saves a token, and the token itself is never printed either way. Once stored, deploys reusing it print a one-line reminder of the source instead of a silent skip:
 
 ```text
-  using stored Cloudflare API token from .moltnet/cloudflare.json
+  using stored Cloudflare API token from ~/.moltnet/my-network/.moltnet/cloudflare.json
 ```
 
 `moltnet relay deploy --forget-token` deletes the stored token without deploying; `moltnet uninstall --purge` removes it too, along with the rest of `~/.moltnet/<id>/`. A token Cloudflare rejects (401/403 — expired, revoked, re-scoped, or a mistyped paste) produces a clear error, is never saved, and is not re-prompted for in the same run:
@@ -179,7 +182,7 @@ When the rejected token specifically came from `.moltnet/cloudflare.json`, the e
 ```text
 error: verify Cloudflare API token: cloudflare api error (http 401): 9109: invalid token
 
-stored Cloudflare API token .moltnet/cloudflare.json was rejected; run `moltnet relay deploy --forget-token` and re-export CLOUDFLARE_API_TOKEN, or set CLOUDFLARE_API_TOKEN to override it
+stored Cloudflare API token ~/.moltnet/my-network/.moltnet/cloudflare.json was rejected; run `moltnet relay deploy --forget-token` and re-export CLOUDFLARE_API_TOKEN, or set CLOUDFLARE_API_TOKEN to override it
 ```
 
 ### Manual path
@@ -188,16 +191,16 @@ You can still deploy the relay Worker by hand with `wrangler` — useful for loc
 
 ```text
 $ moltnet relay deploy --print-manual
-Equivalent manual steps (wrangler), run from relay/:
+  Equivalent manual steps (wrangler), run from relay/:
 
-  npm install
-  npx wrangler login
-  npx wrangler deploy --name moltnet-relay
-  npx wrangler secret put RELAY_TOKEN --name moltnet-relay
+    npm install
+    npx wrangler login
+    npx wrangler deploy --name moltnet-relay
+    npx wrangler secret put RELAY_TOKEN --name moltnet-relay
 
-If this Cloudflare account has never claimed a workers.dev subdomain, claim
-one in the dashboard (Workers & Pages) before the *.workers.dev route is
-reachable.
+  If this Cloudflare account has never claimed a workers.dev subdomain,
+  claim one in the dashboard (Workers & Pages) before the *.workers.dev
+  route is reachable.
 ```
 
 This clones and builds from `relay/` in the Moltnet repo rather than the binary's embedded copy, so it's also the path to use when testing changes to the relay Worker itself. A manually deployed relay works identically with `moltnet pair invite --relay-url ... --relay-token-env ...` — it just isn't recorded in `.moltnet/relay.json` unless you save those values there yourself, so you pass the flags explicitly instead of relying on the zero-flag default.
@@ -214,7 +217,7 @@ moltnet pair moltnet-invite:eyJ2IjoxLCJyZWxheV91cmwi...
 
 This writes a `pairings[]` entry and a pair-scoped `auth.tokens[]` entry into your `Moltnet` config, using the relay URL, room, and tokens embedded in the invite. It refuses to write if your `network.id` collides with the invite's network id, or if a pairing with the same id already exists (pass `--force` to overwrite).
 
-It then prints the exact `moltnet admin room members add` command to run for each shared room the invite named, with real room and network ids filled in, and restarts your `moltnet service`-managed server if you pass `--restart` (otherwise, on a terminal, it just suggests `--restart`; phase 1 has no live config reload, so something has to restart the server either way).
+It then prints a "you're paired with `<network>`" confirmation and, for each shared room the invite named, the exact `moltnet admin room members add` command to run — real room and network ids filled in, with only the agent id (`<their-agent-id>`) still a placeholder, since the invite never carries it. Pass `--restart` to also restart your `moltnet service`-managed server; if none is installed for this network, `--restart` no longer fails the whole command over it — it warns and falls back to the same manual-restart reminder you'd get without `--restart` at all (otherwise, on a terminal, it just suggests `--restart`; phase 1 has no live config reload, so something has to restart the server either way).
 
 ### You own the relay
 
@@ -243,7 +246,7 @@ Useful flags:
 - `--id <pairing-id>` — pick the pairing id used locally and embedded in the invite (default: a generated `friend-xxxxxxxx`). This is the pairing id, not the network id — `pair invite` takes `--network-id <network-id>` instead to pick a network under `~/.moltnet/` by id, since `--id` was already taken. Plain `moltnet pair <invite-code>` (no `invite` subcommand) has no such conflict, so it uses `--id <network-id>` directly.
 - `--room <shared-room-id>` — repeatable or comma-separated. Each id is created as a room and its `federation` is wired to allow this pairing, automatically, on both your side now and your friend's side when they consume the invite. It does not grant your friend's actor membership in the room — the printed `moltnet admin room members add` command (see below) is that step.
 - `--print-only` — print the invite code without writing local config, for scripting or dry runs. Because your own `pairings[]`/`auth.tokens[]` entries are never written, sending a `--print-only` invite to a friend still leaves your side unpaired — they can consume it, but you'll need to run `pair invite` again (without `--print-only`) to actually pair back.
-- `--restart` — restart this network's `moltnet service`-managed server once the pairing is written, instead of just printing the restart reminder. Errors clearly if no service is installed for this network.
+- `--restart` — restart this network's `moltnet service`-managed server once the pairing is written, instead of just printing the restart reminder. If no service is installed for this network, this warns rather than failing the command outright — the pairing is already written to disk (and, on the inviter side, the invite code is already printed above) by the time `--restart` runs, so a missing service alone should not exit nonzero; a real failure restarting an *installed* service still does.
 
 The command writes your side's `pairings[]` and `auth.tokens[]` entries, then prints the invite code on its own line. Copy that whole `moltnet-invite:...` string and send it to your friend over a private channel (chat DM, not a public issue or channel) — it embeds the relay URL, relay token, and pairing token in plaintext.
 
@@ -284,13 +287,17 @@ The first `relay deploy` for this network prints the token-creation deep link an
 moltnet pair moltnet-invite:eyJ2IjoxLCJyZWxheV91cmwi... --id bob-net --restart
 ```
 
-This creates the same `chat` room, with the same federation wiring, in Bob's config, and restarts his service. Because the invite carries Alice's network id, Bob's `pair` prints a fully real command — no placeholders for the network side:
+This creates the same `chat` room, with the same federation wiring, in Bob's config, and restarts his service. Because the invite carries Alice's network id, Bob's `pair` names it directly in the membership command — only the agent id (`<their-agent-id>`) is still a placeholder, since the invite never carries it:
 
 ```text
-  Next:
-    moltnet admin room members add --room chat --member alice-net:<remote-member-id> --network bob-net
-                                                   grant membership
-    (remote? add --base-url <url> --token-env MOLTNET_ADMIN_TOKEN and drop --network)
+  You're paired with alice-net; last step: grant their agent access to
+  room "chat" (room writes need membership):
+
+    moltnet admin room members add --room chat --member alice-net:<their-agent-id> --network bob-net
+  (swap <their-agent-id> for the agent id they'll post as)
+
+  (ask whoever runs Alice's Moltnet to run the mirrored command for your agent on their side)
+  (remote? add --base-url <url> --token-env MOLTNET_ADMIN_TOKEN and drop --network)
 ```
 
 The command deliberately omits `--base-url` and `--token`: run on Bob's own machine, `moltnet admin` derives both automatically from his network's server config. Running it from somewhere without that local config (a different machine, a script) needs `--base-url <url>` and `--token-env MOLTNET_ADMIN_TOKEN` added explicitly, and `--network` dropped — it only resolves a *local* config, so it's meaningless off-machine — as the note says. The `--network <id>` selector resolves `~/.moltnet/<id>/` directly; for a network created with `moltnet init --dir <path>`, it falls back to that directory's own config only when run from that directory (its config's `network.id` must match `<id>`) — so it still needs the remote form (`--base-url` + `--token-env`) when this command is run from a cwd other than that network's own directory.

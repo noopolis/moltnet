@@ -12,6 +12,7 @@ Treat it as a future standalone repository that temporarily lives inside the Spa
 - Keep files under 400 lines.
 - Keep public protocol types separate from internal service logic.
 - Write code so extraction to a new repository is mostly a move, not a rewrite.
+- Never run a bare `go build` that outputs into the repo root — on case-insensitive filesystems the `moltnet` binary collides with the `Moltnet` config filename. Always build with `-o bin/` or a temp dir.
 
 ## Structure
 
