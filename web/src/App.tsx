@@ -12,7 +12,7 @@ export function App() {
         <EventStreamProvider>
           <SelectionProvider>
             <TopBar />
-            <main className="grid grid-cols-[280px_minmax(0,1fr)] gap-4 px-4 py-3.5 min-h-0 overflow-hidden">
+            <main className="grid grid-cols-[340px_minmax(0,1fr)] gap-4 px-4 py-3.5 min-h-0 overflow-hidden">
               <Sidebar />
               <Content />
             </main>

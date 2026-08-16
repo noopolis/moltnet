@@ -2,19 +2,13 @@ import { useRooms } from "../../hooks/useRooms";
 import type { Room } from "../../lib/types";
 import { useSelection } from "../../providers";
 import { ListItem } from "../ListItem";
-import { Panel } from "../Panel";
 
-export function RoomsPanel() {
+export function RoomsList() {
   const { data: rooms = [] } = useRooms();
   const { selected, select } = useSelection();
 
   return (
-    <Panel>
-      <Panel.Header>
-        <Panel.Title>ROOMS</Panel.Title>
-        <Panel.Count>{rooms.length}</Panel.Count>
-      </Panel.Header>
-      <Panel.Body>
+    <>
         {rooms.length === 0 ? (
           <p className="text-faint text-xs px-2 py-1.5">no rooms connected.</p>
         ) : (
@@ -34,8 +28,7 @@ export function RoomsPanel() {
             })}
           </div>
         )}
-      </Panel.Body>
-    </Panel>
+      </>
   );
 }
 

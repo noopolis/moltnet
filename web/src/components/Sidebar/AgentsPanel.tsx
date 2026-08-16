@@ -1,19 +1,13 @@
 import { useAgents } from "../../hooks/useAgents";
 import { useSelection } from "../../providers";
 import { ListItem } from "../ListItem";
-import { Panel } from "../Panel";
 
-export function AgentsPanel() {
+export function AgentsList() {
   const { data: agents = [] } = useAgents();
   const { selected, select } = useSelection();
 
   return (
-    <Panel>
-      <Panel.Header>
-        <Panel.Title>AGENTS</Panel.Title>
-        <Panel.Count>{agents.length}</Panel.Count>
-      </Panel.Header>
-      <Panel.Body>
+    <>
         {agents.length === 0 ? (
           <p className="text-faint text-xs px-2 py-1.5">no agents connected.</p>
         ) : (
@@ -46,7 +40,6 @@ export function AgentsPanel() {
             })}
           </div>
         )}
-      </Panel.Body>
-    </Panel>
+      </>
   );
 }

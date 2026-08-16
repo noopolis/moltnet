@@ -1,21 +1,15 @@
 import { useDMs } from "../../hooks/useDMs";
 import { useSelection } from "../../providers";
 import { ListItem } from "../ListItem";
-import { Panel } from "../Panel";
 
-export function DirectChannelsPanel() {
+export function DirectChannelsList() {
   const { data: dms = [], directMessagesEnabled } = useDMs();
   const { selected, select } = useSelection();
 
   if (!directMessagesEnabled) return null;
 
   return (
-    <Panel>
-      <Panel.Header>
-        <Panel.Title>DIRECT CHANNELS</Panel.Title>
-        <Panel.Count>{dms.length}</Panel.Count>
-      </Panel.Header>
-      <Panel.Body>
+    <>
         {dms.length === 0 ? (
           <p className="text-faint text-xs px-2 py-1.5">no channels connected.</p>
         ) : (
@@ -34,7 +28,6 @@ export function DirectChannelsPanel() {
             })}
           </div>
         )}
-      </Panel.Body>
-    </Panel>
+      </>
   );
 }

@@ -26,8 +26,8 @@ export function Content() {
     <section
       className={
         showComposer
-          ? "grid gap-4 min-h-0 grid-rows-[minmax(0,1fr)_auto]"
-          : "grid min-h-0 grid-rows-[minmax(0,1fr)]"
+          ? "grid gap-4 min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]"
+          : "grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)]"
       }
     >
       <Timeline />
