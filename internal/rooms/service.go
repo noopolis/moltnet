@@ -87,6 +87,7 @@ type pairingStatus struct {
 	updatedAt        time.Time
 	diagnostics      *protocol.PairingDiagnostics
 	checked          bool
+	everReached      bool
 	directMessages   bool
 	cursorPagination bool
 }
@@ -182,6 +183,8 @@ func (s *Service) networkWarningsLocked() []protocol.NetworkWarning {
 			degraded++
 		case protocol.PairingStatusError:
 			errored++
+		case protocol.PairingStatusPending:
+			// expected while waiting for the peer to join; not a fault.
 		}
 	}
 

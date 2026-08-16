@@ -177,8 +177,18 @@ func (s *Service) setPairingStatus(pairingID string, status string) {
 }
 
 func (s *Service) setPairingError(pairingID string, message string) {
+	// A peer we have never reached is still pending: the invite is out but the
+	// remote network has not joined. Only a pairing that previously answered
+	// can regress into an error.
+	value := protocol.PairingStatusPending
+	s.pairingsMu.RLock()
+	if s.pairingStatuses[pairingID].everReached {
+		value = protocol.PairingStatusError
+	}
+	s.pairingsMu.RUnlock()
+
 	s.setPairingRuntime(pairingID, pairingStatus{
-		value: protocol.PairingStatusError,
+		value: value,
 		diagnostics: &protocol.PairingDiagnostics{
 			CheckedAt: s.now().UTC(),
 			Reason:    pairingDiagnosticRemoteRequestFailure,
@@ -194,6 +204,11 @@ func (s *Service) setPairingRuntime(pairingID string, next pairingStatus, replac
 
 	s.pairingsMu.Lock()
 	previous := s.pairingStatuses[pairingID]
+	// Once a peer answers, the pairing can never go back to "pending".
+	next.everReached = previous.everReached ||
+		next.value == protocol.PairingStatusConnected ||
+		next.value == protocol.PairingStatusDegraded ||
+		next.value == protocol.PairingStatusIncompatible
 	if !replaceDiagnostics {
 		next.diagnostics = clonePairingDiagnostics(previous.diagnostics)
 		next.checked = previous.checked
@@ -204,6 +219,7 @@ func (s *Service) setPairingRuntime(pairingID string, next pairingStatus, replac
 	}
 	if previous.value == next.value &&
 		previous.checked == next.checked &&
+		previous.everReached == next.everReached &&
 		previous.directMessages == next.directMessages &&
 		previous.cursorPagination == next.cursorPagination &&
 		pairingDiagnosticsEqual(previous.diagnostics, next.diagnostics) {

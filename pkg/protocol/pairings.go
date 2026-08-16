@@ -3,7 +3,11 @@ package protocol
 import "time"
 
 const (
-	PairingStatusConnected    = "connected"
+	PairingStatusConnected = "connected"
+	// PairingStatusPending marks a pairing whose peer has never answered:
+	// the invite exists but the remote network has not joined yet. It is an
+	// expected onboarding state, not a fault, so it raises no operator warning.
+	PairingStatusPending      = "pending"
 	PairingStatusDegraded     = "degraded"
 	PairingStatusIncompatible = "incompatible"
 	PairingStatusError        = "error"
