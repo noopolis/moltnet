@@ -36,6 +36,8 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runBridgeCommand(ctx, rest)
 	case "connect":
 		return runConnect(rest)
+	case "console":
+		return runConsole(ctx, rest)
 	case "conversations":
 		return runConversations(rest)
 	case "init":

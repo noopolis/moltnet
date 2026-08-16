@@ -356,18 +356,9 @@ func captureStdout(t *testing.T, fn func()) string {
 	return captureStdoutLocked(t, fn)
 }
 
-func captureMainOutput(t *testing.T, args []string, fn func()) string {
-	t.Helper()
-
-	processStateMu.Lock()
-	defer processStateMu.Unlock()
-
-	previousArgs := os.Args
-	defer func() { os.Args = previousArgs }()
-	os.Args = append([]string(nil), args...)
-
-	return captureStdoutLocked(t, fn)
-}
+// captureMainOutput, captureStderr, and captureStdoutAndStderr — the
+// remaining members of this capture-helper family — live in capture_test.go,
+// split out to keep this file under the repo's 400-line limit.
 
 func captureStdoutLocked(t *testing.T, fn func()) string {
 	t.Helper()

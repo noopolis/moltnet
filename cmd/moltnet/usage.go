@@ -4,6 +4,7 @@ func buildUsage() string {
 	return `Usage:
   moltnet apply [path] --base-url <url> --token-env <env>
   moltnet connect [options]
+  moltnet console [--id <network-id>] [--config <path>] [--print] [--no-open]
   moltnet conversations [--network <id>] [--member <id>]
   moltnet init [--id <network-id>] [--name <name>] [--dir <path>] [--bearer]
   moltnet machine --config <path> [--network <id>] [--member <id>]
@@ -36,6 +37,7 @@ Commands:
   apply            Reconcile a Moltnet config against a running server with an admin token
   admin            Run administrative network mutation commands
   connect           Write local Moltnet client config and optionally install the skill
+  console           Open (or print) the resolved network's web console
   conversations     List the configured rooms and DMs this agent can use
   init              Create canonical Moltnet and MoltnetNode config files
   machine           Run the long-lived machine JSONL protocol over standard I/O
@@ -59,15 +61,43 @@ Commands:
   --version        Print the Moltnet version
   help             Show this help
 
-Config resolution (start, pair, relay, admin, node, service): an explicit
---config path wins outright; otherwise, when --id (--network for admin) is
-given, ~/.moltnet/<id>/Moltnet (or MoltnetNode for node) is resolved first,
-falling back to the current directory only when its config self-identifies
-as network id <id> -- never by cwd precedence; otherwise the
+Config resolution (start, console, pair, relay, admin, node, service): an
+explicit --config path wins outright; otherwise, when --id (--network for
+admin) is given, ~/.moltnet/<id>/Moltnet (or MoltnetNode for node) is
+resolved first, falling back to the current directory only when its config
+self-identifies as network id <id> -- never by cwd precedence; otherwise the
 current-directory discovery order (./Moltnet, or ./MoltnetNode for node) is
 tried, then the sole network directory under ~/.moltnet/ (the default
 "moltnet init" home). When several networks exist there and no --id was
 given, the command lists the candidates and asks you to pass one.
+`
+}
+
+func buildConsoleUsage() string {
+	return `Usage:
+  moltnet console [--id <network-id>] [--config <path>] [--print] [--no-open]
+
+Opens the resolved network's built-in web console (<listen_addr>/console/)
+in the default browser: macOS "open", Linux "xdg-open". It health-checks
+the server's /healthz first (~1.5s timeout) and never opens a browser
+against a server that is not answering; it exits nonzero instead, naming
+the one command that starts it -- "moltnet service install --id <id>" when
+no service is installed yet, "moltnet service start --id <id>" when one is
+installed but still not answering.
+
+--print prints the console URL only, with no styling and without opening a
+browser -- for scripts. --no-open also never opens a browser, but keeps the
+"✓ console  <url>" status line --print omits. Piped/non-terminal stdout (no
+TTY) never opens a browser either, whether or not either flag is given, so
+"moltnet console" is safe to run from a non-interactive session -- it falls
+back to the same URL-only output as --print only when neither flag was
+already given a more specific behavior of its own to keep.
+
+Config resolution matches "moltnet start": --config wins outright; with
+--id given, ~/.moltnet/<id>/Moltnet is resolved first, falling back to cwd
+only when its config self-identifies as that network id; otherwise
+./Moltnet in cwd, then the sole network under ~/.moltnet/, disambiguated by
+--id when several exist.
 `
 }
 
