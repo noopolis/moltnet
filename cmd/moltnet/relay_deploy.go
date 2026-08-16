@@ -128,12 +128,13 @@ func runRelayDeploy(args []string) error {
 	storedToken, storedTokenOK, loadErr := relaydeploy.LoadCloudflareToken(tokenPath)
 	if loadErr != nil {
 		// A corrupt/unreadable stored token file must not block a deploy
-		// that has a working CLOUDFLARE_API_TOKEN env override: warn and
+		// that has a working CLOUDFLARE_API_TOKEN env override, or one that
+		// can fall through to the interactive paste prompt below: warn and
 		// fall back to treating nothing as stored. Only surface the load
-		// error itself when there is no env token to fall back to, since in
-		// that case it is the only explanation for why the deploy cannot
-		// proceed.
-		if envToken == "" {
+		// error itself when neither of those is available — no env token,
+		// and no real terminal to prompt on — since in that case it is the
+		// only explanation for why the deploy cannot proceed.
+		if envToken == "" && !(isInteractive() && isOutputTerminal()) {
 			return fmt.Errorf("%w; run `moltnet relay deploy --forget-token` to remove it", loadErr)
 		}
 		fmt.Fprintln(stdout, yellow(fmt.Sprintf("warning: %v", loadErr)))
@@ -141,8 +142,29 @@ func runRelayDeploy(args []string) error {
 	}
 	apiToken, tokenSource := resolveCloudflareAPIToken(envToken, storedToken, storedTokenOK)
 	if apiToken == "" {
-		fmt.Fprint(stdout, buildMissingCloudflareTokenGuidance(config.NetworkID))
-		return errors.New("CLOUDFLARE_API_TOKEN is not set")
+		pastedToken, promptErr := maybePromptForCloudflareToken()
+		// errTerminalEchoUnavailable is not itself fatal — it means the
+		// prompt was never even shown (echo could not be reliably disabled,
+		// P0 fail-open-echo fix), so this falls through to the same
+		// guidance-and-error path a non-interactive run takes, exactly as
+		// if no prompt had ever been attempted. Any other error from the
+		// prompt itself does propagate.
+		if promptErr != nil && !errors.Is(promptErr, errTerminalEchoUnavailable) {
+			return promptErr
+		}
+		if pastedToken == "" {
+			if promptErr == nil && isInteractive() && isOutputTerminal() {
+				// The guidance was already printed once, right before the
+				// prompt (maybePromptForCloudflareToken); reprinting the
+				// whole export-and-retry block here would just be noise
+				// after the operator already saw it and chose not to paste
+				// anything.
+				return errors.New("no token pasted")
+			}
+			fmt.Fprint(stdout, buildMissingCloudflareTokenGuidance(config.NetworkID))
+			return errors.New("CLOUDFLARE_API_TOKEN is not set")
+		}
+		apiToken, tokenSource = pastedToken, cloudflareTokenSourcePasted
 	}
 
 	var storedTokenPathForDeploy string
@@ -205,82 +227,13 @@ func runRelayDeploy(args []string) error {
 		if *saveToken {
 			fmt.Fprintf(stdout, "  token already stored at %s; nothing to save\n", tokenPath)
 		}
+	case cloudflareTokenSourcePasted:
+		if err := maybeSavePastedCloudflareToken(tokenPath, apiToken, *saveToken); err != nil {
+			return fmt.Errorf("deployed relay Worker %q but failed to save the Cloudflare API token: %w", result.ScriptName, err)
+		}
 	}
 
 	printRelayDeployNextSteps(config.NetworkID)
-	return nil
-}
-
-// Cloudflare API token resolution order for `relay deploy`: CLOUDFLARE_API_TOKEN
-// env always wins (unchanged, so a caller overriding it for one run never
-// silently gets a stale stored token instead); a per-network stored token
-// (.moltnet/cloudflare.json, saved by --save-token or the save prompt) is
-// next; missing both prints the token-creation guidance.
-const (
-	cloudflareTokenSourceEnv    = "env"
-	cloudflareTokenSourceStored = "stored"
-)
-
-// resolveCloudflareAPIToken picks the Cloudflare API token `relay deploy`
-// uses and names where it came from, in the resolution order documented on
-// the cloudflareTokenSource constants above. A pure function so the
-// precedence itself is unit-testable without a Cloudflare client or
-// filesystem.
-func resolveCloudflareAPIToken(envToken, storedToken string, storedTokenOK bool) (token, source string) {
-	envToken = strings.TrimSpace(envToken)
-	if envToken != "" {
-		return envToken, cloudflareTokenSourceEnv
-	}
-	if storedTokenOK {
-		return storedToken, cloudflareTokenSourceStored
-	}
-	return "", ""
-}
-
-// maybeSaveCloudflareToken persists apiToken to tokenPath after a
-// successful deploy that used the CLOUDFLARE_API_TOKEN env token (never
-// called for an already-stored token, which needs no re-saving). With
-// --save-token it saves unconditionally. Otherwise, only on an interactive
-// terminal and only when nothing is stored yet, it offers the save once via
-// promptYesNo; declining or running non-interactively leaves the token
-// unsaved. Never prints apiToken itself.
-func maybeSaveCloudflareToken(tokenPath, apiToken string, saveToken, storedTokenOK bool) error {
-	switch {
-	case saveToken:
-		// fall through to save below
-	case !storedTokenOK && isInteractive():
-		confirmed, err := promptYesNo(fmt.Sprintf("  save this token to %s (0600) for future deploys? [y/N] ", tokenPath))
-		if err != nil {
-			return err
-		}
-		if !confirmed {
-			return nil
-		}
-	default:
-		return nil
-	}
-
-	if err := relaydeploy.SaveCloudflareToken(tokenPath, apiToken); err != nil {
-		return err
-	}
-	fmt.Fprintln(stdout, dim(fmt.Sprintf("  saved Cloudflare API token to %s", tokenPath)))
-	return nil
-}
-
-// runRelayDeployForgetToken implements `relay deploy --forget-token`: delete
-// the stored per-network Cloudflare API token and exit without deploying,
-// mirroring --print-manual's early-return shape. Missing-file is reported,
-// not treated as an error — there is simply nothing to forget.
-func runRelayDeployForgetToken(tokenPath string) error {
-	removed, err := relaydeploy.DeleteCloudflareToken(tokenPath)
-	if err != nil {
-		return err
-	}
-	if removed {
-		fmt.Fprintf(stdout, "  removed stored Cloudflare API token %s\n", tokenPath)
-	} else {
-		fmt.Fprintf(stdout, "  no stored Cloudflare API token at %s\n", tokenPath)
-	}
 	return nil
 }
 
@@ -320,11 +273,7 @@ func printRelayDeployNextSteps(networkID string) {
 func buildMissingCloudflareTokenGuidance(id string) string {
 	var b strings.Builder
 	b.WriteString("CLOUDFLARE_API_TOKEN is not set.\n\n")
-	b.WriteString("Create a Cloudflare API token (pre-filled with the required permission):\n")
-	fmt.Fprintf(&b, "  %s\n", buildCloudflareTokenDeepLink(cloudflareTokenTemplateName))
-	if isOutputTerminal() {
-		fmt.Fprintf(&b, "  %s\n", dim("(opens pre-filled — just Continue → Create Token → copy)"))
-	}
+	b.WriteString(cloudflareTokenCreationGuidance())
 	b.WriteString("\nOr create one manually at:\n")
 	fmt.Fprintf(&b, "  %s\n\n", cloudflareDashboardTokenURL)
 	b.WriteString("Required scope:\n")
@@ -332,6 +281,23 @@ func buildMissingCloudflareTokenGuidance(id string) string {
 	b.WriteString("Then export it and retry:\n")
 	b.WriteString("  export CLOUDFLARE_API_TOKEN=...\n")
 	fmt.Fprintf(&b, "  moltnet relay deploy --id %s\n", id)
+	return b.String()
+}
+
+// cloudflareTokenCreationGuidance is the token-creation guidance essentials
+// shared by buildMissingCloudflareTokenGuidance's non-interactive block and
+// maybePromptForCloudflareToken's interactive prompt intro: the deep link
+// pre-selecting the one required permission group, plus (on a TTY) a dim
+// hint about what the pre-filled page looks like. Kept separate so both
+// callers stay byte-identical for this shared portion rather than drifting
+// apart over time.
+func cloudflareTokenCreationGuidance() string {
+	var b strings.Builder
+	b.WriteString("Create a Cloudflare API token (pre-filled with the required permission):\n")
+	fmt.Fprintf(&b, "  %s\n", buildCloudflareTokenDeepLink(cloudflareTokenTemplateName))
+	if isOutputTerminal() {
+		fmt.Fprintf(&b, "  %s\n", dim("(opens pre-filled — just Continue → Create Token → copy)"))
+	}
 	return b.String()
 }
 

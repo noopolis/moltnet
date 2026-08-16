@@ -1,21 +1,19 @@
 package main
 
 import (
-	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/noopolis/moltnet/internal/relaydeploy"
 )
 
-// These tests cover the per-network stored Cloudflare API token: resolution
-// precedence, --save-token, the TTY save-offer prompt, and --forget-token.
-// Full end-to-end deploys go through a fakeCloudflareCLIServer
-// (relay_deploy_cloudflare_test.go); pure resolution/save-decision logic is
-// tested directly against resolveCloudflareAPIToken and
-// maybeSaveCloudflareToken.
+// These tests cover the per-network stored Cloudflare API token's pure
+// resolution/save-decision logic, tested directly against
+// resolveCloudflareAPIToken, maybeSaveCloudflareToken, and
+// promptYesNoDefaultYes — no real deploy involved. Full end-to-end deploys
+// (through a fakeCloudflareCLIServer, relay_deploy_cloudflare_test.go) and
+// --forget-token live in relay_deploy_token_e2e_test.go, split out to keep
+// both files under the repo's 400-line-per-file rule.
 
 func TestResolveCloudflareAPITokenEnvBeatsStored(t *testing.T) {
 	token, source := resolveCloudflareAPIToken("env-token", "stored-token", true)
@@ -71,6 +69,9 @@ func TestMaybeSaveCloudflareTokenPromptYesSaves(t *testing.T) {
 	directory := t.TempDir()
 	tokenPath := relaydeploy.CloudflareTokenPath(directory + "/Moltnet")
 
+	// P2 env-path save-offer gating fix: the offer now requires both stdin
+	// AND stdout to be a real terminal, not stdin alone.
+	withInteractiveOutput(t)
 	withPromptAnswers(t, "y")
 	output := captureStdout(t, func() {
 		if err := maybeSaveCloudflareToken(tokenPath, "cf-token", false, false); err != nil {
@@ -89,6 +90,7 @@ func TestMaybeSaveCloudflareTokenPromptNoSkipsSave(t *testing.T) {
 	directory := t.TempDir()
 	tokenPath := relaydeploy.CloudflareTokenPath(directory + "/Moltnet")
 
+	withInteractiveOutput(t)
 	withPromptAnswers(t, "n")
 	captureStdout(t, func() {
 		if err := maybeSaveCloudflareToken(tokenPath, "cf-token", false, false); err != nil {
@@ -143,316 +145,117 @@ func TestMaybeSaveCloudflareTokenSkipsOfferWhenAlreadyStored(t *testing.T) {
 	}
 }
 
-func TestRunRelayDeployForgetTokenRemovesStoredFile(t *testing.T) {
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-	tokenPath := relaydeploy.CloudflareTokenPath(path)
-	if err := relaydeploy.SaveCloudflareToken(tokenPath, "cf-token"); err != nil {
-		t.Fatalf("SaveCloudflareToken() error = %v", err)
-	}
+// TestPromptYesNoDefaultYesBareEnterSaves pins the P2-3 fix directly: a
+// bare Enter (a real newline, no other input) at promptYesNoDefaultYes must
+// count as yes. Before this test existed, a default-NO mutation of this
+// function's answer logic would have passed every other test in this
+// package — this is the one that actually catches it.
+func TestPromptYesNoDefaultYesBareEnterSaves(t *testing.T) {
+	withPromptAnswers(t, "")
 
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path, "--forget-token"}, "test"); err != nil {
-			t.Fatalf("run() relay deploy --forget-token error = %v", err)
-		}
+	var confirmed bool
+	var err error
+	captureStdout(t, func() {
+		confirmed, err = promptYesNoDefaultYes("save? [Y/n] ")
 	})
-	if !strings.Contains(output, "removed stored Cloudflare API token "+tokenPath) {
-		t.Fatalf("unexpected --forget-token output %q", output)
+	if err != nil {
+		t.Fatalf("promptYesNoDefaultYes() error = %v", err)
 	}
-	if _, ok, err := relaydeploy.LoadCloudflareToken(tokenPath); err != nil || ok {
-		t.Fatalf("LoadCloudflareToken() after --forget-token = (ok=%v, err=%v), want (false, nil)", ok, err)
-	}
-}
-
-func TestRunRelayDeployForgetTokenWhenNothingStoredSaysSo(t *testing.T) {
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-	tokenPath := relaydeploy.CloudflareTokenPath(path)
-
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path, "--forget-token"}, "test"); err != nil {
-			t.Fatalf("run() relay deploy --forget-token error = %v", err)
-		}
-	})
-	if !strings.Contains(output, "no stored Cloudflare API token at "+tokenPath) {
-		t.Fatalf("unexpected --forget-token output %q", output)
+	if !confirmed {
+		t.Fatal("promptYesNoDefaultYes() = false, want true for a bare Enter (default yes)")
 	}
 }
 
-func TestRunRelayDeployForgetTokenDoesNotRequireCloudflareToken(t *testing.T) {
-	t.Setenv("CLOUDFLARE_API_TOKEN", "")
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-
-	if err := run(context.Background(), []string{"relay", "deploy", "--config", path, "--forget-token"}, "test"); err != nil {
-		t.Fatalf("run() relay deploy --forget-token error = %v, want --forget-token to work without CLOUDFLARE_API_TOKEN", err)
-	}
-}
-
-// TestRunRelayDeployGuidanceUnchangedWhenNothingStored pins that the
-// missing-token guidance (deep link included) is identical whether or not a
-// .moltnet/cloudflare.json has ever existed for this network — there is
-// nothing stored in either case, so the guidance path is exactly the
-// pre-existing one.
-func TestRunRelayDeployGuidanceUnchangedWhenNothingStored(t *testing.T) {
-	t.Setenv("CLOUDFLARE_API_TOKEN", "")
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-
-	output := captureStdout(t, func() {
-		err := run(context.Background(), []string{"relay", "deploy", "--config", path}, "test")
-		if err == nil || !strings.Contains(err.Error(), "CLOUDFLARE_API_TOKEN") {
-			t.Fatalf("run() relay deploy error = %v, want CLOUDFLARE_API_TOKEN guidance error", err)
-		}
-	})
-	if output != buildMissingCloudflareTokenGuidance("acme-net") {
-		t.Fatalf("guidance output = %q, want byte-identical to buildMissingCloudflareTokenGuidance()", output)
-	}
-}
-
-// TestRunRelayDeployEndToEndUsesStoredTokenAndPrintsSourceLine is a full
-// deploy through a fake Cloudflare server, proving the stored per-network
-// token both authenticates the deploy and gets its source line printed —
-// not just that the right string is chosen in isolation.
-func TestRunRelayDeployEndToEndUsesStoredTokenAndPrintsSourceLine(t *testing.T) {
-	t.Setenv("CLOUDFLARE_API_TOKEN", "")
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-	tokenPath := relaydeploy.CloudflareTokenPath(path)
-	if err := relaydeploy.SaveCloudflareToken(tokenPath, "stored-cf-token"); err != nil {
-		t.Fatalf("SaveCloudflareToken() error = %v", err)
-	}
-
-	fake := startFakeCloudflareCLIServer(t, "stored-cf-token")
-	withRelayDeployFakeCloudflare(t, fake)
-
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path}, "test"); err != nil {
-			t.Fatalf("run() relay deploy error = %v", err)
-		}
-	})
-	if !strings.Contains(output, "using stored Cloudflare API token from "+tokenPath) {
-		t.Fatalf("expected the stored-token source line naming %q, got %q", tokenPath, output)
-	}
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
-		t.Fatalf("expected a successful deploy, got %q", output)
-	}
-	if strings.Contains(output, "stored-cf-token") {
-		t.Fatalf("expected the token value itself never to be printed, got %q", output)
-	}
-}
-
-// TestRunRelayDeployEndToEndEnvBeatsStoredToken proves precedence
-// behaviorally: the fake server only accepts the env token, and a
-// (deliberately different) token is already stored. If env did not win,
-// authentication would fail against the fake server.
-func TestRunRelayDeployEndToEndEnvBeatsStoredToken(t *testing.T) {
-	t.Setenv("CLOUDFLARE_API_TOKEN", "env-cf-token")
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-	tokenPath := relaydeploy.CloudflareTokenPath(path)
-	if err := relaydeploy.SaveCloudflareToken(tokenPath, "stale-stored-token"); err != nil {
-		t.Fatalf("SaveCloudflareToken() error = %v", err)
-	}
-
-	fake := startFakeCloudflareCLIServer(t, "env-cf-token")
-	withRelayDeployFakeCloudflare(t, fake)
-
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path}, "test"); err != nil {
-			t.Fatalf("run() relay deploy error = %v", err)
-		}
-	})
-	if strings.Contains(output, "using stored Cloudflare API token") {
-		t.Fatalf("expected no stored-token source line when the env token wins, got %q", output)
-	}
-	// The stale stored token must be left exactly as it was: env winning
-	// does not imply re-saving over it.
-	if got := cloudflareTokenFileContents(t, tokenPath); got != "stale-stored-token" {
-		t.Fatalf("stored token = %q, want unchanged stale-stored-token", got)
-	}
-}
-
-// TestRunRelayDeployEndToEndSaveTokenFlag exercises --save-token end to
-// end: a successful deploy using the env token, then persisted afterward.
-func TestRunRelayDeployEndToEndSaveTokenFlag(t *testing.T) {
-	t.Setenv("CLOUDFLARE_API_TOKEN", "env-cf-token")
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-	tokenPath := relaydeploy.CloudflareTokenPath(path)
-
-	fake := startFakeCloudflareCLIServer(t, "env-cf-token")
-	withRelayDeployFakeCloudflare(t, fake)
-
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path, "--save-token"}, "test"); err != nil {
-			t.Fatalf("run() relay deploy --save-token error = %v", err)
-		}
-	})
-	if got := cloudflareTokenFileContents(t, tokenPath); got != "env-cf-token" {
-		t.Fatalf("saved token = %q, want env-cf-token", got)
-	}
-	if !strings.Contains(output, "saved Cloudflare API token to "+tokenPath) {
-		t.Fatalf("expected a save confirmation naming %q, got %q", tokenPath, output)
-	}
-}
-
-// TestRunRelayDeployEndToEndOfferPromptSavesOnYes exercises the TTY
-// save-offer prompt end to end after a real (fake) successful deploy.
-func TestRunRelayDeployEndToEndOfferPromptSavesOnYes(t *testing.T) {
-	t.Setenv("CLOUDFLARE_API_TOKEN", "env-cf-token")
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-	tokenPath := relaydeploy.CloudflareTokenPath(path)
-
-	fake := startFakeCloudflareCLIServer(t, "env-cf-token")
-	withRelayDeployFakeCloudflare(t, fake)
-	withPromptAnswers(t, "y")
-
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path}, "test"); err != nil {
-			t.Fatalf("run() relay deploy error = %v", err)
-		}
-	})
-	if !strings.Contains(output, "save this token to "+tokenPath) {
-		t.Fatalf("expected the save-offer prompt naming %q, got %q", tokenPath, output)
-	}
-	if got := cloudflareTokenFileContents(t, tokenPath); got != "env-cf-token" {
-		t.Fatalf("saved token = %q, want env-cf-token", got)
-	}
-}
-
-// TestRunRelayDeployEndToEndNonInteractiveSkipsOfferPrompt confirms a
-// non-interactive successful deploy (the default in this test environment,
-// and in CI/scripts) never prints the save offer and never saves without
-// --save-token.
-func TestRunRelayDeployEndToEndNonInteractiveSkipsOfferPrompt(t *testing.T) {
-	t.Setenv("CLOUDFLARE_API_TOKEN", "env-cf-token")
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-	tokenPath := relaydeploy.CloudflareTokenPath(path)
-
-	fake := startFakeCloudflareCLIServer(t, "env-cf-token")
-	withRelayDeployFakeCloudflare(t, fake)
+// TestPromptYesNoDefaultYesEOFDoesNotSave pins the P2-4 fix: unlike a bare
+// Enter (an actual newline with nothing before it), io.EOF with no newline
+// at all (e.g. Ctrl-D, or a closed pipe) must count as no, not as the
+// bare-Enter default-yes case.
+func TestPromptYesNoDefaultYesEOFDoesNotSave(t *testing.T) {
+	previousReader := promptReader
+	promptReader = strings.NewReader("") // ReadString('\n') returns "", io.EOF immediately.
+	t.Cleanup(func() { promptReader = previousReader })
 
 	previousInteractive := isInteractive
-	isInteractive = func() bool { return false }
+	isInteractive = func() bool { return true }
 	t.Cleanup(func() { isInteractive = previousInteractive })
 
+	var confirmed bool
+	var err error
+	captureStdout(t, func() {
+		confirmed, err = promptYesNoDefaultYes("save? [Y/n] ")
+	})
+	if err != nil {
+		t.Fatalf("promptYesNoDefaultYes() error = %v", err)
+	}
+	if confirmed {
+		t.Fatal("promptYesNoDefaultYes() = true, want false on io.EOF")
+	}
+}
+
+// TestPromptYesNoDefaultYesWhitelistParsing pins the P0 consent-parser fix:
+// promptYesNoDefaultYes must save on ONLY "", "y", or "yes" (case
+// insensitive, surrounding whitespace trimmed) and treat everything else —
+// including a typo like "nope" that starts with "n", plain garbage, and an
+// escape sequence — as no. The previous `answer != "n" && answer != "no"`
+// shape was a blocklist, not a whitelist: every one of the "no" cases below
+// except the exact strings "n"/"no" would have wrongly saved under it.
+func TestPromptYesNoDefaultYesWhitelistParsing(t *testing.T) {
+	cases := []struct {
+		name   string
+		answer string
+		want   bool
+	}{
+		{"bare enter", "", true},
+		{"lowercase y", "y", true},
+		{"uppercase Y", "Y", true},
+		{"lowercase yes", "yes", true},
+		{"uppercase YES", "YES", true},
+		{"padded yes", "  yes  ", true},
+		{"explicit n", "n", false},
+		{"explicit no", "no", false},
+		{"typo starting with n", "nope", false},
+		{"garbage", "asdf", false},
+		{"escape sequence", "\x1b[A", false},
+		{"yes with trailing garbage", "yes please", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withPromptAnswers(t, tc.answer)
+
+			var confirmed bool
+			var err error
+			captureStdout(t, func() {
+				confirmed, err = promptYesNoDefaultYes("save? [Y/n] ")
+			})
+			if err != nil {
+				t.Fatalf("promptYesNoDefaultYes(%q) error = %v", tc.answer, err)
+			}
+			if confirmed != tc.want {
+				t.Fatalf("promptYesNoDefaultYes(%q) = %v, want %v", tc.answer, confirmed, tc.want)
+			}
+		})
+	}
+}
+
+// TestMaybeSavePastedCloudflareTokenDeclinePrintsNotSaved covers the P0
+// consent-parser fix's other half: declining the post-deploy pasted-token
+// save prompt (any non-affirmative answer) must print a "not saved" line,
+// not just silently do nothing.
+func TestMaybeSavePastedCloudflareTokenDeclinePrintsNotSaved(t *testing.T) {
+	directory := t.TempDir()
+	tokenPath := relaydeploy.CloudflareTokenPath(directory + "/Moltnet")
+
+	withPromptAnswers(t, "nope")
 	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path}, "test"); err != nil {
-			t.Fatalf("run() relay deploy error = %v", err)
+		if err := maybeSavePastedCloudflareToken(tokenPath, "cf-token", false); err != nil {
+			t.Fatalf("maybeSavePastedCloudflareToken() error = %v", err)
 		}
 	})
-	if strings.Contains(output, "save this token") {
-		t.Fatalf("expected no save-offer prompt when non-interactive, got %q", output)
+	if !strings.Contains(output, "not saved") {
+		t.Fatalf("expected a \"not saved\" line after declining, got %q", output)
 	}
 	if _, ok, err := relaydeploy.LoadCloudflareToken(tokenPath); err != nil || ok {
-		t.Fatalf("LoadCloudflareToken() = (ok=%v, err=%v), want (false, nil): non-interactive must never save without --save-token", ok, err)
-	}
-}
-
-// writeCorruptCloudflareTokenFile writes unparseable JSON at tokenPath,
-// simulating a stored Cloudflare token file damaged outside of Moltnet
-// (partial write, disk corruption, manual edit gone wrong).
-func writeCorruptCloudflareTokenFile(t *testing.T, tokenPath string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(tokenPath), 0o700); err != nil {
-		t.Fatalf("MkdirAll() error = %v", err)
-	}
-	if err := os.WriteFile(tokenPath, []byte("{not valid json"), 0o600); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-}
-
-// TestRunRelayDeployCorruptStoredTokenFileFallsBackToEnvToken covers the
-// P2 fix: a corrupt/unreadable stored token file must not block a deploy
-// that has a working CLOUDFLARE_API_TOKEN env override. It should warn
-// (naming the file) and proceed using the env token.
-func TestRunRelayDeployCorruptStoredTokenFileFallsBackToEnvToken(t *testing.T) {
-	t.Setenv("CLOUDFLARE_API_TOKEN", "env-cf-token")
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-	tokenPath := relaydeploy.CloudflareTokenPath(path)
-	writeCorruptCloudflareTokenFile(t, tokenPath)
-
-	fake := startFakeCloudflareCLIServer(t, "env-cf-token")
-	withRelayDeployFakeCloudflare(t, fake)
-
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path}, "test"); err != nil {
-			t.Fatalf("run() relay deploy error = %v, want the corrupt stored file not to block a deploy using the env token", err)
-		}
-	})
-	if !strings.Contains(output, tokenPath) {
-		t.Fatalf("expected a warning naming the corrupt stored token file %q, got %q", tokenPath, output)
-	}
-	if !strings.Contains(output, `deployed relay Worker "moltnet-relay"`) {
-		t.Fatalf("expected a successful deploy using the env token, got %q", output)
-	}
-}
-
-// TestRunRelayDeployCorruptStoredTokenFileWithNoEnvTokenSurfacesError covers
-// the other half of the P2 fix: with no CLOUDFLARE_API_TOKEN to fall back
-// to, the corrupt stored file's load error must surface, naming the file
-// and suggesting --forget-token.
-func TestRunRelayDeployCorruptStoredTokenFileWithNoEnvTokenSurfacesError(t *testing.T) {
-	t.Setenv("CLOUDFLARE_API_TOKEN", "")
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-	tokenPath := relaydeploy.CloudflareTokenPath(path)
-	writeCorruptCloudflareTokenFile(t, tokenPath)
-
-	err := run(context.Background(), []string{"relay", "deploy", "--config", path}, "test")
-	if err == nil {
-		t.Fatal("run() relay deploy error = nil, want the corrupt stored token load error to surface")
-	}
-	if !strings.Contains(err.Error(), tokenPath) {
-		t.Fatalf("run() relay deploy error = %v, want it to name %q", err, tokenPath)
-	}
-	if !strings.Contains(err.Error(), "--forget-token") {
-		t.Fatalf("run() relay deploy error = %v, want it to suggest --forget-token", err)
-	}
-}
-
-// TestRunRelayDeployEndToEndSaveTokenFlagWithStoredTokenOnlyPrintsNothingToSave
-// covers the P3 fix: --save-token when the deploy already used the stored
-// token (nothing new to persist) must say so instead of silently doing
-// nothing.
-func TestRunRelayDeployEndToEndSaveTokenFlagWithStoredTokenOnlyPrintsNothingToSave(t *testing.T) {
-	t.Setenv("CLOUDFLARE_API_TOKEN", "")
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-	tokenPath := relaydeploy.CloudflareTokenPath(path)
-	if err := relaydeploy.SaveCloudflareToken(tokenPath, "stored-cf-token"); err != nil {
-		t.Fatalf("SaveCloudflareToken() error = %v", err)
-	}
-
-	fake := startFakeCloudflareCLIServer(t, "stored-cf-token")
-	withRelayDeployFakeCloudflare(t, fake)
-
-	output := captureStdout(t, func() {
-		if err := run(context.Background(), []string{"relay", "deploy", "--config", path, "--save-token"}, "test"); err != nil {
-			t.Fatalf("run() relay deploy --save-token error = %v", err)
-		}
-	})
-	if !strings.Contains(output, "token already stored at "+tokenPath+"; nothing to save") {
-		t.Fatalf("expected a nothing-to-save message naming %q, got %q", tokenPath, output)
-	}
-}
-
-// TestRunRelayDeploySaveTokenAndForgetTokenConflict covers the P3 fix:
-// --save-token and --forget-token together must fail with a flag-conflict
-// error before any deploy or token I/O is attempted.
-func TestRunRelayDeploySaveTokenAndForgetTokenConflict(t *testing.T) {
-	directory := t.TempDir()
-	path := writeMoltnetConfig(t, directory, "acme-net", "Acme Net")
-
-	err := run(context.Background(), []string{"relay", "deploy", "--config", path, "--save-token", "--forget-token"}, "test")
-	if err == nil {
-		t.Fatal("run() relay deploy --save-token --forget-token error = nil, want a flag-conflict error")
-	}
-	if !strings.Contains(err.Error(), "--save-token") || !strings.Contains(err.Error(), "--forget-token") {
-		t.Fatalf("run() relay deploy --save-token --forget-token error = %v, want it to name both flags", err)
+		t.Fatalf("LoadCloudflareToken() after declining = (ok=%v, err=%v), want (false, nil)", ok, err)
 	}
 }
