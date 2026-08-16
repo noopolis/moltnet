@@ -70,7 +70,10 @@ Pairing statuses are scoped to that pairing:
 | `degraded` | Remote is reachable, but an optional capability is unavailable. |
 | `incompatible` | Remote is reachable, but protocol or network ID checks fail. |
 | `error` | Remote request, auth, or relay failed. |
+| `pending` | The peer has never answered. The invite is out, but the remote network has not joined yet — this is expected during onboarding and raises no operator warning. |
 | `unknown` | No compatibility check has completed yet. |
+
+A pairing only regresses to `error` once its peer has answered at least once (reached `connected`, `degraded`, or `incompatible`). Until then, request failures keep reporting `pending` instead of `error`, so a peer that simply has not joined yet does not read as a fault.
 
 `GET /v1/pairings` may include redacted diagnostics:
 
