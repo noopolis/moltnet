@@ -202,6 +202,11 @@ func (a *App) Run(ctx context.Context) error {
 		}(relayClient)
 	}
 
+	if warning := NonLoopbackAnonymousWriteWarning(a.config); warning != "" {
+		observability.Logger(context.Background(), "app", "listen_addr", a.config.ListenAddr).
+			Warn(warning)
+	}
+
 	errorCh := make(chan error, 1)
 
 	go func() {

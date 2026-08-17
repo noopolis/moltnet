@@ -48,6 +48,10 @@ const configLineColumn = 24
 func printInitSummary(summary initSummary) {
 	printInitConfigCheckLine(fmt.Sprintf("%s ready", summary.id), initReadyExtra(summary))
 
+	if note := initRegistrationNote(summary); note != "" {
+		fmt.Fprintf(stdout, "  %s %s\n", yellow("note:"), note)
+	}
+
 	if summary.verbose {
 		printInitSummaryVerbose(summary)
 	} else if summary.bearerAddErr != nil {
@@ -56,6 +60,26 @@ func printInitSummary(summary initSummary) {
 	}
 
 	printNextStep(initNextStep(summary.id))
+}
+
+// initRegistrationNote surfaces the one permissive element of `moltnet
+// init`'s defaults (PLAN.md phase 6a review, P2-4): plain init writes
+// auth.mode: open, which forces auth.agent_registration: open
+// (defaultMoltnetConfig, templates.go) — any local agent can claim its own
+// id and receive its own token without ever touching an operator
+// credential. Neither quiet nor --verbose mode used to mention this at all.
+// --bearer keeps registration disabled (bearerMoltnetConfig), so this only
+// fires on the plain-init path, and only when this run actually wrote that
+// config — an existing config this run left untouched (serverCreated
+// false) might carry any registration setting, so nothing is claimed about
+// it. This prints in quiet mode too: it is the one permissive default, not
+// per-file detail, so it does not wait behind --verbose the way the rest of
+// the aftercare breakdown does.
+func initRegistrationNote(summary initSummary) string {
+	if summary.bearer || !summary.serverCreated {
+		return ""
+	}
+	return "local agent self-registration is open — any local agent can claim its own id and receive its own token"
 }
 
 // initReadyExtra renders printInitSummary's checkmark-line extra: the
@@ -80,7 +104,11 @@ func printInitSummaryVerbose(summary initSummary) {
 	}
 	fmt.Fprintf(stdout, "  %s %s %s%s\n", green("✓"), dirVerb, abbreviateHome(summary.root), string(filepath.Separator))
 
-	authLabel := "none"
+	// PLAN.md phase 6a: defaultMoltnetConfig (templates.go) now writes
+	// auth.mode: open (loopback-bound, open agent self-registration) rather
+	// than leaving auth unset, so "none" would misdescribe every non-bearer
+	// init from here on.
+	authLabel := "open"
 	if summary.bearer {
 		authLabel = "bearer"
 	}

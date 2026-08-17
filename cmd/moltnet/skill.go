@@ -73,7 +73,13 @@ func installMoltnetSkill(runtime string, workspace string, content string) (stri
 			filepath.Join(root, ".codex", "skills", "moltnet", "SKILL.md"),
 		}
 	default:
-		return "", fmt.Errorf("moltnet skill install does not support runtime %q", runtime)
+		// PLAN.md phase 6b: no runtime allowlist. An unrecognized runtime
+		// name — grok, agy, or anything else that reads files — still gets
+		// a usable skill file; there is simply no known runtime-specific
+		// convention to also place it under, so it lands at the same
+		// generic `.agents/skills/moltnet/` path codex and tinyclaw already
+		// use above. This never refuses a runtime.
+		targetPaths = []string{filepath.Join(root, ".agents", "skills", "moltnet", "SKILL.md")}
 	}
 
 	for _, targetPath := range targetPaths {

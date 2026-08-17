@@ -22,7 +22,7 @@ func buildUsage() string {
   moltnet admin room members add --room <id> --member <id> --base-url <url> --token-env <env>
   moltnet admin room members remove --room <id> --member <id> --base-url <url> --token-env <env>
   moltnet send --target room:<id>|dm:<id> --text <message> [--network <id>] [--member <id>]
-  moltnet skill install --runtime openclaw|picoclaw|tinyclaw|claude-code|codex --workspace <path>
+  moltnet skill install --runtime <runtime> --workspace <path>
   moltnet uninstall [--yes] [--purge]
   moltnet update [--check] [--version <version>] [--dry-run] [--yes] [--server <url>] [--server-token-env <name>]
   moltnet validate [path]
@@ -312,9 +312,14 @@ directory), naming each one it finds.
 
 func buildSkillUsage() string {
 	return `Usage:
-  moltnet skill install --runtime openclaw|picoclaw|tinyclaw|claude-code|codex --workspace <path>
+  moltnet skill install --runtime <runtime> --workspace <path>
 
 This installs the canonical Moltnet skill into a runtime workspace.
+
+--runtime accepts any name. Known runtimes (openclaw, picoclaw, tinyclaw,
+claude-code, codex) get their runtime-specific file placement; any other
+name still installs a usable generic skill under
+.agents/skills/moltnet/SKILL.md.
 `
 }
 

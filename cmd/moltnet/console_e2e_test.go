@@ -208,17 +208,18 @@ func TestRunConsoleEndToEndSelfHealAgainstRealServer(t *testing.T) {
 	}
 }
 
-// rewriteConfigListenAddr replaces the default ":8787" server.listen_addr
-// runInit writes with addr. Rebinding to a throwaway loopback port before
-// this test ever starts a real listener is what keeps it from touching a
-// real :8787 service the same machine might actually be running.
+// rewriteConfigListenAddr replaces the default "127.0.0.1:8787"
+// server.listen_addr runInit writes with addr. Rebinding to a throwaway
+// loopback port before this test ever starts a real listener is what keeps
+// it from touching a real :8787 service the same machine might actually be
+// running.
 func rewriteConfigListenAddr(t *testing.T, path, addr string) {
 	t.Helper()
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %q: %v", path, err)
 	}
-	updated := strings.Replace(string(contents), `listen_addr: ":8787"`, `listen_addr: "`+addr+`"`, 1)
+	updated := strings.Replace(string(contents), `listen_addr: "127.0.0.1:8787"`, `listen_addr: "`+addr+`"`, 1)
 	if updated == string(contents) {
 		t.Fatalf("expected to find the default listen_addr to rewrite in:\n%s", contents)
 	}

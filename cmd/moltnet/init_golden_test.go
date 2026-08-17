@@ -69,7 +69,7 @@ func TestRunInitGoldenIDBearerFresh(t *testing.T) {
 
 // TestRunInitGoldenIDWithoutBearer pins `moltnet init --id <id>` (no
 // --bearer): quiet mode is the single checkmark plus next: line; --verbose
-// restores auth: none and the actionable tip to rerun with --bearer.
+// restores auth: open and the actionable tip to rerun with --bearer.
 func TestRunInitGoldenIDWithoutBearer(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -83,6 +83,7 @@ func TestRunInitGoldenIDWithoutBearer(t *testing.T) {
 		"  Initializing beta\n" +
 		"\n" +
 		"  ✓ beta ready          ~/.moltnet/beta/\n" +
+		"  note: local agent self-registration is open — any local agent can claim its own id and receive its own token\n" +
 		"\n" +
 		"  next: moltnet service install --id beta          run it as a service\n"
 	if quiet != wantQuiet {
@@ -100,8 +101,9 @@ func TestRunInitGoldenIDWithoutBearer(t *testing.T) {
 		"  Initializing beta\n" +
 		"\n" +
 		"  ✓ beta ready          ~/.moltnet/beta/\n" +
+		"  note: local agent self-registration is open — any local agent can claim its own id and receive its own token\n" +
 		"  ✓ created ~/.moltnet/beta/\n" +
-		"  ✓ wrote Moltnet       network: beta · auth: none\n" +
+		"  ✓ wrote Moltnet       network: beta · auth: open\n" +
 		"  ✓ wrote MoltnetNode\n" +
 		"    tip: rerun with --bearer to generate an operator token for admin access\n" +
 		"\n" +
@@ -129,6 +131,7 @@ func TestRunInitGoldenDirLocalID(t *testing.T) {
 		"  Initializing local\n" +
 		"\n" +
 		"  ✓ local ready         ~/customdir/\n" +
+		"  note: local agent self-registration is open — any local agent can claim its own id and receive its own token\n" +
 		"\n" +
 		"  next: moltnet init --id <network-id>             re-init with a real network id before pairing\n"
 	if quiet != wantQuiet {
@@ -145,8 +148,9 @@ func TestRunInitGoldenDirLocalID(t *testing.T) {
 		"  Initializing local\n" +
 		"\n" +
 		"  ✓ local ready         ~/customdir2/\n" +
+		"  note: local agent self-registration is open — any local agent can claim its own id and receive its own token\n" +
 		"  ✓ created ~/customdir2/\n" +
-		"  ✓ wrote Moltnet       network: local · auth: none\n" +
+		"  ✓ wrote Moltnet       network: local · auth: open\n" +
 		"  ✓ wrote MoltnetNode\n" +
 		"    tip: rerun with --bearer to generate an operator token for admin access\n" +
 		"\n" +

@@ -85,6 +85,45 @@ func TestInstallMoltnetSkillClaudeCodeAndCodex(t *testing.T) {
 	}
 }
 
+// TestInstallMoltnetSkillUnknownRuntimeIsAccepted covers PLAN.md phase 6b:
+// `moltnet skill install` must never refuse a runtime name. An unrecognized
+// name (the exact shape of the field report's Grok agent) still gets a
+// usable skill file at the generic `.agents/skills/moltnet/` path, teaching
+// the same `moltnet conversations`/`read`/`send` contract every runtime
+// gets.
+func TestInstallMoltnetSkillUnknownRuntimeIsAccepted(t *testing.T) {
+	for _, runtime := range []string{"grok", "agy", "some-future-runtime"} {
+		t.Run(runtime, func(t *testing.T) {
+			workspace := t.TempDir()
+
+			installed, err := installMoltnetSkill(runtime, workspace, moltnetSkillContent())
+			if err != nil {
+				t.Fatalf("installMoltnetSkill(%q) error = %v, want no error (runtimes are never refused)", runtime, err)
+			}
+
+			targetPath := filepath.Join(workspace, ".agents", "skills", "moltnet", "SKILL.md")
+			if installed != targetPath {
+				t.Fatalf("installMoltnetSkill(%q) path = %q, want %q", runtime, installed, targetPath)
+			}
+			assertFileExists(t, targetPath)
+
+			content, err := os.ReadFile(targetPath)
+			if err != nil {
+				t.Fatalf("ReadFile(%q) error = %v", targetPath, err)
+			}
+			for _, want := range []string{
+				"moltnet conversations",
+				"moltnet read --target",
+				"moltnet send --target",
+			} {
+				if !strings.Contains(string(content), want) {
+					t.Fatalf("unknown-runtime skill content missing %q:\n%s", want, content)
+				}
+			}
+		})
+	}
+}
+
 func TestMoltnetSkillContentUsesExplicitSendContract(t *testing.T) {
 	content := moltnetSkillContent()
 

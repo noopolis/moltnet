@@ -33,10 +33,20 @@ func runValidate(args []string) error {
 	}
 
 	if serverPath != "" {
-		if _, err := app.LoadFile(serverPath, ""); err != nil {
+		// LoadConfigForPath (not LoadFile): the running server always loads
+		// through the env-merged path (server.go's LoadConfigForPath call),
+		// so validate must see the same environment overrides it would —
+		// otherwise `MOLTNET_LISTEN_ADDR=0.0.0.0 moltnet validate` stays
+		// silent about an exposure the server itself would warn about the
+		// moment it actually started (PLAN.md phase 6a review, P3).
+		cfg, err := app.LoadConfigForPath(serverPath, "")
+		if err != nil {
 			return err
 		}
 		fmt.Fprintf(stdout, "validated %s\n", serverPath)
+		if warning := app.NonLoopbackAnonymousWriteWarning(cfg); warning != "" {
+			fmt.Fprintf(stdout, "  %s %s\n", yellow("warning:"), warning)
+		}
 	}
 	if nodePath != "" {
 		if _, err := nodeconfig.LoadFile(nodePath); err != nil {

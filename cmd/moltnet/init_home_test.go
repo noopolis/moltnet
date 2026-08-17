@@ -160,20 +160,22 @@ func TestRunInitBearerStoresTokenWithoutEverPrintingIt(t *testing.T) {
 	}
 }
 
-func TestRunInitWithoutBearerShowsNoneAuthAndBearerTip(t *testing.T) {
+func TestRunInitWithoutBearerShowsOpenAuthAndBearerTip(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	// --verbose: "auth: none" and the --bearer tip are --verbose-only detail
-	// under the quiet-by-default redesign.
+	// --verbose: "auth: open" (PLAN.md phase 6a's new non-bearer default —
+	// templates.go's defaultMoltnetConfig now writes auth.mode: open) and the
+	// --bearer tip are --verbose-only detail under the quiet-by-default
+	// redesign.
 	output := captureStdout(t, func() {
 		if err := runInit(context.Background(), []string{"--id", "acme", "--verbose"}); err != nil {
 			t.Fatalf("runInit() error = %v", err)
 		}
 	})
 
-	if !strings.Contains(output, "auth: none") {
-		t.Fatalf("expected auth: none in output, got %q", output)
+	if !strings.Contains(output, "auth: open") {
+		t.Fatalf("expected auth: open in output, got %q", output)
 	}
 	if !strings.Contains(output, "--bearer") {
 		t.Fatalf("expected a tip suggesting --bearer, got %q", output)
