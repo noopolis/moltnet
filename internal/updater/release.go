@@ -3,6 +3,7 @@ package updater
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,7 +52,7 @@ func (s HTTPReleaseSource) LatestVersion(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("decode release metadata: %w", err)
 		}
 		if strings.TrimSpace(metadata.Version) == "" {
-			return "", fmt.Errorf("release metadata did not include a version")
+			return "", errors.New("release metadata did not include a version")
 		}
 		return strings.TrimSpace(metadata.Version), nil
 	}
@@ -73,7 +74,7 @@ func (s HTTPReleaseSource) LatestVersion(ctx context.Context) (string, error) {
 	if strings.TrimSpace(release.Name) != "" {
 		return strings.TrimSpace(release.Name), nil
 	}
-	return "", fmt.Errorf("GitHub release metadata did not include a version")
+	return "", errors.New("GitHub release metadata did not include a version")
 }
 
 func (s HTTPReleaseSource) Archive(ctx context.Context, version string, assetName string) ([]byte, error) {

@@ -39,7 +39,7 @@ type updateLockRecord struct {
 func acquireUpdateLock(options updateLockOptions) (*updateLock, error) {
 	path := strings.TrimSpace(options.Path)
 	if path == "" {
-		return nil, fmt.Errorf("update lock path is empty")
+		return nil, errors.New("update lock path is empty")
 	}
 	staleAfter := options.StaleAfter
 	if staleAfter <= 0 {

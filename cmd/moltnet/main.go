@@ -10,6 +10,15 @@ import (
 )
 
 var version = "0.0.0-dev"
+
+// sourceCheckout is the source checkout path this binary was built from,
+// stamped by the Makefile's `build` target via ldflags exactly like
+// version is (`-X main.sourceCheckout=$(CURDIR)`). It is empty for any
+// binary not built that way — release-assets/-docker builds, `go build`
+// run by hand, or an older Makefile — and `moltnet update` (update.go)
+// degrades to its plain source-install refusal whenever it is empty.
+var sourceCheckout = ""
+
 var stdout io.Writer = os.Stdout
 
 // stderr is the same swappable-for-tests seam as stdout, for the handful of

@@ -24,7 +24,7 @@ func buildUsage() string {
   moltnet send --target room:<id>|dm:<id> --text <message> [--network <id>] [--member <id>]
   moltnet skill install --runtime <runtime> --workspace <path>
   moltnet uninstall [--yes] [--purge]
-  moltnet update [--check] [--version <version>] [--dry-run] [--yes] [--server <url>] [--server-token-env <name>]
+  moltnet update [--check] [--version <version>] [--dry-run] [--yes] [--server <url>] [--server-token-env <name>] [--verbose]
   moltnet validate [path]
   moltnet start [--config <path>] [--id <network-id>]
   moltnet node start [--id <network-id>] [path]
@@ -51,7 +51,7 @@ Commands:
   send              Send a text message through a configured Moltnet attachment
   skill             Install the canonical Moltnet skill into a runtime workspace
   uninstall         Stop and remove installed services, then delete the moltnet binary
-  update            Check for or install Moltnet release updates
+  update            Check for or install Moltnet updates (release install or, from a source checkout, rebuild and replace in place)
   validate          Validate Moltnet and MoltnetNode config files
   start, server    Start the Moltnet server
   node             Start the local MoltnetNode attachment daemon

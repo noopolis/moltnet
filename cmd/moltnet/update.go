@@ -20,6 +20,7 @@ func runUpdate(ctx context.Context, args []string, buildVersion string) error {
 		serverURL      = flags.String("server", "", "Moltnet server URL to probe during the update check")
 		serverTokenEnv = flags.String("server-token-env", "", "environment variable containing a server probe bearer token")
 		targetVersion  = flags.String("version", "", "specific Moltnet release version to install")
+		verboseFlag    = flags.Bool("verbose", false, "print full detail: a source update's per-step log (git pull, make build, binary replace, version verify)")
 		yes            = flags.Bool("yes", false, "accept update prompts")
 	)
 
@@ -36,14 +37,15 @@ func runUpdate(ctx context.Context, args []string, buildVersion string) error {
 		DryRun:         *dryRun,
 		ServerTokenEnv: *serverTokenEnv,
 		ServerURL:      *serverURL,
+		SourceCheckout: sourceCheckout,
 		TargetVersion:  *targetVersion,
 		Yes:            *yes,
 	})
 	if err != nil {
 		if result.MutationRefused {
-			_ = updater.WriteResult(stdout, result)
+			_ = updater.WriteResult(stdout, result, *verboseFlag)
 		}
 		return err
 	}
-	return updater.WriteResult(stdout, result)
+	return updater.WriteResult(stdout, result, *verboseFlag)
 }

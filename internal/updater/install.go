@@ -3,6 +3,7 @@ package updater
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,7 +66,7 @@ func (DefaultInstallDetector) DetectInstall(_ context.Context, currentVersion st
 
 func ReplaceBinary(installPath string, replacementPath string) (string, error) {
 	if strings.TrimSpace(installPath) == "" {
-		return "", fmt.Errorf("install path is empty")
+		return "", errors.New("install path is empty")
 	}
 	backupPath := installPath + ".previous"
 	_ = os.Remove(backupPath)
@@ -80,10 +81,14 @@ func ReplaceBinary(installPath string, replacementPath string) (string, error) {
 	return backupPath, nil
 }
 
+// replaceInstalledBinary (the source-rebuild counterpart to ReplaceBinary
+// above) lives in binaryreplace.go, alongside the writability preflight it
+// shares with a source update's earlier pull/build steps.
+
 func writeInstallMetadata(metadata installMetadata) error {
 	path := defaultInstallMetadataPath()
 	if path == "" {
-		return fmt.Errorf("install metadata path is unavailable")
+		return errors.New("install metadata path is unavailable")
 	}
 	if metadata.Version == 0 {
 		metadata.Version = 1

@@ -3,6 +3,7 @@ package updater
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,7 +24,7 @@ func (p HTTPServerProbe) ProbeServer(ctx context.Context, probe ServerProbeReque
 		return ServerInfo{}, err
 	}
 	if parsed.Scheme == "" || parsed.Host == "" {
-		return ServerInfo{}, fmt.Errorf("server URL must include scheme and host")
+		return ServerInfo{}, errors.New("server URL must include scheme and host")
 	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/v1/network"
 	parsed.RawQuery = ""

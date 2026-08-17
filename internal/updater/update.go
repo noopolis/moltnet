@@ -2,6 +2,7 @@ package updater
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,24 +23,22 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	if err != nil {
 		return result, err
 	}
+	if install.Method == InstallMethodSource {
+		install.SourceCheckout = strings.TrimSpace(options.SourceCheckout)
+	}
 	result.Install = install
+
+	result.Server = probeConfiguredServer(ctx, options)
+
+	if install.Method == InstallMethodSource {
+		return runSourceUpdate(ctx, options, install, result)
+	}
 
 	assetName, err := AssetName(options.Platform)
 	if err != nil {
 		return result, err
 	}
 	result.AssetName = assetName
-
-	if strings.TrimSpace(options.ServerURL) != "" {
-		probeRequest, warning := serverProbeRequest(options)
-		if warning != "" {
-			result.Server = ServerInfo{URL: strings.TrimSpace(options.ServerURL), Warning: warning}
-		} else if server, err := options.ServerProbe.ProbeServer(ctx, probeRequest); err != nil {
-			result.Server = ServerInfo{URL: strings.TrimSpace(options.ServerURL), Warning: err.Error()}
-		} else {
-			result.Server = server
-		}
-	}
 
 	if options.CheckOnly || options.DryRun {
 		if err := ensureMutationAllowed(install); err != nil {
@@ -48,7 +47,7 @@ func Run(ctx context.Context, options Options) (Result, error) {
 	} else {
 		if err := ensureMutationAllowed(install); err != nil {
 			result.MutationRefused = true
-			result.Warnings = append(result.Warnings, err.Error())
+			result.RefusalReason = err.Error()
 			return result, err
 		}
 	}
@@ -168,6 +167,9 @@ func (options Options) withDefaults() Options {
 		options.CurrentVersion = "0.0.0-dev"
 	}
 	options.Platform = options.Platform.WithDefaults()
+	if options.CommandRunner == nil {
+		options.CommandRunner = defaultCommandRunner{}
+	}
 	if options.Detector == nil {
 		options.Detector = DefaultInstallDetector{}
 	}
@@ -179,6 +181,25 @@ func (options Options) withDefaults() Options {
 		options.ServerProbe = HTTPServerProbe{}
 	}
 	return options
+}
+
+// probeConfiguredServer probes options.ServerURL when one is set, folding
+// every failure (a missing token env, a probe error) into ServerInfo.Warning
+// instead of failing the whole update: the server probe is a courtesy
+// status line, never a precondition for checking or installing an update.
+func probeConfiguredServer(ctx context.Context, options Options) ServerInfo {
+	if strings.TrimSpace(options.ServerURL) == "" {
+		return ServerInfo{}
+	}
+	probeRequest, warning := serverProbeRequest(options)
+	if warning != "" {
+		return ServerInfo{URL: strings.TrimSpace(options.ServerURL), Warning: warning}
+	}
+	server, err := options.ServerProbe.ProbeServer(ctx, probeRequest)
+	if err != nil {
+		return ServerInfo{URL: strings.TrimSpace(options.ServerURL), Warning: err.Error()}
+	}
+	return server
 }
 
 func serverProbeRequest(options Options) (ServerProbeRequest, string) {
@@ -247,13 +268,13 @@ func ensureMutationAllowed(install Install) error {
 	}
 	switch install.Method {
 	case InstallMethodContainer:
-		return fmt.Errorf("self-update is not available inside container installs; pull a newer Moltnet image and restart the container")
+		return errors.New("self-update is not available inside container installs; pull a newer Moltnet image and restart the container")
 	case InstallMethodSource:
-		return fmt.Errorf("self-update is not available for source or development builds; install a release tarball with curl -fsSL https://moltnet.dev/install.sh | sh")
+		return errors.New(sourceInstallRefusalMessage)
 	case InstallMethodReleaseTarball:
-		return fmt.Errorf("self-update is not available because release install metadata does not allow it; reinstall with curl -fsSL https://moltnet.dev/install.sh | sh")
+		return errors.New("self-update is not available because release install metadata does not allow it; reinstall with curl -fsSL https://moltnet.dev/install.sh | sh")
 	default:
-		return fmt.Errorf("self-update is not available for this install because its install method is unknown; reinstall with curl -fsSL https://moltnet.dev/install.sh | sh")
+		return errors.New("self-update is not available for this install because its install method is unknown; reinstall with curl -fsSL https://moltnet.dev/install.sh | sh")
 	}
 }
 

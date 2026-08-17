@@ -19,7 +19,7 @@ console-typecheck:
 	cd web && $(NPM) run typecheck
 
 build: console-build
-	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/moltnet ./cmd/moltnet
+	$(GO) build -ldflags "-X main.version=$(VERSION) -X main.sourceCheckout=$(CURDIR)" -o bin/moltnet ./cmd/moltnet
 
 build-bridge:
 	$(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/moltnet-bridge ./cmd/moltnet-bridge

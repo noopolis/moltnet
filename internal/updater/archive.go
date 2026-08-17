@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -66,7 +67,7 @@ func ExtractMoltnetBinary(archive []byte, destinationDir string) (string, error)
 func cleanArchiveName(name string) (string, error) {
 	slashed := filepath.ToSlash(strings.TrimSpace(name))
 	if slashed == "" {
-		return "", fmt.Errorf("release archive contains an empty path")
+		return "", errors.New("release archive contains an empty path")
 	}
 	if path.IsAbs(slashed) {
 		return "", fmt.Errorf("release archive contains absolute path %q", name)
