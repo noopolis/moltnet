@@ -52,6 +52,32 @@ func authorizedAnyWithVerifier(
 	}
 }
 
+// authorizedOperatorOrObserver gates next behind readScopes exactly like
+// authorizedAnyWithVerifier, then excludes agent tokens (P2-1, PLAN.md phase
+// 6c review): NewAgentTokenClaims now grants `observe` (P2-2) so a
+// self-registered agent can read its own message history, but that same
+// scope must not let it enumerate /v1/pairings* — remote network ids,
+// names, and base URLs are operator/observer topology, not something every
+// self-registered agent should see. Static tokens (console's exactly-
+// [observe] token included) are unaffected: only claims.AgentToken() is
+// excluded, and console tokens are never agent tokens.
+func authorizedOperatorOrObserver(
+	policy *authn.Policy,
+	verifier agentTokenVerifier,
+	next http.HandlerFunc,
+) http.HandlerFunc {
+	return authorizedAnyWithVerifier(policy, verifier, readScopes, func(response http.ResponseWriter, request *http.Request) {
+		if claims, ok := authn.ClaimsFromContext(request.Context()); ok && claims.AgentToken() {
+			writeError(response, http.StatusForbidden, &authn.Error{
+				Status:  http.StatusForbidden,
+				Message: "forbidden",
+			})
+			return
+		}
+		next(response, request)
+	})
+}
+
 func publicInOpen(
 	policy *authn.Policy,
 	verifier agentTokenVerifier,

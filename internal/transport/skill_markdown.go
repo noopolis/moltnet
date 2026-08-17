@@ -262,9 +262,6 @@ func roomInfosForRequest(
 	registrationOpen := registration == authn.AgentRegistrationOpen
 	canAdminWrite := hasClaims && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite)
 	canStaticWrite := hasClaims && claims.StaticToken() && claims.Allows(authn.ScopeWrite)
-	canAnonymousRead := authMode == authn.ModeNone || publicRead
-	canObserve := authMode == authn.ModeNone ||
-		(hasClaims && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}))
 
 	infos := make([]roomAccessInfo, 0, len(rooms))
 	for _, room := range rooms {
@@ -288,7 +285,7 @@ func roomInfosForRequest(
 			ID:          id,
 			Visibility:  visibility,
 			WritePolicy: writePolicy,
-			CanRead:     canObserve || (canAnonymousRead && visibility == "public"),
+			CanRead:     canReadRoomFallback(authMode, publicRead, claims, hasClaims, visibility, room.Members),
 			Reason:      strings.TrimSpace(accessReason(room.Access)),
 		}
 		if room.Access != nil {
@@ -301,6 +298,39 @@ func roomInfosForRequest(
 		infos = append(infos, info)
 	}
 	return infos
+}
+
+// canReadRoomFallback is roomInfosForRequest's CanRead formula for a room
+// with no server-computed Access (room.Access == nil) — mirroring
+// internal/rooms/access_policy.go's canReadRoom precedence (minus the
+// pairing check, unavailable here) so agent-restricted claims (any
+// self-registered agent token, or a static token scoped to specific agents)
+// are judged by room membership, not by scope: canReadRoom checks
+// membership before scope for such claims, so an agent-restricted token's
+// `observe` must not grant every room, only ones it is a member of (or
+// public ones). Production always supplies a pre-computed Access
+// (ListRoomsContext calls readableRoom for every room), so only a bare
+// fakeService test fixture ever exercises this fallback — it must not
+// silently claim broader access than the real service would.
+func canReadRoomFallback(authMode string, publicRead bool, claims authn.Claims, hasClaims bool, visibility string, members []string) bool {
+	if authMode == authn.ModeNone && !publicRead {
+		return true
+	}
+	if hasClaims && claims.HasAgentRestriction() {
+		if visibility == "public" {
+			return true
+		}
+		for _, member := range members {
+			if claims.AllowsAgent(member) {
+				return true
+			}
+		}
+		return false
+	}
+	if hasClaims && claims.AllowsAny([]authn.Scope{authn.ScopeObserve, authn.ScopeAdmin}) {
+		return true
+	}
+	return publicRead && visibility == "public"
 }
 
 func inferredRoomWrite(

@@ -197,6 +197,14 @@ func (p *Policy) AgentRegistration() string {
 	return p.agentRegistration
 }
 
+// TrustForwardedProto reports whether the operator has told Moltnet
+// (server.trust_forwarded_proto) that a reverse proxy sits in front of it.
+// Once true, a loopback RemoteAddr no longer proves a request originated on
+// this machine — it just means the proxy connected from here.
+func (p *Policy) TrustForwardedProto() bool {
+	return p != nil && p.trustForwardedProto
+}
+
 func (p *Policy) AuthenticateRequest(request *http.Request, scope Scope) (Claims, error) {
 	if p == nil || p.mode == ModeNone {
 		return Claims{}, nil
@@ -352,9 +360,14 @@ func NewAgentTokenClaims(agentID string, credentialKey string) Claims {
 	trimmedAgentID := strings.TrimSpace(agentID)
 	claims := Claims{
 		CredentialKey: strings.TrimSpace(credentialKey),
+		// P2-2: observe too, not just write+attach — without it this token
+		// can't read on a bearer network with public_read: false, so the
+		// join guide's own next command 403s. Still agent-scoped (agents
+		// below), never admin or pair: no room creation, no /metrics.
 		scopes: map[Scope]struct{}{
-			ScopeWrite:  {},
-			ScopeAttach: {},
+			ScopeObserve: {},
+			ScopeWrite:   {},
+			ScopeAttach:  {},
 		},
 		agents: make(map[string]struct{}),
 	}

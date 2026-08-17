@@ -220,7 +220,27 @@ func TestOpenRegistrationAndSendHTTPFlow(t *testing.T) {
 
 	atlas, _ := registerAgentHTTP(t, handler, "", "atlas")
 	assertStatus(t, handler, http.MethodPost, "/v1/messages", "Bearer "+atlas.AgentToken, sendBody, http.StatusConflict)
-	assertStatus(t, handler, http.MethodGet, "/v1/dms", "Bearer "+luna.AgentToken, "", http.StatusForbidden)
+
+	// P2-2: an agent token now carries `observe` (write+attach alone made
+	// this 403 before). Route access is granted, but canReadDirectConversation
+	// still filters to conversations luna participates in — none here, so
+	// this must come back empty, not a leak of every DM.
+	dmsResponse := httptest.NewRecorder()
+	dmsRequest := httptest.NewRequest(http.MethodGet, "/v1/dms", nil)
+	dmsRequest.Header.Set("Authorization", "Bearer "+luna.AgentToken)
+	handler.ServeHTTP(dmsResponse, dmsRequest)
+	if dmsResponse.Code != http.StatusOK {
+		t.Fatalf("GET /v1/dms with an agent token status=%d want %d body=%s", dmsResponse.Code, http.StatusOK, dmsResponse.Body.String())
+	}
+	if strings.Contains(dmsResponse.Body.String(), `"id"`) {
+		t.Fatalf("GET /v1/dms leaked a conversation luna is not a participant of: %s", dmsResponse.Body.String())
+	}
+
+	// An agent token still cannot create rooms or read /metrics (P2-2's own
+	// verification requirement): those stay admin-scoped, and observe alone
+	// never satisfies that.
+	assertStatus(t, handler, http.MethodPost, "/v1/rooms", "Bearer "+luna.AgentToken, `{"id":"new-room"}`, http.StatusForbidden)
+	assertStatus(t, handler, http.MethodGet, "/metrics", "Bearer "+luna.AgentToken, "", http.StatusForbidden)
 }
 
 func TestOpenStaticTokenOwnershipAndPairSpoofHTTP(t *testing.T) {

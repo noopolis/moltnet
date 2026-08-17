@@ -164,7 +164,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, result)
 	}))
 
-	mux.HandleFunc("GET /v1/pairings", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/pairings", authorizedOperatorOrObserver(policy, service, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -178,7 +178,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, page)
 	}))
 
-	mux.HandleFunc("GET /v1/pairings/{pairingID}/network", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/pairings/{pairingID}/network", authorizedOperatorOrObserver(policy, service, func(response http.ResponseWriter, request *http.Request) {
 		network, err := service.PairingNetwork(request.Context(), request.PathValue("pairingID"))
 		if err != nil {
 			writeError(response, statusForError(err), err)
@@ -187,7 +187,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, network)
 	}))
 
-	mux.HandleFunc("GET /v1/pairings/{pairingID}/rooms", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/pairings/{pairingID}/rooms", authorizedOperatorOrObserver(policy, service, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
@@ -201,7 +201,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, rooms)
 	}))
 
-	mux.HandleFunc("GET /v1/pairings/{pairingID}/agents", authorizedAnyWithVerifier(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /v1/pairings/{pairingID}/agents", authorizedOperatorOrObserver(policy, service, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)
 		if err != nil {
 			writeError(response, http.StatusUnprocessableEntity, err)
