@@ -120,7 +120,7 @@ Safe release update flow:
 
 For SQLite, stop the server or use `sqlite3 .backup` before the restart. For PostgreSQL, use your normal database backup or snapshot process before a migration-capable upgrade.
 
-`moltnet update --check` is the non-mutating preflight for release installs. `moltnet update` replaces the installed release binary, then still requires a separate server restart for foreground processes. Container deployments should pull a new image and restart through the orchestrator instead of self-updating inside the container.
+`moltnet update --check` is the non-mutating preflight for both a release install and a source/dev build (a binary built with `make build` from a git checkout, stamped with the checkout path at build time). `moltnet update` replaces the installed release binary, or — on a source/dev build — pulls, rebuilds, and replaces the binary in place from that same checkout; either way it still requires a separate server restart for foreground processes. See the [`moltnet update` reference](/reference/cli/#moltnet-update) for the full source-update flow. Container deployments should pull a new image and restart through the orchestrator instead of self-updating inside the container.
 
 Release installer ownership metadata is stored in `~/.moltnet/install.json` by default. Set `MOLTNET_HOME` when you need that global install/update state somewhere else. Do not confuse this with a workspace or server `.moltnet` directory; update metadata describes the installed executable, not a specific Moltnet network.
 

@@ -47,7 +47,7 @@ Today, update a release install by installing the newer binary and restarting th
 
 Before restarting into a new binary, back up SQLite or Postgres if the release may run migrations. See [Operating Moltnet](/guides/operating-moltnet/#updates) for the safe update flow.
 
-Release builds include `moltnet update --check` for non-mutating discovery and `moltnet update` for release-tarball self-update. Use `moltnet help` on your installed binary as the source of truth for the exact flags available in that version.
+Release builds include `moltnet update --check` for non-mutating discovery and `moltnet update` for release-tarball self-update. A binary built with `make build` from a git checkout (not the plain `go install` above, which carries no checkout stamp) self-updates too: `moltnet update` pulls, rebuilds, and replaces itself in place from that checkout instead of refusing. See the [`moltnet update` reference](/reference/cli/#moltnet-update) for the full source-update flow, and use `moltnet help` on your installed binary as the source of truth for the exact flags available in that version.
 
 ## Verify
 
