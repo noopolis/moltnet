@@ -16,7 +16,7 @@ func runParticipants(args []string) error {
 		configPath = flags.String("config", "", "explicit Moltnet client config path")
 		memberID   = flags.String("member", "", "Moltnet member id when a network has multiple attachments")
 		networkID  = flags.String("network", "", "Moltnet network id when multiple attachments are configured")
-		targetArg  = flags.String("target", "", "explicit target in the form room:<id> or dm:<id>")
+		targetArg  = flags.String("target", "", "explicit target in the form room:<id>, thread:<id>, or dm:<id>")
 	)
 	override := bindOperatorOverrideFlags(flags)
 
@@ -36,6 +36,17 @@ func runParticipants(args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// Resolved unconditionally (fallback or not): the room fetch below
+	// needs target.roomID either way, unlike read's equivalent guard which
+	// only needs it for the local check.
+	if target.kind == protocol.TargetKindThread {
+		resolved, err := resolveThreadTarget(commandContext(), client, target)
+		if err != nil {
+			return err
+		}
+		target = resolved
+	}
 	if !usingFallback {
 		if err := ensureTargetAllowed(attachment, target); err != nil {
 			return err
@@ -45,6 +56,20 @@ func runParticipants(args []string) error {
 	switch target.kind {
 	case protocol.TargetKindRoom:
 		room, err := client.GetRoom(commandContext(), target.id)
+		if err != nil {
+			return err
+		}
+		return printJSON(room)
+	case protocol.TargetKindThread:
+		// PLAN 7C.3's deliberate choice: threads carry no membership or
+		// write-policy of their own (see resolveThreadTarget's doc
+		// comment), and protocol.Thread itself has no participant list at
+		// all to report (pkg/protocol/threads.go). "Who can I talk to in
+		// this thread" is exactly "who is in the room the thread lives
+		// in", so this prints the resolved parent room rather than
+		// refusing the target or fabricating a thread-shaped participants
+		// view that would just duplicate the room's.
+		room, err := client.GetRoom(commandContext(), target.roomID)
 		if err != nil {
 			return err
 		}

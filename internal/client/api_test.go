@@ -137,6 +137,75 @@ func TestListRoomMessages(t *testing.T) {
 	}
 }
 
+// TestGetThread covers the PLAN 7C.3 client leg: GetThread must hit GET
+// /v1/threads/{threadID} and decode the thread's RoomID, since that field is
+// exactly what cmd/moltnet's resolveThreadTarget needs to authorize (and,
+// for send, to fill in) a thread:<id> CLI target.
+func TestGetThread(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/threads/thr_1" {
+			t.Fatalf("unexpected path %s", request.URL.Path)
+		}
+		_ = json.NewEncoder(response).Encode(protocol.Thread{ID: "thr_1", RoomID: "general"})
+	}))
+	defer server.Close()
+
+	client, err := New(clientconfig.AttachmentConfig{
+		Auth:      clientconfig.AuthConfig{Mode: "none"},
+		BaseURL:   server.URL,
+		MemberID:  "alpha",
+		NetworkID: "local",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	thread, err := client.GetThread(context.Background(), "thr_1")
+	if err != nil {
+		t.Fatalf("GetThread() error = %v", err)
+	}
+	if thread.ID != "thr_1" || thread.RoomID != "general" {
+		t.Fatalf("unexpected thread %#v", thread)
+	}
+}
+
+// TestListThreadMessages mirrors TestListRoomMessages for the thread
+// endpoint (GET /v1/threads/{threadID}/messages), including the page-limit
+// query parameter.
+func TestListThreadMessages(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/threads/thr_1/messages" || request.URL.RawQuery != "limit=5" {
+			t.Fatalf("unexpected path %s?%s", request.URL.Path, request.URL.RawQuery)
+		}
+		_ = json.NewEncoder(response).Encode(protocol.MessagePage{
+			Messages: []protocol.Message{{ID: "msg_1"}},
+		})
+	}))
+	defer server.Close()
+
+	client, err := New(clientconfig.AttachmentConfig{
+		Auth:      clientconfig.AuthConfig{Mode: "none"},
+		BaseURL:   server.URL,
+		MemberID:  "alpha",
+		NetworkID: "local",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	page, err := client.ListThreadMessages(context.Background(), "thr_1", protocol.PageRequest{Limit: 5})
+	if err != nil {
+		t.Fatalf("ListThreadMessages() error = %v", err)
+	}
+	if len(page.Messages) != 1 || page.Messages[0].ID != "msg_1" {
+		t.Fatalf("unexpected page %#v", page)
+	}
+}
+
 func TestListRoomMessagesPreservesLargeJSONNumber(t *testing.T) {
 	t.Parallel()
 	const large = "900719925474099312345678901234567890"

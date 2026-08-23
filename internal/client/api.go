@@ -17,6 +17,24 @@ import (
 
 const defaultTimeout = 10 * time.Second
 
+// APIError is doJSON's structured form of a non-2xx Moltnet response: the
+// real HTTP status code plus the same formatted message text doJSON always
+// returned. A caller that needs to distinguish response *kinds* -- not just
+// match the formatted message, which embeds caller-supplied data (a pairing
+// id, a cursor value, a request URL) and so is not safe to substring-match
+// against (cmd/moltnet/pair_show.go's isPairingUnreachableError used to
+// match the literal string "bad_gateway" against the whole message, which a
+// pairing id containing that same substring could trigger for an unrelated
+// 404) -- should use errors.As(err, &apiErr) and read Status instead.
+type APIError struct {
+	Status  int
+	Message string
+}
+
+func (e *APIError) Error() string {
+	return e.Message
+}
+
 type Client struct {
 	attachment clientconfig.AttachmentConfig
 	httpClient *http.Client
@@ -165,9 +183,71 @@ func (c *Client) UpdateRoomMembers(
 	return room, nil
 }
 
+// JoinRoom calls POST /v1/rooms/{roomID}/join (PLAN.md 7A.3): a local agent
+// self-serving into a room created with a credential, the direct complement
+// to `admin room members add`. The caller's bearer token must be a real
+// agent token (internal/rooms/join.go's joinActorAuthorized requires one),
+// never the zero-setup operator fallback's static token.
+func (c *Client) JoinRoom(
+	ctx context.Context,
+	roomID string,
+	request protocol.JoinRoomRequest,
+) (protocol.Room, error) {
+	var room protocol.Room
+	path := "/v1/rooms/" + url.PathEscape(roomID) + "/join"
+	if err := c.doJSON(ctx, http.MethodPost, path, outboundJoinRoomRequest(request), &room); err != nil {
+		return protocol.Room{}, err
+	}
+	return room, nil
+}
+
+// outboundJoinRoomRequest mirrors outboundApplyConfigRequest's own reason for
+// existing: protocol.SecretString's MarshalJSON always serializes as
+// "[REDACTED]" (secret.go), which is exactly right for every *response* this
+// client decodes but wrong for this one outbound *request* body — a join
+// call whose credential field always marshaled as the literal string
+// "[REDACTED]" could never actually join anything. joinRoomRequestWire
+// carries the plaintext value instead, the same trick createRoomRequestWire
+// uses for a room's credential.
+func outboundJoinRoomRequest(request protocol.JoinRoomRequest) joinRoomRequestWire {
+	return joinRoomRequestWire{
+		From:       request.From,
+		Credential: request.Credential.Reveal(),
+	}
+}
+
+type joinRoomRequestWire struct {
+	From       protocol.Actor `json:"from"`
+	Credential string         `json:"credential"`
+}
+
 func (c *Client) ListRoomMessages(ctx context.Context, roomID string, page protocol.PageRequest) (protocol.MessagePage, error) {
 	var messages protocol.MessagePage
 	path := "/v1/rooms/" + url.PathEscape(roomID) + "/messages" + encodePage(page)
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &messages); err != nil {
+		return protocol.MessagePage{}, err
+	}
+	return messages, nil
+}
+
+// GetThread resolves a thread's own record — most importantly its RoomID,
+// since a thread carries no membership or write-policy of its own and every
+// authorization decision about it (local or server-side) is really a
+// decision about the room it lives in. See cmd/moltnet's
+// resolveThreadTarget for the CLI-side caller.
+func (c *Client) GetThread(ctx context.Context, threadID string) (protocol.Thread, error) {
+	var thread protocol.Thread
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/threads/"+url.PathEscape(threadID), nil, &thread); err != nil {
+		return protocol.Thread{}, err
+	}
+	return thread, nil
+}
+
+// ListThreadMessages mirrors ListRoomMessages for a thread target, backed
+// by GET /v1/threads/{threadID}/messages (internal/transport/http.go).
+func (c *Client) ListThreadMessages(ctx context.Context, threadID string, page protocol.PageRequest) (protocol.MessagePage, error) {
+	var messages protocol.MessagePage
+	path := "/v1/threads/" + url.PathEscape(threadID) + "/messages" + encodePage(page)
 	if err := c.doJSON(ctx, http.MethodGet, path, nil, &messages); err != nil {
 		return protocol.MessagePage{}, err
 	}
@@ -262,9 +342,15 @@ func (c *Client) doJSON(ctx context.Context, method string, requestPath string, 
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 		trimmed := strings.TrimSpace(string(message))
 		if trimmed == "" {
-			return fmt.Errorf("moltnet %s %s returned %s", method, request.URL.Redacted(), response.Status)
+			return &APIError{
+				Status:  response.StatusCode,
+				Message: fmt.Sprintf("moltnet %s %s returned %s", method, request.URL.Redacted(), response.Status),
+			}
 		}
-		return fmt.Errorf("moltnet %s %s returned %s: %s", method, request.URL.Redacted(), response.Status, trimmed)
+		return &APIError{
+			Status:  response.StatusCode,
+			Message: fmt.Sprintf("moltnet %s %s returned %s: %s", method, request.URL.Redacted(), response.Status, trimmed),
+		}
 	}
 
 	if out == nil {

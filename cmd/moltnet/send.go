@@ -18,7 +18,7 @@ func runSend(args []string) error {
 		configPath = flags.String("config", "", "explicit Moltnet client config path")
 		memberID   = flags.String("member", "", "Moltnet member id when a network has multiple attachments (or the sender identity in the zero-setup operator fallback; default \"operator\")")
 		networkID  = flags.String("network", "", "Moltnet network id when multiple attachments are configured")
-		targetArg  = flags.String("target", "", "target in the form room:<id> or dm:<id> (or the first positional argument)")
+		targetArg  = flags.String("target", "", "target in the form room:<id>, thread:<id>, or dm:<id> (or the first positional argument)")
 		text       = flags.String("text", "", "plain text message content (or the trailing positional argument)")
 	)
 	override := bindOperatorOverrideFlags(flags)
@@ -57,6 +57,19 @@ func runSend(args []string) error {
 		return err
 	}
 
+	// Unlike read's, this resolution runs unconditionally (fallback or
+	// not): protocol.ValidateTarget requires target.room_id on every
+	// thread-kind Target, so the wire request built below needs it
+	// regardless of whether the local ensureTargetAllowed check that also
+	// consumes it gets to run.
+	if target.kind == protocol.TargetKindThread {
+		resolved, err := resolveThreadTarget(commandContext(), client, target)
+		if err != nil {
+			return err
+		}
+		target = resolved
+	}
+
 	var fromActor protocol.Actor
 	if usingFallback {
 		// No agent-config rooms/DMs allowlist exists in this mode (there is
@@ -79,6 +92,8 @@ func runSend(args []string) error {
 	switch target.kind {
 	case protocol.TargetKindRoom:
 		request.Target = protocol.Target{Kind: protocol.TargetKindRoom, RoomID: target.id}
+	case protocol.TargetKindThread:
+		request.Target = protocol.Target{Kind: protocol.TargetKindThread, ThreadID: target.id, RoomID: target.roomID}
 	case protocol.TargetKindDM:
 		dm, err := client.GetDM(commandContext(), target.id)
 		if err != nil {
@@ -156,7 +171,7 @@ func resolveSendPositionalArgs(positional []string, targetFlag string, textFlag 
 	return target, text, nil
 }
 
-// targetLikePattern matches the room:<id>/dm:<id> target shorthand —
-// resolveSendPositionalArgs' guard for a stray positional that looks like a
-// forgotten second target rather than a message.
-var targetLikePattern = regexp.MustCompile(`^(room|dm):`)
+// targetLikePattern matches the room:<id>/thread:<id>/dm:<id> target
+// shorthand — resolveSendPositionalArgs' guard for a stray positional that
+// looks like a forgotten second target rather than a message.
+var targetLikePattern = regexp.MustCompile(`^(room|thread|dm):`)

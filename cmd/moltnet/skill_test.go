@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,6 +122,104 @@ func TestInstallMoltnetSkillUnknownRuntimeIsAccepted(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestInstallMoltnetSkillGlobalWritesGlobalHomesNotWorkspace is the PLAN
+// 7C.4 regression test for `skill install --global`: it must write the
+// skill into every well-known global agent home (~/.claude, ~/.codex,
+// ~/.agents) and must NOT write the workspace copy at all, since --global
+// is a distinct destination, not an addition to the workspace default.
+func TestInstallMoltnetSkillGlobalWritesGlobalHomesNotWorkspace(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	workspace := t.TempDir()
+
+	output := captureStdout(t, func() {
+		if err := run(context.Background(), []string{
+			"skill", "install", "--global", "--workspace", workspace,
+		}, "test"); err != nil {
+			t.Fatalf("run() skill install --global error = %v", err)
+		}
+	})
+	if !strings.Contains(output, "installed ") {
+		t.Fatalf("unexpected skill install --global output %q", output)
+	}
+
+	for _, targetPath := range []string{
+		filepath.Join(home, ".claude", "skills", "moltnet", "SKILL.md"),
+		filepath.Join(home, ".codex", "skills", "moltnet", "SKILL.md"),
+		filepath.Join(home, ".agents", "skills", "moltnet", "SKILL.md"),
+	} {
+		assertFileExists(t, targetPath)
+	}
+
+	// --workspace was given but must be ignored entirely by --global: no
+	// skill file should exist anywhere under it.
+	if entries, err := os.ReadDir(workspace); err != nil {
+		t.Fatalf("ReadDir(workspace) error = %v", err)
+	} else if len(entries) != 0 {
+		t.Fatalf("workspace = %v, want no files written when --global is given", entries)
+	}
+}
+
+// TestInstallMoltnetSkillGlobalIgnoresRuntime confirms --global's target set
+// does not change based on --runtime: the whole point of --global is
+// reaching every agent home regardless of which runtime happens to read the
+// file next (see installMoltnetSkillGlobal's doc comment), so a --runtime
+// that would normally narrow the workspace placement (e.g. "claude-code" to
+// just ~/.claude/) must not narrow the global one.
+func TestInstallMoltnetSkillGlobalIgnoresRuntime(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	captureStdout(t, func() {
+		if err := run(context.Background(), []string{
+			"skill", "install", "--global", "--runtime", "claude-code",
+		}, "test"); err != nil {
+			t.Fatalf("run() skill install --global --runtime claude-code error = %v", err)
+		}
+	})
+
+	for _, targetPath := range []string{
+		filepath.Join(home, ".claude", "skills", "moltnet", "SKILL.md"),
+		filepath.Join(home, ".codex", "skills", "moltnet", "SKILL.md"),
+		filepath.Join(home, ".agents", "skills", "moltnet", "SKILL.md"),
+	} {
+		assertFileExists(t, targetPath)
+	}
+}
+
+// TestInstallMoltnetSkillDefaultWorkspaceBehaviorIsUnchanged pins the
+// no-flags-at-all workspace path: --global is purely additive/opt-in, so
+// its introduction must not change what a plain "skill install --workspace
+// <path>" does. This exercise necessarily also exercises the --runtime
+// default fix (PLAN 7C.4's second requirement): with no --runtime given at
+// all, the arbitrary "openclaw" default is gone, so this lands at the
+// generic .agents/skills/moltnet/SKILL.md path every runtime can read,
+// mirroring TestInstallMoltnetSkillUnknownRuntimeIsAccepted's assertion
+// that "no known runtime" and "unknown runtime name" behave identically.
+func TestInstallMoltnetSkillDefaultWorkspaceBehaviorIsUnchanged(t *testing.T) {
+	workspace := t.TempDir()
+
+	output := captureStdout(t, func() {
+		if err := run(context.Background(), []string{
+			"skill", "install", "--workspace", workspace,
+		}, "test"); err != nil {
+			t.Fatalf("run() skill install error = %v", err)
+		}
+	})
+
+	targetPath := filepath.Join(workspace, ".agents", "skills", "moltnet", "SKILL.md")
+	if !strings.Contains(output, targetPath) {
+		t.Fatalf("skill install output = %q, want it to name %q", output, targetPath)
+	}
+	assertFileExists(t, targetPath)
+
+	// The old default's openclaw-specific path must NOT have been written.
+	openclawPath := filepath.Join(workspace, "skills", "moltnet", "SKILL.md")
+	if _, err := os.Stat(openclawPath); err == nil {
+		t.Fatalf("openclaw path %q exists, want the arbitrary openclaw default gone", openclawPath)
 	}
 }
 

@@ -19,6 +19,12 @@ import (
 type targetRef struct {
 	id   string
 	kind string
+	// roomID is only ever set for a thread target (protocol.TargetKindThread),
+	// by resolveThreadTarget, once the thread's parent room is known — see
+	// resolveThreadTarget's doc comment for why a thread's authorization and
+	// wire representation both reduce to its room's. Room and DM targets
+	// never populate this; it stays "".
+	roomID string
 }
 
 // errClientConfigNotFound is loadClientConfig's sentinel for "explicitPath
@@ -140,11 +146,11 @@ func printJSON(value any) error {
 func parseTarget(value string) (targetRef, error) {
 	kind, id, ok := strings.Cut(strings.TrimSpace(value), ":")
 	if !ok || strings.TrimSpace(id) == "" {
-		return targetRef{}, fmt.Errorf("target must be room:<id> or dm:<id>")
+		return targetRef{}, fmt.Errorf("target must be room:<id>, thread:<id>, or dm:<id>")
 	}
 
 	switch kind {
-	case protocol.TargetKindRoom, protocol.TargetKindDM:
+	case protocol.TargetKindRoom, protocol.TargetKindThread, protocol.TargetKindDM:
 	default:
 		return targetRef{}, fmt.Errorf("unsupported target kind %q", kind)
 	}
@@ -155,21 +161,58 @@ func parseTarget(value string) (targetRef, error) {
 	}, nil
 }
 
+// resolveThreadTarget looks up which room a thread target lives in, via the
+// server, and records it on the returned targetRef's roomID. It is a no-op
+// (returns target unchanged) for anything other than a thread target, so
+// callers can call it unconditionally.
+//
+// PLAN 7C.3's thread-to-room authorization rule: a thread carries no
+// membership or write-policy of its own. pkg/protocol/types.go's
+// ValidateTarget requires target.room_id on every thread-kind Target, and
+// the server resolves every thread read/write through that same room's own
+// canReadRoom/canWriteRoom — internal/rooms/access_policy.go's
+// roomForWrite (for send) and internal/rooms/query.go's GetThreadContext /
+// service_collections.go's ListThreadMessagesContext (for read) all look up
+// thread.RoomID and then defer entirely to the room check. A thread's
+// authorization *is* its room's authorization, nothing more and nothing
+// less, so the client mirrors that same resolution here before running its
+// own local ensureTargetAllowed room check, instead of inventing a separate
+// thread-level rule the server has no equivalent for.
+//
+// This doubles as where request.Target.RoomID comes from for `send` — the
+// wire Target for a thread message requires it (see send.go) regardless of
+// whether the local authorization check below even runs (it is skipped in
+// the zero-setup operator fallback), since the server's own validation
+// requires it unconditionally too.
+func resolveThreadTarget(ctx context.Context, client *moltnetclient.Client, target targetRef) (targetRef, error) {
+	if target.kind != protocol.TargetKindThread {
+		return target, nil
+	}
+
+	thread, err := client.GetThread(ctx, target.id)
+	if err != nil {
+		return targetRef{}, fmt.Errorf("resolve thread %q: %w", target.id, err)
+	}
+	roomID := strings.TrimSpace(thread.RoomID)
+	if roomID == "" {
+		return targetRef{}, fmt.Errorf("thread %q has no room recorded on the server", target.id)
+	}
+	target.roomID = roomID
+	return target, nil
+}
+
 func ensureTargetAllowed(attachment clientconfig.AttachmentConfig, target targetRef) error {
 	switch target.kind {
 	case protocol.TargetKindRoom:
-		for _, room := range attachment.Rooms {
-			if room.ID == target.id {
-				if room.Access != nil && !room.Access.CanWrite {
-					return fmt.Errorf("room %q is read-only for member %q: %s", target.id, attachment.MemberID, room.Access.Reason)
-				}
-				if room.CanWrite != nil && !*room.CanWrite {
-					return fmt.Errorf("room %q is read-only for member %q", target.id, attachment.MemberID)
-				}
-				return nil
-			}
+		return ensureRoomAllowed(attachment, target.id)
+	case protocol.TargetKindThread:
+		if strings.TrimSpace(target.roomID) == "" {
+			return fmt.Errorf("thread %q room was not resolved before authorization", target.id)
 		}
-		return fmt.Errorf("room %q is not attached for member %q", target.id, attachment.MemberID)
+		if err := ensureRoomAllowed(attachment, target.roomID); err != nil {
+			return fmt.Errorf("thread %q: %w", target.id, err)
+		}
+		return nil
 	case protocol.TargetKindDM:
 		if attachment.DMs == nil || !attachment.DMs.Enabled {
 			return fmt.Errorf("direct messages are not enabled for member %q", attachment.MemberID)
@@ -178,6 +221,25 @@ func ensureTargetAllowed(attachment clientconfig.AttachmentConfig, target target
 	default:
 		return fmt.Errorf("unsupported target kind %q", target.kind)
 	}
+}
+
+// ensureRoomAllowed is ensureTargetAllowed's room-membership check, factored
+// out so a thread target (whose authorization is its parent room's, see
+// resolveThreadTarget) can run the exact same check against its resolved
+// roomID instead of a duplicated copy of this logic.
+func ensureRoomAllowed(attachment clientconfig.AttachmentConfig, roomID string) error {
+	for _, room := range attachment.Rooms {
+		if room.ID == roomID {
+			if room.Access != nil && !room.Access.CanWrite {
+				return fmt.Errorf("room %q is read-only for member %q: %s", roomID, attachment.MemberID, room.Access.Reason)
+			}
+			if room.CanWrite != nil && !*room.CanWrite {
+				return fmt.Errorf("room %q is read-only for member %q", roomID, attachment.MemberID)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("room %q is not attached for member %q", roomID, attachment.MemberID)
 }
 
 func buildFromActor(attachment clientconfig.AttachmentConfig) protocol.Actor {
