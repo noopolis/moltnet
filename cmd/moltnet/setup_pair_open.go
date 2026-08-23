@@ -30,7 +30,7 @@ const setupPairOpenUpPlaceholderSubdomain = "<name>"
 // Enter-through-everything run reaching this branch must refuse here, before
 // resolveSetupCloudflareToken or any Cloudflare call, rather than let the
 // claim get burned only to fail one step later.
-var errSetupPairDefaultNetworkID = errors.New(`setup: "open it up" needs a distinct network id`)
+var errSetupPairDefaultNetworkID = errors.New(`setup: "invite a friend" needs a distinct network id`)
 
 // TODO(setup-p2): no PTY coverage exists for any Q7 prompt in this file --
 // every test drives Q7.1/Q7.2 through withPromptAnswers, so the raw-mode
@@ -174,13 +174,20 @@ func resolveSetupCloudflareToken(configPath string) (string, error) {
 		return token, nil
 	}
 
-	fmt.Fprintln(stdout, "  create a Cloudflare API token at https://dash.cloudflare.com/profile/api-tokens (the \"Edit Cloudflare Workers\" template)")
-	pasted, err := promptHidden("  Cloudflare API token (input hidden): ")
+	// Uses relay deploy's own shared guidance (relay_deploy_guidance.go)
+	// rather than a second, hand-written line: that one prints the deep link
+	// with the required permission group already selected and the token name
+	// pre-filled, so the operator clicks Continue → Create Token → copy
+	// instead of hunting for the right template by hand. Setup previously
+	// printed a bare dashboard URL here, which sent the operator to an empty
+	// token form and left them to find the permission themselves.
+	fmt.Fprint(stdout, cloudflareTokenCreationGuidance())
+	pasted, err := promptHidden("  paste token (input hidden): ")
 	if err != nil && !errors.Is(err, errTerminalEchoUnavailable) {
 		return "", err
 	}
 	if pasted == "" {
-		return "", fmt.Errorf(`"open it up" needs a Cloudflare API token to deploy the relay; rerun once one is ready, or choose "not now"`)
+		return "", fmt.Errorf(`"invite a friend" needs a Cloudflare API token to deploy the relay; rerun once one is ready, or choose "not now"`)
 	}
 	return pasted, nil
 }

@@ -145,8 +145,8 @@ func askSetupNetworkID(ctx context.Context, defaultID string) (string, error) {
 // never silently proposing to widen or narrow it.
 func askSetupWideBind(ctx context.Context, defaultWide bool) (bool, error) {
 	options := []selectOption{
-		{label: "this machine only"},
-		{label: "all network interfaces", hint: "⚠ reachable from your LAN"},
+		{label: "this machine only", hint: "only agents running on this computer"},
+		{label: "all network interfaces", hint: "⚠ any device on your LAN, over plain HTTP"},
 	}
 	defaultIndex := 0
 	if defaultWide {
@@ -188,9 +188,9 @@ func setupDefaultRooms() []string {
 // questions of their own.
 func askSetupRooms(ctx context.Context) ([]string, error) {
 	options := []selectOption{
-		{label: "keep \"general\""},
-		{label: "rename"},
-		{label: "add more"},
+		{label: "keep \"general\"", hint: "one room, ready to talk in"},
+		{label: "rename", hint: "call that first room something else"},
+		{label: "add more", hint: "several rooms, named now"},
 	}
 	index, err := setupPromptSelect(ctx, "Rooms", options, 0)
 	if err != nil {
@@ -259,7 +259,10 @@ func printExistingRoomsReadOnly(roomIDs []string) {
 // (runSetup's caller skips straight to answers.service = false — see
 // SETUP.md's table: "skipped entirely when Q1 = in this folder").
 func askSetupService(ctx context.Context) (bool, error) {
-	options := []selectOption{{label: "yes"}, {label: "no"}}
+	options := []selectOption{
+		{label: "yes", hint: "starts on login, restarts if it crashes"},
+		{label: "no", hint: "you run `moltnet start` when you want it"},
+	}
 	index, err := setupPromptSelect(ctx, "Run as a service?", options, 0)
 	if err != nil {
 		return false, err
@@ -280,9 +283,9 @@ func setupServiceFromIndex(index int) bool {
 // needs.
 func askSetupConnect(ctx context.Context) (setupConnectChoice, error) {
 	options := []selectOption{
-		{label: "not now"},
-		{label: "open it up"},
-		{label: "I have a code"},
+		{label: "not now", hint: "just my own agents; you can pair later"},
+		{label: "invite a friend", hint: "deploy a relay, get a code to send them"},
+		{label: "I have a code", hint: "a friend already sent you an invite"},
 	}
 	index, err := setupPromptSelect(ctx, "Connect to another network?", options, 0)
 	if err != nil {

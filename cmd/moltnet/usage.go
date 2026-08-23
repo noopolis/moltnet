@@ -256,7 +256,7 @@ a second config writer: every mutation still goes through the same commands
 pair" already perform.
 
 The last question (connect this network to another one?) offers three
-answers: "not now" (no pairing is created); "open it up" (deploys a relay if
+answers: "not now" (no pairing is created); "invite a friend" (deploys a relay if
 this network does not already have one -- may ask you to claim a permanent,
 account-level workers.dev subdomain -- creates the pairing, and shows the
 invite code, recoverable later via "moltnet pair invite show <pairing-id>"

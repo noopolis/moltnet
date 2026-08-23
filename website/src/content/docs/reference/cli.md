@@ -344,7 +344,7 @@ Six questions, each with a default:
 3. **Reachable from?** — *this machine only*, or *all network interfaces*. The warning on the second option is computed from the resolved config, not static.
 4. **Rooms** — keep `general`, rename it, or add more.
 5. **Run as a service?** — skipped for project scope, which is foreground-only in v1; it prints `moltnet start` instead.
-6. **Connect to another network?** — *not now*, *open it up*, or *I have a code*.
+6. **Connect to another network?** — *not now*, *invite a friend*, or *I have a code*.
 
 Widening the bind is a real exposure change. The server is plain HTTP with no TLS, so every credential crosses the network in clear text; and the open posture this wizard exclusively authors also means anonymous read of public rooms — full history and the live SSE stream — plus a write-capable token for anyone who self-registers.
 
@@ -375,7 +375,7 @@ Those commands name `--config` with the resolved absolute path rather than `--id
 
 Re-running `setup` against an existing network **adopts** it instead of clobbering it. A network not in the open posture this wizard authors is a hand-off, not a question it can continue past — it names `moltnet validate`/`moltnet room create`/`moltnet admin` instead. One that matches skips `init` outright, shows its existing rooms read-only (pointing at `moltnet room create` for more), and finishes whatever durable steps — pairing, the service — are still missing. One whose id or bind family conflicts with the answers just given is refused before anything is written, naming the honest manual fix (a different `--id`, or a hand-edit plus restart) rather than a reconciliation command this CLI doesn't have.
 
-**Open it up** deploys a relay, creates the pairing, and shows the invite code:
+**Invite a friend** deploys a relay, creates the pairing, and shows the invite code:
 
 - The wizard prompts for a Cloudflare API token itself, with hidden input, when none is available — a piped child process can never prompt for a secret.
 - It asks for a `workers.dev` subdomain only when the account has no claim yet, and says plainly that the claim is permanent. Cloudflare allows exactly one, ever.
