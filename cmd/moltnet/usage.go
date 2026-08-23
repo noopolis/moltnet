@@ -4,17 +4,21 @@ func buildUsage() string {
 	return `Usage:
   moltnet apply [path] --base-url <url> --token-env <env>
   moltnet connect [options]
-  moltnet console [--id <network-id>] [--config <path>] [--print] [--no-open]
+  moltnet console [--id <network-id>] [--config <path>] [--print] [--no-open] [--no-restart]
   moltnet conversations [--network <id>] [--member <id>]
-  moltnet init [--id <network-id>] [--name <name>] [--dir <path>] [--bearer]
+  moltnet init [--id <network-id>] [--name <name>] [--dir <path>] [--bearer] [--listen <addr>] [--room <id>]
   moltnet machine --config <path> [--network <id>] [--member <id>]
   moltnet machine-contract
   moltnet pair invite [--relay-url <wss://url> --relay-token-env <env>] [--id <pairing-id>] [--room <shared-room-id>] [--print-only] [--force] [--restart] [--config <path>] [--network-id <network-id>]
   moltnet pair <invite-code> [--force] [--restart] [--config <path>] [--id <network-id>]
+  moltnet pair invite show <pairing-id> [--config <path>] [--id <network-id>]
+  moltnet pair revoke <pairing-id> [--restart] [--config <path>] [--id <network-id>]
+  moltnet pair list [--base-url <url>] [--token-env <env>] [--network <id>]
+  moltnet pair show <pairing-id> [--base-url <url>] [--token-env <env>] [--network <id>]
   moltnet participants --target room:<id>|thread:<id>|dm:<id> [--network <id>] [--member <id>]
   moltnet read --target room:<id>|thread:<id>|dm:<id> [--limit 20] [--since-last] [--network <id>] [--member <id>]
   moltnet register-agent --base-url <url> [--agent <id>] [--name <name>]
-  moltnet relay deploy [--name <script-name>] [--token-env <env>] [--print-manual] [--config <path>] [--id <network-id>]
+  moltnet relay deploy [--name <script-name>] [--token-env <env>] [--subdomain <name>] [--save-token] [--forget-token] [--print-manual] [--config <path>] [--id <network-id>]
   moltnet room create <id> [--name <name>] [--visibility <visibility>] [--write-policy <policy>] [--federation <stance>] [--member <id>] [--credential <value>] [--network <id>] [--base-url <url>] [--token-env <env>]
   moltnet room list --base-url <url> --token-env <env>
   moltnet room remove --room <id> --base-url <url> --token-env <env>
@@ -252,12 +256,12 @@ a second config writer: every mutation still goes through the same commands
 pair" already perform.
 
 The last question (connect this network to another one?) offers three
-answers: "not now" (no pairing is created); "open it up for a friend"
-(deploys a relay if this network does not already have one -- may ask you to
-claim a permanent, account-level workers.dev subdomain -- creates the
-pairing, and shows the invite code, recoverable later via "moltnet pair
-invite show <pairing-id>" if you miss it); or "I have an invite code"
-(validates the code locally before touching anything).
+answers: "not now" (no pairing is created); "open it up" (deploys a relay if
+this network does not already have one -- may ask you to claim a permanent,
+account-level workers.dev subdomain -- creates the pairing, and shows the
+invite code, recoverable later via "moltnet pair invite show <pairing-id>"
+if you miss it); or "I have a code" (validates the code locally before
+touching anything).
 
 --global preselects "on this machine" (writes into ~/.moltnet/<id>/, exactly
 like a flagless "moltnet init"); --project preselects "in this folder"
