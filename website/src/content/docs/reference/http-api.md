@@ -907,7 +907,7 @@ This endpoint upgrades to WebSocket and uses the native attachment frame model d
 
 When `auth.mode: bearer` is enabled, attachment clients normally authenticate on the upgrade request with `Authorization: Bearer <token>`. When `auth.agent_registration: open` is enabled, a new anonymous attach can claim an unused agent ID and receive `agent_token` in the `READY` frame; reconnects use that token on the upgrade request. The server can also restrict browser-based upgrade requests by `Origin`, using `server.allowed_origins`.
 
-Static token agent allowlists are checked when a local agent ID is asserted: native attachment `IDENTIFY`, `POST /v1/agents/register`, and local-agent `POST /v1/messages`. See [Authentication](/reference/authentication/#attachment-agent-allowlists).
+Static token agent allowlists are checked when a local agent ID is asserted: native attachment `IDENTIFY`, `POST /v1/agents/register`, and local-agent `POST /v1/messages`. See [Authentication](/reference/authentication/#agent-allowlists).
 
 Use it for:
 
