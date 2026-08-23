@@ -35,7 +35,7 @@ func writeServiceTestConfig(t *testing.T, path string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir %q: %v", filepath.Dir(path), err)
 	}
-	if err := os.WriteFile(path, []byte(defaultMoltnetConfig("acme", "Acme Moltnet")), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(defaultMoltnetConfig("acme", "Acme Moltnet", "test-operator-token")), 0o600); err != nil {
 		t.Fatalf("write %q: %v", path, err)
 	}
 }
@@ -150,6 +150,90 @@ func TestRunServiceCommandUnknownSubcommand(t *testing.T) {
 	err := run(context.Background(), []string{"service", "wat"}, "test")
 	if err == nil {
 		t.Fatal("expected an error for an unknown service subcommand")
+	}
+}
+
+// TestServiceInstallNextStepsGoldenThreeIntents is P2-2's coverage fix: no
+// test previously referenced runServiceInstall or
+// printServiceInstallNextSteps at all, so PLAN.md 7A.4's three-intent fork
+// (local agents only / open up via relay / join an existing network) was
+// entirely unpinned -- a regression collapsing it back to a single generic
+// nudge, dropping a line, or reordering them would have passed every test
+// in the repo. This pins the exact three lines, in order, against a real
+// config on disk.
+func TestServiceInstallNextStepsGoldenThreeIntents(t *testing.T) {
+	directory := t.TempDir()
+	configPath := filepath.Join(directory, "Moltnet")
+	writeServiceTestConfig(t, configPath)
+
+	output := captureStdout(t, func() {
+		if err := printServiceInstallNextSteps(service.Spec{NetworkID: "acme", ConfigPath: configPath}); err != nil {
+			t.Fatalf("printServiceInstallNextSteps() error = %v", err)
+		}
+	})
+
+	wantLines := []string{
+		"http://127.0.0.1:8787/install.md",
+		"local agents only: point them here to join",
+		"moltnet relay deploy --id acme",
+		"open it up: relay on Cloudflare (pair across NAT)",
+		"moltnet pair '<invite-code>'",
+		"join a network someone already invited you to",
+	}
+	for _, want := range wantLines {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected next-steps output to contain %q, got %q", want, output)
+		}
+	}
+	if strings.Count(output, "next:") != 3 {
+		t.Fatalf("expected exactly 3 next: lines (the three-intent fork), got %d in %q", strings.Count(output, "next:"), output)
+	}
+
+	// Round 2's P3 fix: the doc comment above pins these "in order," but
+	// nothing here actually asserted an order -- a regression reordering the
+	// three intents (e.g. swapping "open it up" and "join a network") passed
+	// every check above unchanged, since strings.Contains and a bare line
+	// count are both order-blind. Comparing successive strings.Index results
+	// closes that: each wanted string's index must strictly increase.
+	lastIndex := -1
+	for _, want := range wantLines {
+		index := strings.Index(output, want)
+		if index <= lastIndex {
+			t.Fatalf("expected %q to appear after the preceding line in order, got output %q", want, output)
+		}
+		lastIndex = index
+	}
+}
+
+// TestServiceInstallNextStepsFallsBackWhenConfigUnreadable is P2-3's fix:
+// `manager.Install` (runServiceInstall's caller) has already installed and
+// started the service by the time printServiceInstallNextSteps runs -- the
+// config reload here only picks a real base URL for the /install.md line,
+// a cosmetic nicety, not remaining required work. An unreadable config used
+// to turn that into a returned error, which runServiceInstall propagates as
+// a non-zero exit from a command that already succeeded at the one thing it
+// promised to do. This must instead fall back to the old generic
+// "relay deploy" line and report no error at all.
+func TestServiceInstallNextStepsFallsBackWhenConfigUnreadable(t *testing.T) {
+	spec := service.Spec{
+		NetworkID:  "acme",
+		ConfigPath: filepath.Join(t.TempDir(), "does-not-exist", "Moltnet"),
+	}
+
+	output := captureStdout(t, func() {
+		if err := printServiceInstallNextSteps(spec); err != nil {
+			t.Fatalf("printServiceInstallNextSteps() error = %v, want nil (fallback, not failure)", err)
+		}
+	})
+
+	if !strings.Contains(output, "moltnet relay deploy --id acme") {
+		t.Fatalf("expected the generic relay deploy fallback line, got %q", output)
+	}
+	if strings.Contains(output, "/install.md") || strings.Contains(output, "invite-code") {
+		t.Fatalf("expected only the generic fallback line when the config can't load, got %q", output)
+	}
+	if strings.Count(output, "next:") != 1 {
+		t.Fatalf("expected exactly 1 next: line on the fallback path, got %d in %q", strings.Count(output, "next:"), output)
 	}
 }
 

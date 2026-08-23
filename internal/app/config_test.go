@@ -23,6 +23,32 @@ func TestConfigFromEnvDefaults(t *testing.T) {
 	if config.Version != "1.2.3" {
 		t.Fatalf("unexpected version %q", config.Version)
 	}
+	// F3 regression: an absent config must default to the permissive
+	// posture. 7B.2 shipped this defaulting to true on the mistaken
+	// assumption that the inviting side's pair credential gets its network
+	// binding filled in later; nothing does that, so a strict default left
+	// every `pair invite` inviter permanently unable to receive from its own
+	// invited peer (see config_load.go's defaultConfig doc comment).
+	if config.Auth.RequirePairNetworkBinding {
+		t.Fatalf("expected RequirePairNetworkBinding to default to false, got %#v", config.Auth)
+	}
+}
+
+// TestConfigFromEnvRequirePairNetworkBindingExplicitFalse pins the permissive
+// posture when it is set explicitly, not just when it is left absent --
+// distinguishing "the default is false" (TestConfigFromEnvDefaults above)
+// from "an explicit false is honored", so a future default flip cannot pass
+// this file's tests by accident.
+func TestConfigFromEnvRequirePairNetworkBindingExplicitFalse(t *testing.T) {
+	t.Setenv("MOLTNET_REQUIRE_PAIR_NETWORK_BINDING", "false")
+
+	config, err := ConfigFromEnv("1.2.3")
+	if err != nil {
+		t.Fatalf("ConfigFromEnv() error = %v", err)
+	}
+	if config.Auth.RequirePairNetworkBinding {
+		t.Fatalf("expected explicit MOLTNET_REQUIRE_PAIR_NETWORK_BINDING=false to be honored, got %#v", config.Auth)
+	}
 }
 
 func TestConfigFromEnvSupportsStorageOverrides(t *testing.T) {

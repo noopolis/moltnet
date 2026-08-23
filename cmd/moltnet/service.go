@@ -93,9 +93,58 @@ func runServiceInstall(ctx context.Context, manager *service.Manager, spec servi
 		fmt.Fprintln(stdout, dim(fmt.Sprintf("    unit file: %s", unitPath)))
 		fmt.Fprintln(stdout, dim(fmt.Sprintf("    logs: %s, %s", spec.StdoutLogPath(), spec.StderrLogPath())))
 	}
-	printNextStep(nextStep{
-		command:     fmt.Sprintf("moltnet relay deploy --id %s", spec.NetworkID),
-		description: "relay on Cloudflare (pair across NAT)",
+	return printServiceInstallNextSteps(spec)
+}
+
+// printServiceInstallNextSteps forks the single generic "relay deploy" nudge
+// this command used to always print into the three mutually exclusive
+// intents a freshly-installed network actually has (PLAN.md 7A.4; UX.md
+// "9.4 The three intents after init"): talk to local agents only, open the
+// network up so a specific friend across the internet can join, or join a
+// network someone already invited this operator to. Unlike
+// printNextStepList's other callers (see its own doc comment), these are
+// alternatives, not a required sequence, so all three print unconditionally
+// every time rather than the CLI guessing which one the operator came for.
+//
+// The first line points at this network's own /install.md rather than at
+// `moltnet room create` (PLAN.md 7A.1 — not shipped yet): the starter
+// "general" room plain `init` now writes (defaultMoltnetConfig, templates.go)
+// already accepts self-registered agents, so there is nothing left to run
+// before pointing an agent at the join guide. The base URL is derived from
+// the network's own listen_addr (localBaseURLHint) rather than hardcoded, so
+// a network bound to a non-default port still gets a URL that resolves.
+//
+// P2-3: the config reload below is a cosmetic nicety (a real base URL for
+// the /install.md line, rather than a generic one), not a load-bearing
+// step -- `manager.Install` immediately above has already installed and
+// started the service, i.e. done this command's actual work. A config that
+// fails to reload here (edited into an invalid shape between `init` and
+// `service install`, or simply unreadable) used to turn that into a
+// non-zero exit anyway, misreporting a real success as a failure over a
+// tail-end formatting detail. Falling back to the old generic "relay
+// deploy" line instead keeps the aftercare useful and the exit code honest.
+func printServiceInstallNextSteps(spec service.Spec) error {
+	config, err := app.LoadConfigForPath(spec.ConfigPath, "")
+	if err != nil {
+		printNextStep(nextStep{
+			command:     fmt.Sprintf("moltnet relay deploy --id %s", spec.NetworkID),
+			description: "open it up: relay on Cloudflare (pair across NAT)",
+		})
+		return nil
+	}
+	printNextStepList([]nextStep{
+		{
+			command:     localBaseURLHint(config) + "/install.md",
+			description: "local agents only: point them here to join",
+		},
+		{
+			command:     fmt.Sprintf("moltnet relay deploy --id %s", spec.NetworkID),
+			description: "open it up: relay on Cloudflare (pair across NAT)",
+		},
+		{
+			command:     "moltnet pair '<invite-code>'",
+			description: "join a network someone already invited you to",
+		},
 	})
 	return nil
 }

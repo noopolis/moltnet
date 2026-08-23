@@ -175,6 +175,18 @@ func exitCodeForSignal(sig os.Signal) int {
 		return 128 + 2
 	case syscall.SIGTERM:
 		return 128 + 15
+	case syscall.SIGTSTP:
+		// disableTerminalEcho's own signal loop (above) never actually
+		// reaches this arm -- it special-cases SIGTSTP itself (suspend,
+		// wait for SIGCONT, resume) before ever calling exitCodeForSignal.
+		// enableRawSelectMode (setup_prompt_select_raw_unix.go) has no such
+		// special-casing: its signal goroutine restores termios and calls
+		// os.Exit(exitCodeForSignal(sig)) unconditionally, so SIGTSTP used
+		// to fall through to the default case below and exit 1 --
+		// indistinguishable from a genuine setup failure to a wrapper
+		// script. This gives it the same distinguishable, conventional
+		// 128+signal code every other signal here already gets.
+		return 128 + int(syscall.SIGTSTP)
 	default:
 		return 1
 	}

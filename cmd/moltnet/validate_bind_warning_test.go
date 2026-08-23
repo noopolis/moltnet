@@ -13,7 +13,7 @@ import (
 func TestRunValidateWarnsOnNonLoopbackOpenRegistration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "Moltnet")
 	contents := strings.Replace(
-		defaultMoltnetConfig("acme", "Acme Moltnet"),
+		defaultMoltnetConfig("acme", "Acme Moltnet", "test-operator-token"),
 		`listen_addr: "127.0.0.1:8787"`,
 		`listen_addr: "0.0.0.0:8787"`,
 		1,
@@ -39,7 +39,7 @@ func TestRunValidateWarnsOnNonLoopbackOpenRegistration(t *testing.T) {
 // registration) must never warn — nothing off-machine can reach it.
 func TestRunValidateSilentOnDefaultLoopbackConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "Moltnet")
-	writeNodeConfig(t, path, defaultMoltnetConfig("acme", "Acme Moltnet"))
+	writeNodeConfig(t, path, defaultMoltnetConfig("acme", "Acme Moltnet", "test-operator-token"))
 
 	output := captureStdout(t, func() {
 		if err := runValidate([]string{path}); err != nil {
@@ -62,7 +62,7 @@ func TestRunValidateSilentOnDefaultLoopbackConfig(t *testing.T) {
 func TestRunValidateSilentOnNonLoopbackWithoutOpenRegistration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "Moltnet")
 	contents := strings.Replace(
-		bearerMoltnetConfig("acme", "Acme Moltnet", "operator-token-value", "console-token-value"),
+		bearerMoltnetConfig("acme", "Acme Moltnet", "operator-token-value", "console-token-value", "127.0.0.1:8787"),
 		`listen_addr: "127.0.0.1:8787"`,
 		`listen_addr: "0.0.0.0:8787"`,
 		1,
@@ -113,7 +113,7 @@ func TestRunValidateWarnsOnNonLoopbackModeNone(t *testing.T) {
 // app.LoadConfigForPath) would warn about the moment it actually started.
 func TestRunValidateSeesListenAddrEnvOverride(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "Moltnet")
-	writeNodeConfig(t, path, defaultMoltnetConfig("acme", "Acme Moltnet"))
+	writeNodeConfig(t, path, defaultMoltnetConfig("acme", "Acme Moltnet", "test-operator-token"))
 
 	t.Setenv("MOLTNET_LISTEN_ADDR", "0.0.0.0:8787")
 	output := captureStdout(t, func() {

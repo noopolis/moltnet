@@ -48,7 +48,7 @@ func TestRunNodeResolvesNetworkByID(t *testing.T) {
 	if err := os.MkdirAll(acmeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(acmeDir, "MoltnetNode"), []byte(defaultMoltnetNodeConfig("acme")), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(acmeDir, "MoltnetNode"), []byte(defaultMoltnetNodeConfig("acme", "http://127.0.0.1:8787")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

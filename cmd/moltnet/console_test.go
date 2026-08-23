@@ -67,7 +67,7 @@ func withOutputTerminal(t *testing.T, tty bool) {
 // defaultMoltnetConfig text so it stays in sync with the schema.
 func writeConsoleTestConfig(t *testing.T, path, networkID, listenAddr string) {
 	t.Helper()
-	body := strings.Replace(defaultMoltnetConfig(networkID, networkID+" Moltnet"), `listen_addr: "127.0.0.1:8787"`, `listen_addr: "`+listenAddr+`"`, 1)
+	body := strings.Replace(defaultMoltnetConfig(networkID, networkID+" Moltnet", "test-operator-token"), `listen_addr: "127.0.0.1:8787"`, `listen_addr: "`+listenAddr+`"`, 1)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir %q: %v", filepath.Dir(path), err)
 	}

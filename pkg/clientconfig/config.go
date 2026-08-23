@@ -118,13 +118,24 @@ func (c Config) Validate() error {
 		return fmt.Errorf("attachments must contain at least one entry")
 	}
 
-	seen := make(map[string]struct{}, len(c.Attachments))
+	// P2 (final-gate review): joining NetworkID and MemberID with a "::"
+	// separator collides whenever either grammar-permitted id itself
+	// contains a colon -- ("a", "b:c::d") and ("a::b:c", "d") both produce
+	// the string "a::b:c::d". This is the fourth instance of the same
+	// `:`-in-ids class this phase has found and fixed elsewhere; a
+	// two-field struct key sidesteps the whole class instead of picking a
+	// separator no id can contain.
+	type attachmentKey struct {
+		networkID string
+		memberID  string
+	}
+	seen := make(map[attachmentKey]struct{}, len(c.Attachments))
 	for index, attachment := range c.Attachments {
 		if err := attachment.Validate(); err != nil {
 			return fmt.Errorf("attachments[%d]: %w", index, err)
 		}
 
-		key := attachment.NetworkID + "::" + attachment.MemberID
+		key := attachmentKey{networkID: attachment.NetworkID, memberID: attachment.MemberID}
 		if _, ok := seen[key]; ok {
 			return fmt.Errorf("duplicate attachment for network %q and member %q", attachment.NetworkID, attachment.MemberID)
 		}

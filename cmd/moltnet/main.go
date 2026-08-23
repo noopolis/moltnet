@@ -42,13 +42,17 @@ func main() {
 			// sentinel-matching pattern as context.Canceled below.
 			os.Exit(0)
 		}
-		if errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) || errors.Is(err, errSetupCancelled) {
 			// A command aborted on ctx.Err() after SIGINT/SIGTERM (runCLI's
 			// signal.NotifyContext, cli.go) — e.g. runInit mid-animation or
-			// mid-prompt. The signal itself already told the operator what
-			// happened; printing "error: context canceled" on top of that
-			// would just be noise. Exit 130 is the conventional 128+SIGINT
-			// code shells expect from an interrupted command.
+			// mid-prompt — or promptSelect's own errSetupCancelled sentinel
+			// (setup_prompt_select.go), the scripted-0x03/ISIG-disabled
+			// select-cancel path that never reaches ctx cancellation at all
+			// (see its own doc comment). Either way the operator already
+			// knows they cancelled; printing "error: context canceled" or
+			// "error: setup: cancelled" on top of that would just be noise.
+			// Exit 130 is the conventional 128+SIGINT code shells expect
+			// from an interrupted command, for both cancellation paths.
 			os.Exit(130)
 		}
 		if errors.Is(err, errConsoleServerDown) {

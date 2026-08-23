@@ -29,14 +29,18 @@ func printNextStep(step nextStep) {
 	printNextStepList([]nextStep{step})
 }
 
-// printNextStepList is printNextStep's multi-line counterpart for the one
-// remaining case where more than one command is genuinely required next —
-// not alternatives to choose between, but the same action repeated once per
-// declared shared room (`pair invite --room a --room b`). Each line gets its
-// own "next: " lead-in rather than a shared header, since there is no
-// single header that reads correctly above more than one command here. A
-// no-op for an empty slice, so callers can build it conditionally without
-// an extra guard at the call site.
+// printNextStepList is printNextStep's multi-line counterpart, used in two
+// shapes: more than one command genuinely required next — the same action
+// repeated once per declared shared room (`pair invite --room a --room b`)
+// — or, since PLAN.md 7A.4, genuine alternatives the operator picks between
+// (`service install`'s three-intent fork: local agents only, open up to a
+// friend, or join an existing network — printServiceInstallNextSteps,
+// service.go). Either way each line gets its own "next: " lead-in rather
+// than a shared header, since there is no single header that reads
+// correctly above more than one command here — for the fork case that also
+// means never implying a ranked or default choice among the three. A no-op
+// for an empty slice, so callers can build it conditionally without an
+// extra guard at the call site.
 func printNextStepList(steps []nextStep) {
 	if len(steps) == 0 {
 		return

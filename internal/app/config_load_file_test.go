@@ -101,6 +101,39 @@ pairings:
 	}
 }
 
+// TestLoadFileTrimsListenAddrWhitespace pins the fix for a real bind
+// failure: ValidateListenAddr (bind_warning.go) trims before validating, so
+// " 127.0.0.1:8787 " (leading/trailing whitespace, e.g. from a hand-edited
+// config file) passed validation, but mergeFileConfig used to assign
+// fileConfig.Server.ListenAddr into config.ListenAddr untrimmed -- so the
+// value that actually reached net.Listen at server start still carried the
+// whitespace and failed to bind, despite `moltnet validate` reporting the
+// address as fine. mergeFileConfig must now trim it the same way
+// mergeEnvConfig's envValue already trims MOLTNET_LISTEN_ADDR.
+func TestLoadFileTrimsListenAddrWhitespace(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, defaultConfigFile)
+
+	writeConfigFile(t, path, `
+version: moltnet.v1
+network:
+  id: local_lab
+server:
+  listen_addr: " 127.0.0.1:8787 "
+`)
+
+	config, err := LoadFile(path, "1.2.3")
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if config.ListenAddr != "127.0.0.1:8787" {
+		t.Fatalf("ListenAddr = %q, want the whitespace trimmed off (\"127.0.0.1:8787\")", config.ListenAddr)
+	}
+	if config.Auth.ListenAddr != config.ListenAddr {
+		t.Fatalf("Auth.ListenAddr = %q, want it to mirror the trimmed ListenAddr %q", config.Auth.ListenAddr, config.ListenAddr)
+	}
+}
+
 func TestLoadFileAppliesDefaultsAndVersion(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "Moltnet")

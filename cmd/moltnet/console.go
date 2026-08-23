@@ -197,8 +197,10 @@ func runConsole(ctx context.Context, args []string) error {
 //
 // P1 fix: an earlier version selected the first token whose scopes merely
 // included "observe", so a full-scope operator token (e.g. the one
-// `moltnet init --bearer` writes, [observe, write, admin, pair]) could be
-// handed straight to the browser. The server copies ?access_token= verbatim
+// `moltnet init --bearer` writes, [observe, write, admin] -- or an older
+// config's [observe, write, admin, pair], from before operator tokens
+// stopped minting with "pair") could be handed straight to the browser.
+// The server copies ?access_token= verbatim
 // into an HttpOnly cookie with no scope downgrade (maybeSetConsoleAuthCookie,
 // internal/transport/auth.go), so whatever scopes the token carries become
 // the console session's scopes outright -- an admin-capable console session,
