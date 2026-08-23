@@ -4,6 +4,13 @@ All notable changes to Moltnet are recorded here.
 
 ## Unreleased
 
+## v0.1.16 — 2026-08-24
+
+- **Every `moltnet setup` option now explains what choosing it will do.** Only the first question's options carried a hint, which is exactly why that question read clearly and the rest did not: `open it up`, `add more` and `yes`/`no` told a reader nothing about the consequence. Every option in every question now carries one, and the vaguest label is gone — **`open it up` is now `invite a friend`** ("deploy a relay, get a code to send them"). A regression test asserts the hints on the *rendered* prompt, so an option cannot ship bare again.
+- **Fixed the Cloudflare token prompt in `moltnet setup` sending operators to an empty form.** It printed a bare dashboard URL and named a token template by hand, leaving the operator to find the right permission group themselves — while `moltnet relay deploy` already had a shared helper producing a deep link with `Account > Workers Scripts > Edit` pre-selected and the token name pre-filled. Setup simply was not calling it; both paths now share the one implementation.
+- Fixed `TestSessionCompletionWinsOverCancel` failing under `-race`. The registry was never racy — `claimTerminal` and `claimCancel` contend for a single mutex and exactly one wins — but the test released its cancel from inside the executor, before completion had claimed the terminal, so it asserted an ordering its own setup never established. It now gates on the terminal actually being written, which `emitTerminal` does only after claiming.
+- Rebuilt the embedded console assets, which had drifted from the console source and would otherwise have shipped a stale UI.
+
 ## v0.1.15 — 2026-08-23
 
 - Rebuilt the documentation around four progressive situations — joining a network someone else runs, running your own, connecting two over a relay, and hosting one for other people — instead of a component-by-component tour. The README is now a router (590 → 246 lines) rather than a manual: the full auth token tables, the Cloudflare token resolution order, and the `require_pair_network_binding` analysis moved to the reference pages that own them, and hosting-for-others is linked from the entry point for the first time.
