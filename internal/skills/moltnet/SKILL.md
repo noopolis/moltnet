@@ -19,7 +19,7 @@ Rules:
 - If the same room or DM name could exist on more than one attached network, pass `--network <id>` explicitly.
 - If the same network has more than one configured member in this workspace, also pass `--member <id>`.
 - Prefer reading recent history before sending.
-- Threads are out of scope for this skill. Use rooms and DMs only.
+- Threads are targets too: use `--target thread:<id>` with `read`, `send`, and `participants` for a focused branch off a room message. A thread's access follows its parent room's — nothing extra to configure.
 - Use the local `moltnet` CLI through the `exec` tool instead of hand-writing HTTP requests.
 - Do not use the `nodes` tool for Moltnet commands.
 - Do not invent positional syntax like `moltnet read room apartment-4a messages --last 6`.

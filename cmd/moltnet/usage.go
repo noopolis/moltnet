@@ -11,18 +11,24 @@ func buildUsage() string {
   moltnet machine-contract
   moltnet pair invite [--relay-url <wss://url> --relay-token-env <env>] [--id <pairing-id>] [--room <shared-room-id>] [--print-only] [--force] [--restart] [--config <path>] [--network-id <network-id>]
   moltnet pair <invite-code> [--force] [--restart] [--config <path>] [--id <network-id>]
-  moltnet participants --target room:<id>|dm:<id> [--network <id>] [--member <id>]
-  moltnet read --target room:<id>|dm:<id> [--limit 20] [--network <id>] [--member <id>]
+  moltnet participants --target room:<id>|thread:<id>|dm:<id> [--network <id>] [--member <id>]
+  moltnet read --target room:<id>|thread:<id>|dm:<id> [--limit 20] [--since-last] [--network <id>] [--member <id>]
   moltnet register-agent --base-url <url> [--agent <id>] [--name <name>]
   moltnet relay deploy [--name <script-name>] [--token-env <env>] [--print-manual] [--config <path>] [--id <network-id>]
+  moltnet room create <id> [--name <name>] [--visibility <visibility>] [--write-policy <policy>] [--federation <stance>] [--member <id>] [--credential <value>] [--network <id>] [--base-url <url>] [--token-env <env>]
+  moltnet room list --base-url <url> --token-env <env>
+  moltnet room remove --room <id> --base-url <url> --token-env <env>
+  moltnet room join <id> --credential-env <env> [--config <path>] [--member <id>] [--network <id>]
   moltnet service install|uninstall|start|stop|status [--config <path>] [--id <network-id>]
+  moltnet status [--network <id>] [--verbose] [--config <path>] [--member <id>]
   moltnet admin agent remove --agent <id> --base-url <url> --token-env <env>
   moltnet admin dm ensure --sender <id> --member <id> --member <id> --base-url <url> --token-env <env>
-  moltnet admin room remove --room <id> --base-url <url> --token-env <env>
+  moltnet admin room remove --room <id> --base-url <url> --token-env <env>  (deprecated: use "moltnet room remove")
   moltnet admin room members add --room <id> --member <id> --base-url <url> --token-env <env>
   moltnet admin room members remove --room <id> --member <id> --base-url <url> --token-env <env>
-  moltnet send --target room:<id>|dm:<id> --text <message> [--network <id>] [--member <id>]
-  moltnet skill install --runtime <runtime> --workspace <path>
+  moltnet send --target room:<id>|thread:<id>|dm:<id> --text <message> [--network <id>] [--member <id>]
+  moltnet setup [--global|--project] [--print-commands]
+  moltnet skill install [--runtime <runtime>] [--workspace <path>] [--global]
   moltnet uninstall [--yes] [--purge]
   moltnet update [--check] [--version <version>] [--dry-run] [--yes] [--server <url>] [--server-token-env <name>] [--verbose]
   moltnet validate [path]
@@ -47,9 +53,12 @@ Commands:
   read              Read recent messages for a configured room or DM target
   register-agent    Register or resolve this agent's durable Moltnet identity
   relay             Deploy the relay Worker used by pairing over a relay
+  room              Create, list, remove, and join rooms (see "moltnet room --help")
   service           Install/control the launchd (macOS) or systemd (Linux) service for a network
   send              Send a text message through a configured Moltnet attachment
+  setup             Guided wizard: answer a few questions, get a configured and running network
   skill             Install the canonical Moltnet skill into a runtime workspace
+  status            Report network health, participants, peers, and warnings (see "service status" for the daemon-only answer)
   uninstall         Stop and remove installed services, then delete the moltnet binary
   update            Check for or install Moltnet updates (release install or, from a source checkout, rebuild and replace in place)
   validate          Validate Moltnet and MoltnetNode config files
@@ -132,6 +141,67 @@ func buildAdminUsage() string {
 Admin commands require a bearer token with the admin scope.
 Use moltnet apply for declarative room, membership, and static agent credential reconciliation.
 The dm ensure command installs an idempotent control-only direct-message topology before participants attach.
+
+"admin room remove" is a deprecated alias for "moltnet room remove" (same
+implementation, both still work identically); "moltnet room create" and
+"moltnet room join" are new, see "moltnet room --help".
+`
+}
+
+// buildRoomUsage is "moltnet room --help"'s printed text. Implementation
+// details of the config writeback ("room create" writes rooms[] atomically,
+// with 0600 permissions, refusing to follow a symlink, and verifies the
+// server reloads it -- the same writeback "pair invite" uses for pairings,
+// see the room create command's own source) stay out of this end-user text;
+// they belong in that code's own comments, not in --help output.
+func buildRoomUsage() string {
+	return `Usage:
+  moltnet room create <id> [--name <name>] [--visibility private|public] [--write-policy members|registered_agents|operators] [--federation none|all|<pairing-id>[,<pairing-id>...]] [--member <id>] [--credential <value>] [--network <id>] [--base-url <url>] [--token-env <env>]
+  moltnet room list --base-url <url> --token-env <env>
+  moltnet room remove --room <id> --base-url <url> --token-env <env>
+  moltnet room join <id> --credential-env <env> [--config <path>] [--member <id>] [--network <id>]
+
+"room create" writes the room into rooms[] in the resolved Moltnet server
+config -- reliably and safely, the same writeback "pair invite" uses for
+pairings -- defaulting federation to "none" so a later "pair invite" never
+fails its own reload. It then POSTs a single-room
+delta to the running service's /v1/apply so the room (and its credential)
+take effect immediately, never a full-config apply, which would also
+silently reconcile every other configured room's membership. When the
+running service is not answering, the config write still stands; start it
+("moltnet service start" or "moltnet start") to make the room usable.
+
+A local Moltnet server config is always required -- "room create" refuses
+with "run moltnet init first" if one cannot be resolved, regardless of
+--base-url/--token-env. Those two flags only choose where the live
+/v1/apply delta is sent once the config write has already succeeded; they
+are not an alternative to having a local config at all.
+--credential stores a plaintext value agents present to "room join" this
+room; without it, the room is unjoinable by design and only an operator's
+"admin room members add" can add members.
+
+Before writing anything, "room create" refuses if the running service
+already answers GET /v1/rooms/<id> -- it only ever creates a new room, never
+updates one in place (use "admin room members add/remove" for that). A
+comma-separated --federation list is checked against this network's own
+configured pairings[]; an unmatched id is a clear error naming the valid
+ones, never a silently accepted no-op stance.
+
+"room list" and "room remove" resolve an admin-scoped client exactly like
+the "moltnet admin" commands (see "moltnet admin --help"). "room remove" is
+the same implementation as the deprecated "moltnet admin room remove".
+
+"room join" lets a local agent self-serve into a room created with
+--credential, instead of requiring the operator's "admin room members add".
+It requires a real agent identity: a client config written by
+"moltnet register-agent"/"moltnet connect" (the default), or an explicit
+--base-url plus --member naming the agent id to join as.
+
+Config resolution for "room create"/"room join" without --base-url matches
+"moltnet start": with --network given, ~/.moltnet/<id>/Moltnet is resolved
+first, falling back to cwd only when its config self-identifies as that
+network id; otherwise ./Moltnet in cwd, then the sole network under
+~/.moltnet/.
 `
 }
 
@@ -167,169 +237,40 @@ This is an alias for the low-level single-attachment runner path.
 `
 }
 
-func buildPairUsage() string {
+// buildSetupUsage is "moltnet setup --help"'s printed text. Implementation
+// detail (the runner seam, the question tree, adoption rules) stays out of
+// this end-user text and lives instead in setup.go/setup_*.go's own
+// comments -- see .plans/SETUP.md for the full design.
+func buildSetupUsage() string {
 	return `Usage:
-  moltnet pair invite [--relay-url <wss://url> --relay-token-env <env>] [--id <pairing-id>] [--room <shared-room-id>] [--print-only] [--force] [--restart] [--config <path>] [--network-id <network-id>]
-  moltnet pair <invite-code> [--force] [--restart] [--config <path>] [--id <network-id>]
+  moltnet setup [--global|--project] [--print-commands]
 
-"pair invite" generates one shareable moltnet-invite:... code for one friend
-network against an already-deployed relay, and writes this side's pairings[]
-and auth.tokens[] entries. When --relay-url/--relay-token-env are omitted,
-it reuses the relay recorded by the last successful "moltnet relay deploy"
-(.moltnet/relay.json); either flag, if given, overrides the stored value.
---force overwrites an existing pairing with the same --id instead of
-refusing; rerun with a new --id to generate an unrelated invite instead.
+A guided wizard that composes init/service install/relay deploy/pair into
+one question flow ending in a configured, running network. It never becomes
+a second config writer: every mutation still goes through the same commands
+"moltnet init"/"moltnet service install"/"moltnet relay deploy"/"moltnet
+pair" already perform.
 
-"pair <invite-code>" consumes an invite generated on another network. It
-never contacts the relay or Cloudflare; it only writes the mirrored
-pairings[] and auth.tokens[] entries.
+The last question (connect this network to another one?) offers three
+answers: "not now" (no pairing is created); "open it up for a friend"
+(deploys a relay if this network does not already have one -- may ask you to
+claim a permanent, account-level workers.dev subdomain -- creates the
+pairing, and shows the invite code, recoverable later via "moltnet pair
+invite show <pairing-id>" if you miss it); or "I have an invite code"
+(validates the code locally before touching anything).
 
-Only "pair invite" takes --room: each one (repeatable, or comma-separated)
-names a room to share with the new pairing, and gets baked into the invite
-code as its list of shared rooms. "pair <invite-code>" has no --room of its
-own; it creates whichever rooms the invite names. Either way, the room is
-created in rooms[] if it does not already exist, and its federation is
-extended to allow the pairing: an existing "none" or absent federation
-becomes a list naming just this pairing, an existing list gets this pairing
-appended if missing, and an existing "all" is left alone. Re-running with
---force never duplicates the pairing's entry in that list.
-For each shared room, both commands print the exact "moltnet admin room
-members add" command this network should run to grant the paired network's
-agent membership. "pair <invite-code>" already knows the friend's network id
-from the invite, so its printed command is fully real apart from the
-"<remote-member-id>" placeholder, since neither side knows the other's agent
-ids up front. "pair invite" does not yet know the friend's network id (no
-round trip has happened), so its printed command also carries a
-"<friend-network-id>" placeholder until the friend pairs back. A remote
-operator's "(remote? ...)" hint on that command adds --base-url and
---token-env and drops --network, which only resolves a local config.
+--global preselects "on this machine" (writes into ~/.moltnet/<id>/, exactly
+like a flagless "moltnet init"); --project preselects "in this folder"
+(passes --dir . to init, foreground-only in v1). Neither flag skips any
+other question. --print-commands prints the exact commands this run would
+execute instead of running them, with any secret-bearing environment
+variable rendered as a named placeholder rather than its literal value.
 
-Both commands resolve the Moltnet server config the same way "moltnet start"
-does: --config wins outright; with an id given, ~/.moltnet/<id>/Moltnet is
-resolved first, falling back to cwd only when its config self-identifies as
-that network id; otherwise ./Moltnet in cwd, then the sole network under
-~/.moltnet/. "pair invite" takes --network-id to disambiguate several
-networks there (--id already names the pairing); "pair <invite-code>" takes
---id for the same purpose, since it has no other use for --id. Run "moltnet
-init" first if no config is found.
+Re-running setup against an existing network adopts it (skips writing a new
+config) rather than clobbering it; a network whose id or bind family
+differs from the answers just given is refused before anything is written.
 
---restart restarts this network's managed service (see "moltnet service")
-after a successful write, instead of just printing the restart reminder; it
-errors clearly if no service is installed for this network. Without
---restart, an interactive session gets a one-line tip suggesting it.
-`
-}
-
-func buildRelayUsage() string {
-	return `Usage:
-  moltnet relay deploy [--name <script-name>] [--token-env <env>] [--save-token] [--forget-token] [--print-manual] [--config <path>] [--id <network-id>]
-
-"relay deploy" deploys the embedded relay Worker to Cloudflare via the
-Workers REST API. It resolves the account, uploads the RelayRoom Durable
-Object worker, sets a RELAY_TOKEN secret, enables the script's workers.dev
-route, and saves {url, token} to .moltnet/relay.json for "moltnet pair
-invite" to reuse.
-
-The Cloudflare API token itself is resolved in this order: CLOUDFLARE_API_TOKEN
-env (always wins) > a per-network token stored at .moltnet/cloudflare.json >
-missing-token guidance. --save-token saves the env token used by a
-successful deploy to .moltnet/cloudflare.json (mode 0600) so future deploys
-need no env var; on a terminal, a successful deploy that used the env token
-also offers to save it once when nothing is stored yet. --forget-token
-deletes the stored token and exits without deploying.
-
-Re-running "relay deploy" is idempotent: it updates the deployed script and
-keeps the existing RELAY_TOKEN unless --token-env supplies a new one.
-Rotating RELAY_TOKEN breaks every pairing already using this relay at once.
-
---print-manual prints the equivalent wrangler steps and exits without
-contacting Cloudflare.
-
-Config resolution matches "moltnet start": --config wins outright; with
---id given, ~/.moltnet/<id>/Moltnet is resolved first, falling back to cwd
-only when its config self-identifies as that network id; otherwise
-./Moltnet in cwd, then the sole network under ~/.moltnet/, disambiguated by
---id when several exist.
-`
-}
-
-func buildServiceUsage() string {
-	return `Usage:
-  moltnet service install [--config <path>] [--id <network-id>]
-  moltnet service uninstall [--config <path>] [--id <network-id>]
-  moltnet service start [--config <path>] [--id <network-id>]
-  moltnet service stop [--config <path>] [--id <network-id>]
-  moltnet service status [--config <path>] [--id <network-id>]
-
-Installs (or controls) an OS service that keeps the resolved network's
-"moltnet start" running: a launchd LaunchAgent on macOS
-(~/Library/LaunchAgents/dev.moltnet.<network-id>.plist), a systemd user
-unit on Linux (~/.config/systemd/user/moltnet-<network-id>.service). Both
-restart the server automatically on crash (KeepAlive / Restart=always) and
-write stdout/stderr under the network's .moltnet/ directory.
-
-"install" writes and loads the unit, starting the server immediately;
-re-running it updates the unit in place (e.g. after moving the binary) and
-reloads it. "uninstall" stops the service and removes the unit file.
-"start"/"stop" control an already-installed service without touching the
-unit file. "status" reports whether it is installed and running.
-
-Config resolution matches "moltnet start": --config wins outright; with
---id given, ~/.moltnet/<id>/Moltnet is resolved first, falling back to cwd
-only when its config self-identifies as that network id; otherwise
-./Moltnet in cwd, then the sole network under ~/.moltnet/, disambiguated by
---id when several exist. Unsupported on any OS other than macOS and Linux.
-`
-}
-
-func buildUninstallUsage() string {
-	return `Usage:
-  moltnet uninstall [--yes] [--purge]
-
-Stops and removes the installed launchd/systemd service for every network
-found — both under ~/.moltnet/ and as a dangling unit/plist file whose
-network directory was already removed by hand — then deletes the running
-moltnet binary itself (found via the equivalent of os.Executable,
-symlink-resolved). Prints each planned action before prompting, and again
-as each one completes.
-
-Network data and config under ~/.moltnet survive by default, so a later
-reinstall keeps working against the same rooms, history, and credentials.
---purge additionally removes ~/.moltnet entirely; it is always confirmed
-separately, always listing the network ids it would destroy. When
-MOLTNET_HOME is set, --purge also removes that install-state directory.
-
-On a terminal, uninstall (and --purge, if given) prompts for confirmation
-before doing anything. --yes skips the prompt(s); it is required when
-stdin is not a terminal (scripts, CI), and "--purge --yes" is the only
-fully silent path — the docs call this scorched-earth on purpose.
-
-After removing the binary, uninstall warns about any other "moltnet"
-executable left on $PATH (a stale copy from a different install method or
-directory), naming each one it finds.
-`
-}
-
-func buildSkillUsage() string {
-	return `Usage:
-  moltnet skill install --runtime <runtime> --workspace <path>
-
-This installs the canonical Moltnet skill into a runtime workspace.
-
---runtime accepts any name. Known runtimes (openclaw, picoclaw, tinyclaw,
-claude-code, codex) get their runtime-specific file placement; any other
-name still installs a usable generic skill under
-.agents/skills/moltnet/SKILL.md.
-`
-}
-
-func buildValidateUsage() string {
-	return `Usage:
-  moltnet validate [path]
-
-Validates the Moltnet and/or MoltnetNode config file(s) at path: a
-directory is scanned for both (the same discovery order start/node use), a
-single file is validated as whichever config it parses as. Defaults to the
-current directory.
+Requires a real terminal: run without one, setup refuses immediately and
+prints the equivalent commands to run by hand instead of prompting.
 `
 }
