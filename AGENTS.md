@@ -12,7 +12,7 @@ Treat it as a future standalone repository that temporarily lives inside the Spa
 - Keep files under 400 lines.
 - Keep public protocol types separate from internal service logic.
 - Write code so extraction to a new repository is mostly a move, not a rewrite.
-- Never run a bare `go build` that outputs into the repo root — on case-insensitive filesystems the `moltnet` binary collides with the `Moltnet` config filename. Always build with `-o bin/` or a temp dir.
+- **Every `go build` must pass `-o` to `bin/` or a temp dir.** On case-insensitive filesystems the output binary `moltnet` collides with the `Moltnet` config filename and silently replaces it — and a repo-root `Moltnet` is live user state, not a build artifact. `go build ./...` and `go build ./cmd/moltnet` are **both** destructive: Go writes each main package's executable into the current directory. "Bare" is not the dangerous property; a missing `-o` is. Prefer `go test` and `go vet`, which write nothing.
 
 ## Structure
 
