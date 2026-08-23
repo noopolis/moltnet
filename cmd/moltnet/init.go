@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,8 +48,11 @@ func runInit(ctx context.Context, args []string) error {
 		nameFlag    = flags.String("name", "", "network display name (default: derived from the network id)")
 		dirFlag     = flags.String("dir", "", "write into this directory instead of ~/.moltnet/<network-id>/ (the pre-phase-4 default was --dir .)")
 		bearerFlag  = flags.Bool("bearer", false, "set auth.mode to bearer and generate a scoped operator token, stored in Moltnet (0600); never printed")
+		listenFlag  = flags.String("listen", "", "server.listen_addr to bind (default: 127.0.0.1:8787, loopback-only); a non-loopback value is warned about immediately, not just at server start")
 		verboseFlag = flags.Bool("verbose", false, "print full detail: exact paths, per-file status, and the --bearer tip")
 	)
+	var roomFlag repeatedStringFlag
+	flags.Var(&roomFlag, "room", `room id to author instead of the default "general" room; repeatable. Every room gets visibility: public, write_policy: registered_agents, federation: none (the open starter room's shape, not "room create"'s defaults). Passing any --room replaces "general" unless "general" is itself among the values. Rejected together with --bearer.`)
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -66,10 +67,10 @@ func runInit(ctx context.Context, args []string) error {
 	// see a usage error the arg count alone already made inevitable.
 	if flags.NArg() > 1 {
 		// Same fix as runNode (node.go): flag stops parsing at the first
-		// non-flag arg, so `moltnet init <path> --id x` never reaches --id
-		// as a flag — it lands here as extra positional args, *idFlag left
-		// at its zero value. Name the offending flag instead of the generic
-		// message below when one of the extras looks like one.
+		// non-flag arg, so `moltnet init <path> --id x` never reaches --id as
+		// a flag — it lands here as extra positional args. Name the
+		// offending flag instead of the generic message below when one of
+		// the extras looks like one.
 		for _, extra := range flags.Args()[1:] {
 			if strings.HasPrefix(extra, "-") {
 				return fmt.Errorf("init: flags must precede the path (got %q after it); usage: moltnet init [--id <network-id>] [--name <name>] [--dir <path>] [--bearer] [path]", extra)
@@ -81,14 +82,24 @@ func runInit(ctx context.Context, args []string) error {
 		return fmt.Errorf("init: pass either a positional path or --dir, not both")
 	}
 
+	// --bearer/--listen/--room validation joins the arg-count checks above,
+	// ahead of the banner, for the same reason (P2-2): every check here is
+	// pure, so a doomed `moltnet init --bearer --room x` fails instantly
+	// instead of after the ~0.9s settle animation. See
+	// resolveInitBearerListenRoomFlags's own doc comment (init_listen.go)
+	// for what it rejects and resolves.
+	listenAddr, roomIDs, err := resolveInitBearerListenRoomFlags(*bearerFlag, *listenFlag, roomFlag)
+	if err != nil {
+		return err
+	}
+
 	// P2-2: the banner must be the first output on every init path — before
 	// the positional-path deprecation note below and before
 	// resolveInitNetworkID's interactive --id prompt further down — so it
 	// prints immediately once flags are known to be well-formed.
-	// printBannerAnimated (banner_player.go) plays the settle animation on
-	// a real terminal, falling back to plain printBanner's own static
-	// output otherwise — init is the one place this CLI can afford the
-	// ~1s a full animation takes; see printBannerAnimated's doc comment.
+	// printBannerAnimated (banner_player.go) plays the settle animation on a
+	// real terminal, falling back to plain printBanner's static output
+	// otherwise; see its own doc comment.
 	printBannerAnimated(ctx)
 	if err := ctx.Err(); err != nil {
 		// SIGINT/SIGTERM landed mid-animation (P2-2/item-3): nothing has
@@ -108,7 +119,6 @@ func runInit(ctx context.Context, args []string) error {
 	usingGlobalHome := dir == ""
 
 	id := strings.TrimSpace(*idFlag)
-	var err error
 	if usingGlobalHome {
 		id, err = resolveInitNetworkID(ctx, id)
 		if err != nil {
@@ -162,8 +172,58 @@ func runInit(ctx context.Context, args []string) error {
 		fmt.Fprintln(stdout, warning)
 	}
 
+	// PLAN.md phase 7.0's "Corollary work, same change", extended by round
+	// 2's P1 fix: offer to close the one path this credential could
+	// otherwise reach a remote through -- whenever root is a git checkout
+	// itself, or sits inside one (gitCheckoutRoot walks up to find it; a bare
+	// go.mod or package.json marker with no .git anywhere in the ancestry
+	// never reaches this branch). Runs independently of the warning above: a
+	// subdirectory target with no marker of its own still gets its warning
+	// from the gitCheckoutRoot branch in checkoutWarning, but the two checks
+	// stay separate rather than re-deriving root's warning reason here.
+	if gitRoot, ok := gitCheckoutRoot(root); ok {
+		if added, gitignoreErr := offerGitignoreCredentialEntries(gitRoot, root); gitignoreErr != nil {
+			// Rendered from the same prefixedGitignoreCredentialEntries the
+			// write path itself uses (init_checkout.go), not a hardcoded
+			// list: a `--dir <subdir-of-checkout>` target needs its entries
+			// prefixed with that subdirectory, and this fallback previously
+			// hardcoded the unprefixed, three-entry list -- silently
+			// dropping the ".moltnet-init-*.tmp" entry the credential-leak
+			// fix exists for, and dropping the subdirectory anchor a nested
+			// target needs to actually ignore anything.
+			byHand := strings.Join(prefixedGitignoreCredentialEntries(gitRoot, root), ", ")
+			fmt.Fprintf(stdout, "  %s could not update .gitignore (%v); add %s by hand\n", yellow("note:"), gitignoreErr, byHand)
+		} else if len(added) > 0 {
+			fmt.Fprintf(stdout, "  %s added %s to .gitignore\n", green("✓"), strings.Join(added, ", "))
+		}
+	}
+
 	serverPath := filepath.Join(root, app.DefaultPath)
 	nodePath := filepath.Join(root, nodeconfig.DefaultPath)
+
+	// Cheap Lstat pre-check, done before any file writes and unconditionally
+	// -- not gated on serverExists (round 2's P3 fix): serverExists below
+	// uses os.Stat, which follows a symlink, so a *dangling* one (pointing at
+	// a target that does not exist) resolved to os.ErrNotExist there and
+	// used to read as plain "does not exist," skipping this graceful
+	// pre-check entirely. Plain init then fell through to the repair path
+	// (applyExistingServerConfigTokens' default case, init_server_config.go),
+	// which hard-failed once its own os.ReadFile hit the same dangling
+	// target -- but only after MoltnetNode had already been written just
+	// below. os.Lstat never follows the link, so it sees the symlink itself
+	// regardless of what it points to (or fails to), and if the existing
+	// Moltnet config is a symlink, addOperatorTokenWithRollback would refuse
+	// it too (app.AddOperatorToken's rejectSymlinkedConfigPath) -- detecting
+	// it here instead lets --bearer degrade the same way the tokens-exist
+	// case does (skip the add, still print the full summary) and lets plain
+	// init stay silent, exactly like it already does for a non-dangling
+	// symlinked config.
+	serverIsSymlink := false
+	if info, lstatErr := os.Lstat(serverPath); lstatErr == nil {
+		serverIsSymlink = info.Mode()&os.ModeSymlink != 0
+	} else if !errors.Is(lstatErr, os.ErrNotExist) {
+		return fmt.Errorf("inspect %q: %w", serverPath, lstatErr)
+	}
 
 	// Check existence up front (rather than generating a token first and
 	// discarding it — P3-3) so the token is only ever generated when it will
@@ -176,224 +236,125 @@ func runInit(ctx context.Context, args []string) error {
 		return fmt.Errorf("inspect %q: %w", serverPath, statErr)
 	}
 
-	// Cheap Lstat pre-check, done before any file writes: if the existing
-	// Moltnet config is a symlink, addOperatorTokenWithRollback would refuse
-	// it too (app.AddOperatorToken's rejectSymlinkedConfigPath), but only
-	// after MoltnetNode had already been written below and only by hard-
-	// failing the whole command with no summary. Detecting it here lets
-	// --bearer degrade the same way the tokens-exist case does: skip the
-	// add, still print the full summary.
-	serverIsSymlink := false
-	if serverExists {
-		if info, lstatErr := os.Lstat(serverPath); lstatErr != nil {
-			return fmt.Errorf("inspect %q: %w", serverPath, lstatErr)
-		} else if info.Mode()&os.ModeSymlink != 0 {
-			serverIsSymlink = true
+	// --listen/--room silently no-op below once serverPath already exists;
+	// tell the operator so. See ignoredExistingConfigFlagsNote (init_listen.go).
+	//
+	// serverOccupied folds serverIsSymlink into this gate (round 3's fix for
+	// a live-verified gap): a dangling symlink or a directory at serverPath
+	// reads as serverExists == false (only a plain regular file counts
+	// there), but writeFileIfMissing's own Lstat pre-check (init_checkout.go)
+	// refuses to publish over *any* existing directory entry regardless --
+	// so treating only serverExists as "occupied" here let a dangling
+	// symlink take the "fresh" branch below: it printed the non-loopback
+	// security warning for a config it was about to author but never
+	// actually got to write, printed no ignored-flags note (this branch was
+	// skipped), and still generated a throwaway operator token. Folding
+	// serverIsSymlink in means this note prints and the fresh-content branch
+	// below is skipped for exactly the same targets writeFileIfMissing was
+	// always going to refuse anyway.
+	serverOccupied := serverExists || serverIsSymlink
+	if serverOccupied {
+		if note := ignoredExistingConfigFlagsNote(serverPath, *listenFlag, roomFlag); note != "" {
+			fmt.Fprintf(stdout, "  %s %s\n", yellow("note:"), note)
 		}
 	}
 
-	serverContents := defaultMoltnetConfig(id, name)
-	if *bearerFlag && !serverExists {
-		// Two tokens, always minted together: the operator token (unchanged
-		// id/scopes/behavior) plus a "console" token scoped to exactly
-		// [observe] -- the credential `moltnet console` requires before it
-		// will ever hand the browser a token (consoleObserveToken,
-		// console.go). Neither is ever printed. Without the console token,
-		// the canonical init --bearer -> console flow used to land on a raw
-		// 401; minting both here closes that gap on the fresh-config path.
-		operatorToken, tokenErr := app.GenerateRandomToken(256)
-		if tokenErr != nil {
-			return tokenErr
+	// Contents (and any token generation it needs) are only ever built when
+	// there is genuinely a fresh file to write below: writeFileIfMissing
+	// no-ops on an existing path without ever looking at serverContents, so
+	// computing it regardless of serverOccupied would mean generating a
+	// secret only to discard it (P3-3's rule, now applying to the plain
+	// path too now that defaultMoltnetConfig also mints one — see
+	// buildFreshServerConfig's doc comment, init_server_config.go). Gated on
+	// serverOccupied (not just serverExists), matching the note above: a
+	// dangling symlink or directory at serverPath is refused by
+	// writeFileIfMissing exactly like an existing file, so this must not
+	// build fresh contents, mint a token, or print the authoring-time
+	// warning for content that will never be written.
+	var serverContents string
+	if !serverOccupied {
+		serverContents, err = buildFreshServerConfig(id, name, *bearerFlag, listenAddr, roomIDs)
+		if err != nil {
+			return err
 		}
-		consoleToken, tokenErr := app.GenerateRandomToken(256)
-		if tokenErr != nil {
-			return tokenErr
+		// Authoring-time bind warning (PLAN.md's setup-wizard spec, "Q4 —
+		// the warning is computed, never static"): describes serverContents
+		// before it is written, same as checkoutWarning above describes root.
+		if warning := initNonLoopbackWarning(listenAddr, *bearerFlag, roomIDs); warning != "" {
+			fmt.Fprintf(stdout, "  %s %s\n", yellow("warning:"), warning)
 		}
-		serverContents = bearerMoltnetConfig(id, name, operatorToken, consoleToken)
 	}
 
 	serverCreated, err := writeFileIfMissing(serverPath, serverContents)
 	if err != nil {
 		return err
 	}
-	nodeCreated, err := writeFileIfMissing(nodePath, defaultMoltnetNodeConfig(id))
+
+	// The MoltnetNode scaffold must point at wherever this run's own server
+	// binds, not a hardcoded default -- with --listen 127.0.0.1:8788, the
+	// scaffold must not point at whatever else already owns 8787. consoleBaseURL
+	// (console.go) is the same wildcard-to-loopback mapping `moltnet console`
+	// already relies on, reused rather than duplicated. When serverPath
+	// already existed (or is occupied by a symlink/directory), "wherever
+	// this run's own server binds" means the existing config's own
+	// listen_addr, not --listen's resolved flag value -- see
+	// existingServerListenAddr's doc comment (init_listen.go).
+	nodeListenAddr := listenAddr
+	if serverOccupied {
+		nodeListenAddr = existingServerListenAddr(serverPath, listenAddr)
+	}
+
+	// The config already existed (not just created above): apply whichever
+	// of PLAN.md phase 7.0's token actions applies -- the --bearer upgrade,
+	// the plain-init repair, or (a symlinked target) neither. This runs
+	// before the MoltnetNode scaffold is written below (round 3's fix):
+	// this is also the step that actually surfaces a load error against an
+	// existing, undecodable config, while existingServerListenAddr above
+	// silently falls back to nodeListenAddr on that exact same load error
+	// (its own doc comment says so). Writing the scaffold first meant an
+	// undecodable config's fallback base_url ("http://127.0.0.1:8787", not
+	// whatever listen_addr the broken config actually names) got durably
+	// written to disk before runInit ever failed on it -- and a later,
+	// repaired rerun would never rewrite it, since writeFileIfMissing
+	// no-ops once MoltnetNode already exists.
+	var tokenOutcome initExistingServerTokenOutcome
+	if !serverCreated {
+		tokenOutcome, err = applyExistingServerConfigTokens(serverPath, *bearerFlag, serverIsSymlink)
+		if err != nil {
+			return err
+		}
+	}
+
+	nodeBaseURL, err := consoleBaseURL(nodeListenAddr)
+	if err != nil {
+		return fmt.Errorf("resolve MoltnetNode base_url from listen_addr %q: %w", nodeListenAddr, err)
+	}
+	nodeCreated, err := writeFileIfMissing(nodePath, defaultMoltnetNodeConfig(id, nodeBaseURL))
 	if err != nil {
 		return err
 	}
 
-	var bearerAdded bool
-	var bearerAddErr error
-	if *bearerFlag && !serverCreated {
-		if serverIsSymlink {
-			bearerAddErr = fmt.Errorf("moltnet config %q is a symlink; edit auth: there manually to add an operator token", serverPath)
-		} else {
-			// P1-2: the config already existed, so rather than the old no-op
-			// "no token was generated" note, actually add the operator token to
-			// it via the same plaintext-preserving writeback machinery the pair
-			// commands use — refusing only when auth.tokens already has
-			// entries, so this never silently appends a second admin-scoped
-			// credential next to one an operator already set up by hand.
-			//
-			// It mints the console token (id "console", scopes [observe]) in
-			// the same atomic write, for the same reason as the fresh-config
-			// branch above: a config that gets bearer auth for the first time
-			// must always end up with a token `moltnet console` is allowed to
-			// use. AddOperatorToken's own guard (auth.tokens must be empty)
-			// means auth.tokens is genuinely empty here, so "console" can
-			// never collide with an id already in the file.
-			operatorToken, tokenErr := app.GenerateRandomToken(256)
-			if tokenErr != nil {
-				return tokenErr
-			}
-			consoleToken, tokenErr := app.GenerateRandomToken(256)
-			if tokenErr != nil {
-				return tokenErr
-			}
-			if writeErr := addOperatorTokenWithRollback(serverPath, app.AuthTokenWriteback{
-				ID:     "operator",
-				Value:  operatorToken,
-				Scopes: []string{"observe", "write", "admin", "pair"},
-			}, app.AuthTokenWriteback{
-				ID:     "console",
-				Value:  consoleToken,
-				Scopes: consoleTokenScopes,
-			}); writeErr != nil {
-				if !errors.Is(writeErr, app.ErrAuthTokensExist) {
-					return writeErr
-				}
-				bearerAddErr = writeErr
-			} else {
-				bearerAdded = true
-			}
-		}
-	}
-
 	printInitSummary(initSummary{
-		id:            id,
-		root:          root,
-		dirExisted:    dirExisted,
-		serverPath:    serverPath,
-		serverCreated: serverCreated,
-		nodeCreated:   nodeCreated,
-		bearer:        *bearerFlag,
-		bearerAdded:   bearerAdded,
-		bearerAddErr:  bearerAddErr,
-		verbose:       *verboseFlag,
+		id:                             id,
+		root:                           root,
+		dirExisted:                     dirExisted,
+		serverPath:                     serverPath,
+		serverCreated:                  serverCreated,
+		nodeCreated:                    nodeCreated,
+		bearer:                         *bearerFlag,
+		bearerAdded:                    tokenOutcome.bearerAdded,
+		bearerAddErr:                   tokenOutcome.bearerAddErr,
+		bearerUpgradeOnly:              tokenOutcome.bearerUpgradeOnly,
+		operatorTokenRepaired:          tokenOutcome.operatorTokenRepaired,
+		operatorTokenRepairSkippedNote: tokenOutcome.operatorTokenRepairSkippedNote,
+		verbose:                        *verboseFlag,
 	})
 
 	return nil
 }
 
-// resolveInitNetworkID returns idFlag unchanged when non-empty; otherwise,
-// on a TTY, it prompts for one; otherwise it is a hard error (PLAN.md:
-// "--id <network-id> sets the network id (interactive prompt on a TTY when
-// omitted; hard error when non-interactive)").
-//
-// The prompt read happens in its own goroutine so it can be raced against
-// ctx.Done() (item 3): bufio.Reader.ReadString blocks synchronously on
-// os.Stdin with no ctx-aware variant, so there is no way to interrupt the
-// read itself — a SIGINT during the prompt instead makes this function
-// return ctx.Err() immediately, leaving the read goroutine to exit on its
-// own once stdin closes or the process does. That goroutine leak is
-// bounded: runCLI is about to exit on the same cancelled ctx either way.
-func resolveInitNetworkID(ctx context.Context, idFlag string) (string, error) {
-	if idFlag != "" {
-		if err := protocol.ValidateMessageID(idFlag); err != nil {
-			return "", fmt.Errorf("--id: %w", err)
-		}
-		return idFlag, nil
-	}
-	if !isInteractive() {
-		return "", fmt.Errorf("moltnet init requires --id when run non-interactively (no TTY to prompt on)")
-	}
-
-	fmt.Fprint(stdout, "network id (letters, digits, hyphens; identifies this network to friends): ")
-
-	// os.Stdin is read into a local here, before the goroutine starts,
-	// rather than inside it: os.Stdin is a mutable package var, and this
-	// function is about to return (on the ctx.Done() branch below) without
-	// waiting for the goroutine to actually run, so a caller reassigning
-	// os.Stdin concurrently (only ever a test — production never does)
-	// would otherwise be a real data race on the var itself, not just on
-	// what it points to.
-	stdin := os.Stdin
-
-	type readResult struct {
-		line string
-		err  error
-	}
-	resultCh := make(chan readResult, 1)
-	go func() {
-		reader := bufio.NewReader(stdin)
-		line, err := reader.ReadString('\n')
-		resultCh <- readResult{line: line, err: err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case res := <-resultCh:
-		if res.err != nil && !errors.Is(res.err, io.EOF) {
-			return "", fmt.Errorf("read network id: %w", res.err)
-		}
-		id := strings.TrimSpace(res.line)
-		if id == "" {
-			return "", fmt.Errorf("network id is required")
-		}
-		if err := protocol.ValidateMessageID(id); err != nil {
-			return "", fmt.Errorf("network id: %w", err)
-		}
-		return id, nil
-	}
-}
-
-// defaultNetworkNameForID derives a human-readable display name from a
-// network id when --name is not given, e.g. "acme-friends" -> "Acme
-// Friends Moltnet".
-func defaultNetworkNameForID(id string) string {
-	words := strings.FieldsFunc(id, func(r rune) bool { return r == '-' || r == '_' })
-	for index, word := range words {
-		if word == "" {
-			continue
-		}
-		words[index] = strings.ToUpper(word[:1]) + word[1:]
-	}
-	name := strings.Join(words, " ")
-	if name == "" {
-		name = id
-	}
-	return name + " Moltnet"
-}
-
-// checkoutWarning returns a non-empty warning when root contains any of
-// checkoutMarkers, suggesting it is a source checkout rather than a runtime
-// install directory (PLAN.md: "warn before writing").
-func checkoutWarning(root string) string {
-	var found []string
-	for _, marker := range checkoutMarkers {
-		if info, err := os.Stat(filepath.Join(root, marker)); err == nil && info != nil {
-			found = append(found, marker)
-		}
-	}
-	if len(found) == 0 {
-		return ""
-	}
-	return fmt.Sprintf(
-		"  %s %s looks like a source checkout (found %s); writing Moltnet config here is unusual for a runtime install — did you mean a different --dir, or the default ~/.moltnet/ home?",
-		yellow("warning:"), root, strings.Join(found, ", "),
-	)
-}
-
-func writeFileIfMissing(path string, contents string) (bool, error) {
-	if _, err := os.Stat(path); err == nil {
-		return false, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("inspect %q: %w", path, err)
-	}
-
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		return false, fmt.Errorf("write %q: %w", path, err)
-	}
-
-	return true, nil
-}
+// resolveInitNetworkID and defaultNetworkNameForID live in
+// init_network_id.go; checkoutWarning, gitCheckoutRoot,
+// offerGitignoreCredentialEntries, and writeFileIfMissing live in
+// init_checkout.go -- both split out to keep this file under the repo's
+// 400-line limit.

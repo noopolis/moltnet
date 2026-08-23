@@ -104,7 +104,12 @@ func TestRunInitBearerStoresTokenWithoutEverPrintingIt(t *testing.T) {
 	if !strings.Contains(string(contents), "mode: bearer") {
 		t.Fatalf("expected auth.mode: bearer in config, got:\n%s", contents)
 	}
-	if !strings.Contains(string(contents), "scopes: [observe, write, admin, pair]") {
+	// F1: --bearer's operator token is minted without "pair" -- carrying it
+	// alongside admin/write made every --bearer operator look like a peer to
+	// internal/rooms/federation_access.go's pairing gates and locked them out
+	// of their own writes and room listing (cmd/moltnet/templates.go's
+	// bearerMoltnetConfig).
+	if !strings.Contains(string(contents), "scopes: [observe, write, admin]") {
 		t.Fatalf("expected operator token scopes in config, got:\n%s", contents)
 	}
 	if !strings.Contains(string(contents), "id: console") || !strings.Contains(string(contents), "scopes: [observe]") {
@@ -127,8 +132,10 @@ func TestRunInitBearerStoresTokenWithoutEverPrintingIt(t *testing.T) {
 		switch token.ID {
 		case "operator":
 			operatorValue = token.Value
-			if len(token.Scopes) != 4 {
-				t.Fatalf("expected the operator token to keep all 4 scopes, got %v", token.Scopes)
+			// F1: 3 scopes, never "pair" -- see the scopes: [...] assertion
+			// above for why.
+			if len(token.Scopes) != 3 {
+				t.Fatalf("expected the operator token to keep exactly 3 scopes (never \"pair\"), got %v", token.Scopes)
 			}
 		case "console":
 			consoleValue = token.Value
@@ -249,6 +256,77 @@ func TestRunInitBearerOnSymlinkedConfigDegradesGracefully(t *testing.T) {
 	}
 }
 
+// TestRunInitPlainOnDanglingSymlinkDegradesGracefully is round 2's P3 fix:
+// serverIsSymlink used to be gated on serverExists, which uses os.Stat --
+// following the link -- so a *dangling* symlink (pointing at a target that
+// does not exist) resolved to os.ErrNotExist there and read as plain "does
+// not exist," skipping the graceful symlink pre-check entirely. Plain init
+// then fell through to the repair path, which hard-failed once its own
+// os.ReadFile hit the same dangling target -- but only after MoltnetNode had
+// already been written. Plain init against a dangling symlink must instead
+// stay silent and exit 0, exactly like it already does for a non-dangling
+// symlinked config.
+func TestRunInitPlainOnDanglingSymlinkDegradesGracefully(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	networkDir := filepath.Join(home, ".moltnet", "acme")
+	if err := os.MkdirAll(networkDir, 0o700); err != nil {
+		t.Fatalf("mkdir network dir: %v", err)
+	}
+
+	danglingTarget := filepath.Join(t.TempDir(), "does-not-exist")
+	symlinkPath := filepath.Join(networkDir, "Moltnet")
+	if err := os.Symlink(danglingTarget, symlinkPath); err != nil {
+		t.Fatalf("create dangling symlink: %v", err)
+	}
+
+	captureStdout(t, func() {
+		if err := runInit(context.Background(), []string{"--id", "acme"}); err != nil {
+			t.Fatalf("runInit() error = %v, want a graceful degrade instead of a hard failure after writing MoltnetNode", err)
+		}
+	})
+
+	// The symlink itself must never have been followed and replaced with a
+	// regular file.
+	info, lstatErr := os.Lstat(symlinkPath)
+	if lstatErr != nil {
+		t.Fatalf("Lstat(symlinkPath) error = %v", lstatErr)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected the dangling symlink to remain a symlink, got mode %v", info.Mode())
+	}
+}
+
+// TestRunInitBearerOnDanglingSymlinkDegradesGracefully is the --bearer
+// counterpart: a dangling symlink must produce the same "is a symlink"
+// bearerAddErr note --bearer already prints for a non-dangling symlinked
+// config, not a hard failure.
+func TestRunInitBearerOnDanglingSymlinkDegradesGracefully(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	networkDir := filepath.Join(home, ".moltnet", "acme")
+	if err := os.MkdirAll(networkDir, 0o700); err != nil {
+		t.Fatalf("mkdir network dir: %v", err)
+	}
+
+	danglingTarget := filepath.Join(t.TempDir(), "does-not-exist")
+	symlinkPath := filepath.Join(networkDir, "Moltnet")
+	if err := os.Symlink(danglingTarget, symlinkPath); err != nil {
+		t.Fatalf("create dangling symlink: %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := runInit(context.Background(), []string{"--id", "acme", "--bearer"}); err != nil {
+			t.Fatalf("runInit() error = %v, want a graceful degrade instead of a hard failure", err)
+		}
+	})
+	if !strings.Contains(output, "is a symlink") {
+		t.Fatalf("expected a note about the symlinked config, got %q", output)
+	}
+}
+
 func TestRunInitDirOptsOutOfGlobalHomeAndIDPrompt(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -288,29 +366,9 @@ func TestRunInitRejectsPositionalAndDirTogether(t *testing.T) {
 	}
 }
 
-func TestRunInitWarnsOnCheckoutMarkers(t *testing.T) {
-	directory := t.TempDir()
-	if err := os.WriteFile(filepath.Join(directory, "go.mod"), []byte("module x\n"), 0o600); err != nil {
-		t.Fatalf("write go.mod: %v", err)
-	}
-
-	output := captureStdout(t, func() {
-		if err := runInit(context.Background(), []string{"--dir", directory}); err != nil {
-			t.Fatalf("runInit() error = %v", err)
-		}
-	})
-
-	if !strings.Contains(output, "warning") || !strings.Contains(output, "go.mod") {
-		t.Fatalf("expected a checkout warning mentioning go.mod, got %q", output)
-	}
-}
-
-func TestCheckoutWarningEmptyForCleanDirectory(t *testing.T) {
-	directory := t.TempDir()
-	if warning := checkoutWarning(directory); warning != "" {
-		t.Fatalf("checkoutWarning() = %q, want empty", warning)
-	}
-}
+// checkoutWarning / offerGitignoreCredentialEntries coverage lives in
+// init_checkout_test.go -- split out to keep this file under the repo's
+// 400-line limit.
 
 func TestDefaultNetworkNameForID(t *testing.T) {
 	if got := defaultNetworkNameForID("acme-friends"); got != "Acme Friends Moltnet" {

@@ -23,6 +23,24 @@ type initSummary struct {
 	bearer        bool
 	bearerAdded   bool
 	bearerAddErr  error
+	// bearerUpgradeOnly is true when bearerAdded's write only added the
+	// console token and flipped auth.mode, leaving a pre-existing operator
+	// token completely untouched (PLAN.md phase 7.0's AddOperatorToken
+	// upgrade case, config_writeback_tokens.go) -- as opposed to minting a
+	// brand-new operator+console pair into a genuinely tokenless config.
+	// Only used to pick the accurate verbose-mode sentence; never affects
+	// bearerAdded/bearerAddErr themselves.
+	bearerUpgradeOnly bool
+	// operatorTokenRepaired is true when plain init (no --bearer) added an
+	// operator token to a pre-7.0, tokenless open-mode config in place --
+	// PLAN.md phase 7.0's repair path (runInit's default case, init.go).
+	operatorTokenRepaired bool
+	// operatorTokenRepairSkippedNote is non-empty when that repair could
+	// not run because the existing config already carries auth.tokens of
+	// its own; printed unconditionally (quiet and --verbose alike) since it
+	// is actionable, not decoration -- the operator's own config genuinely
+	// still has no way to be administered until they add a token by hand.
+	operatorTokenRepairSkippedNote string
 	// verbose, when true, restores the per-file breakdown (what was
 	// created/updated, exact paths, the --bearer tip) behind the quiet
 	// single-outcome-line default (--verbose, see runInit).
@@ -50,6 +68,9 @@ func printInitSummary(summary initSummary) {
 
 	if note := initRegistrationNote(summary); note != "" {
 		fmt.Fprintf(stdout, "  %s %s\n", yellow("note:"), note)
+	}
+	if summary.operatorTokenRepairSkippedNote != "" {
+		fmt.Fprintf(stdout, "  %s %s\n", yellow("note:"), summary.operatorTokenRepairSkippedNote)
 	}
 
 	if summary.verbose {
@@ -112,12 +133,20 @@ func printInitSummaryVerbose(summary initSummary) {
 	if summary.bearer {
 		authLabel = "bearer"
 	}
-	if summary.bearerAdded {
+	if summary.bearerAdded || summary.operatorTokenRepaired {
 		// The config already existed (serverCreated is false), so the
 		// generic "already exists (unchanged)" line would contradict the
-		// "operator token added" line printed just below it. Say what
-		// actually happened to the file instead.
-		printInitConfigCheckLine("updated Moltnet", fmt.Sprintf("added operator token · auth: %s", authLabel))
+		// token-added line printed just below it. Say what actually
+		// happened to the file instead. bearerUpgradeOnly (PLAN.md phase
+		// 7.0's AddOperatorToken upgrade case) means the pre-existing
+		// operator token was left untouched and only the console token
+		// landed, so that gets its own accurate wording rather than
+		// claiming an operator token was added when it was not.
+		detail := "added operator token · auth: %s"
+		if summary.bearer && summary.bearerUpgradeOnly {
+			detail = "added console token · auth: %s"
+		}
+		printInitConfigCheckLine("updated Moltnet", fmt.Sprintf(detail, authLabel))
 	} else {
 		printInitConfigLine("Moltnet", summary.serverCreated, fmt.Sprintf("network: %s · auth: %s", summary.id, authLabel))
 	}
@@ -127,6 +156,13 @@ func printInitSummaryVerbose(summary initSummary) {
 	case summary.bearer && summary.serverCreated:
 		fmt.Fprintf(stdout, "  %s operator + console tokens stored in Moltnet (0600) — full access + read-only console\n", green("✓"))
 		fmt.Fprintln(stdout, "    commands pick it up automatically")
+	case summary.bearer && summary.bearerAdded && summary.bearerUpgradeOnly:
+		// PLAN.md phase 7.0: the operator token already existed (plain
+		// `init` mints one unconditionally now), so this --bearer rerun
+		// only added the console token and flipped auth.mode -- it did not
+		// touch, rotate, or re-scope the existing operator credential.
+		fmt.Fprintf(stdout, "  %s added a console token to %s (0600) and switched auth.mode to bearer — full access + read-only console\n", green("✓"), abbreviateHome(summary.serverPath))
+		fmt.Fprintln(stdout, "    commands pick it up automatically")
 	case summary.bearer && summary.bearerAdded:
 		fmt.Fprintf(stdout, "  %s operator + console tokens added to %s (0600) — full access + read-only console\n", green("✓"), abbreviateHome(summary.serverPath))
 		fmt.Fprintln(stdout, "    commands pick it up automatically")
@@ -135,8 +171,16 @@ func printInitSummaryVerbose(summary initSummary) {
 		// is a symlink init refuses to write through), so the note leads
 		// with the actual error rather than assuming which one it was.
 		fmt.Fprintf(stdout, "    %s --bearer could not add an operator token to %s (%v); edit auth: there to add one manually\n", yellow("note:"), abbreviateHome(summary.serverPath), summary.bearerAddErr)
+	case summary.operatorTokenRepaired:
+		// PLAN.md phase 7.0's repair path: a pre-7.0, tokenless open-mode
+		// config just got its missing operator token in place.
+		fmt.Fprintf(stdout, "  %s added an operator token to %s (0600) — this network can now be administered locally\n", green("✓"), abbreviateHome(summary.serverPath))
 	default:
-		fmt.Fprintf(stdout, "    %s rerun with --bearer to generate an operator token for admin access\n", yellow("tip:"))
+		// Plain `init` already mints an operator token unconditionally
+		// (PLAN.md phase 7.0), so this no longer promises one --bearer
+		// alone still adds: closing open self-registration and a
+		// console token for `moltnet console`.
+		fmt.Fprintf(stdout, "    %s rerun with --bearer to close open registration and add a console token\n", yellow("tip:"))
 	}
 }
 

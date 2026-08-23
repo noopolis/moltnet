@@ -27,8 +27,8 @@ func TestRunInitCreatesCanonicalFiles(t *testing.T) {
 
 func TestRunInitReportsExistingFiles(t *testing.T) {
 	directory := t.TempDir()
-	writeNodeConfig(t, filepath.Join(directory, "Moltnet"), defaultMoltnetConfig("local", "Local Moltnet"))
-	writeNodeConfig(t, filepath.Join(directory, "MoltnetNode"), defaultMoltnetNodeConfig("local"))
+	writeNodeConfig(t, filepath.Join(directory, "Moltnet"), defaultMoltnetConfig("local", "Local Moltnet", "test-operator-token"))
+	writeNodeConfig(t, filepath.Join(directory, "MoltnetNode"), defaultMoltnetNodeConfig("local", "http://127.0.0.1:8787"))
 
 	// --verbose: the per-file "already exists" breakdown is --verbose-only
 	// detail under the quiet-by-default redesign.
@@ -95,8 +95,8 @@ func TestRunInitErrorsWhenTargetCannotBeCreated(t *testing.T) {
 
 func TestRunValidateDirectory(t *testing.T) {
 	directory := t.TempDir()
-	writeNodeConfig(t, filepath.Join(directory, "Moltnet"), defaultMoltnetConfig("local", "Local Moltnet"))
-	writeNodeConfig(t, filepath.Join(directory, "MoltnetNode"), defaultMoltnetNodeConfig("local"))
+	writeNodeConfig(t, filepath.Join(directory, "Moltnet"), defaultMoltnetConfig("local", "Local Moltnet", "test-operator-token"))
+	writeNodeConfig(t, filepath.Join(directory, "MoltnetNode"), defaultMoltnetNodeConfig("local", "http://127.0.0.1:8787"))
 
 	output := captureStdout(t, func() {
 		if err := run(context.Background(), []string{"validate", directory}, "test"); err != nil {
@@ -111,7 +111,7 @@ func TestRunValidateDirectory(t *testing.T) {
 
 func TestRunValidateSingleFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "custom-node.yaml")
-	writeNodeConfig(t, path, defaultMoltnetNodeConfig("local"))
+	writeNodeConfig(t, path, defaultMoltnetNodeConfig("local", "http://127.0.0.1:8787"))
 
 	output := captureStdout(t, func() {
 		if err := runValidate([]string{path}); err != nil {
@@ -126,7 +126,7 @@ func TestRunValidateSingleFile(t *testing.T) {
 
 func TestRunValidateSingleMoltnetFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "Moltnet")
-	writeNodeConfig(t, path, defaultMoltnetConfig("local", "Local Moltnet"))
+	writeNodeConfig(t, path, defaultMoltnetConfig("local", "Local Moltnet", "test-operator-token"))
 
 	output := captureStdout(t, func() {
 		if err := runValidate([]string{path}); err != nil {
@@ -193,8 +193,8 @@ func TestDiscoverValidationTargetsDirectory(t *testing.T) {
 	directory := t.TempDir()
 	serverPath := filepath.Join(directory, "Moltnet")
 	nodePath := filepath.Join(directory, "MoltnetNode")
-	writeNodeConfig(t, serverPath, defaultMoltnetConfig("local", "Local Moltnet"))
-	writeNodeConfig(t, nodePath, defaultMoltnetNodeConfig("local"))
+	writeNodeConfig(t, serverPath, defaultMoltnetConfig("local", "Local Moltnet", "test-operator-token"))
+	writeNodeConfig(t, nodePath, defaultMoltnetNodeConfig("local", "http://127.0.0.1:8787"))
 
 	discoveredServerPath, discoveredNodePath, err := discoverValidationTargets(directory)
 	if err != nil {
@@ -219,8 +219,8 @@ func TestDiscoverConfigsInDirectoryFallbackNames(t *testing.T) {
 	directory := t.TempDir()
 	serverPath := filepath.Join(directory, "moltnet.yaml")
 	nodePath := filepath.Join(directory, "moltnet-node.yaml")
-	writeNodeConfig(t, serverPath, defaultMoltnetConfig("local", "Local Moltnet"))
-	writeNodeConfig(t, nodePath, defaultMoltnetNodeConfig("local"))
+	writeNodeConfig(t, serverPath, defaultMoltnetConfig("local", "Local Moltnet", "test-operator-token"))
+	writeNodeConfig(t, nodePath, defaultMoltnetNodeConfig("local", "http://127.0.0.1:8787"))
 
 	discoveredServerPath, discoveredNodePath, err := discoverConfigsInDirectory(directory)
 	if err != nil {
@@ -235,7 +235,7 @@ func TestDiscoverValidationTargetsSingleNodeFile(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "MoltnetNode")
-	writeNodeConfig(t, path, defaultMoltnetNodeConfig("local"))
+	writeNodeConfig(t, path, defaultMoltnetNodeConfig("local", "http://127.0.0.1:8787"))
 
 	serverPath, nodePath, err := discoverValidationTargets(path)
 	if err != nil {
@@ -276,8 +276,8 @@ func TestValidateConfigPathHelpers(t *testing.T) {
 	directory := t.TempDir()
 	serverPath := filepath.Join(directory, "Moltnet")
 	nodePath := filepath.Join(directory, "MoltnetNode")
-	writeNodeConfig(t, serverPath, defaultMoltnetConfig("local", "Local Moltnet"))
-	writeNodeConfig(t, nodePath, defaultMoltnetNodeConfig("local"))
+	writeNodeConfig(t, serverPath, defaultMoltnetConfig("local", "Local Moltnet", "test-operator-token"))
+	writeNodeConfig(t, nodePath, defaultMoltnetNodeConfig("local", "http://127.0.0.1:8787"))
 
 	if _, err := validateServerConfigPath(serverPath); err != nil {
 		t.Fatalf("validateServerConfigPath() error = %v", err)

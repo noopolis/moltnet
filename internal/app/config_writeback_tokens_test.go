@@ -208,6 +208,30 @@ func TestAddConsoleTokenRefusesWhenIDAlreadyPresent(t *testing.T) {
 	}
 }
 
+// TestAddOperatorTokenUpgradeClosesOpenAgentRegistration is P0-1's fix: an
+// operator-only open config (defaultMoltnetConfig, cmd/moltnet/templates.go)
+// carries an explicit auth.agent_registration: open, and config_load.go's
+// mergeFileConfig only ever *re-derives* that field while auth.mode stays
+// "open" -- it never clears an explicit value once mode moves off "open".
+// Before this fix, AddOperatorToken's upgrade branch
+// (canUpgradeOperatorOnlyOpenConfig) flipped auth.mode to "bearer" without
+// touching that line, so it survived the upgrade verbatim: an operator who
+// ran `init --bearer` believing they had locked the network down to their
+// own token kept minting write-capable tokens for anyone who asked --
+// exactly reversing bearerMoltnetConfig's own doc comment (templates.go)
+// and the "close open registration" promise `init`'s own aftercare note
+// makes elsewhere.
+//
+// This is checked functionally, against a real internal/app.App on both
+// sides of the upgrade (assertAnonymousRegisterStatus), not just against
+// the decoded Config struct: a struct can look right field-by-field while
+// the route it is supposed to gate still behaves wrong.
+// TestAddOperatorTokenUpgradeClosesOpenAgentRegistration (P0-1),
+// TestAddOperatorTokenRefusesUpgradeWhenExistingTokenLacksAdminScope (P2-1),
+// and TestAddOperatorTokenRefusesUpgradeWithMalformedNeighborToken (P2-1,
+// sharpened) live in config_writeback_tokens_upgrade_test.go -- split out to
+// keep this file under the repo's 400-line limit.
+
 // TestAddConsoleTokenRejectsSymlinkedConfig mirrors
 // TestAddOperatorTokenRejectsSymlinkedConfig for the second writeback entry
 // point: neither ever writes through a symlinked config target.

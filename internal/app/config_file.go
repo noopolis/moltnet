@@ -155,6 +155,9 @@ func validateConfigFile(config rawConfigFile) error {
 	if err := validateStorage(config.Storage); err != nil {
 		return err
 	}
+	if err := validateServer(config.Server); err != nil {
+		return err
+	}
 	if err := validateAuth(config.Auth, config.Server.AllowedOrigins); err != nil {
 		return err
 	}
@@ -199,6 +202,25 @@ func validateStorage(storage rawStorageConfig) error {
 	default:
 		return fmt.Errorf("unsupported storage kind %q", storage.Kind)
 	}
+}
+
+// validateServer validates the server.* block of a Moltnet config file.
+// Today this is exactly server.listen_addr's syntax (ValidateListenAddr,
+// bind_warning.go) -- an empty value is left alone, since mergeFileConfig
+// (config_load.go) only ever overrides the built-in default when the file
+// sets a non-empty one, so an absent/empty listen_addr is not this config's
+// problem to reject. Closes the gap `moltnet init --listen`'s own doc
+// comment names: before this, no config-file-loading path validated
+// listen_addr's syntax at all, so a malformed value silently rode along
+// until the server tried and failed to bind.
+func validateServer(server rawServerConfig) error {
+	if strings.TrimSpace(server.ListenAddr) == "" {
+		return nil
+	}
+	if err := ValidateListenAddr(server.ListenAddr); err != nil {
+		return fmt.Errorf("server.listen_addr: %w", err)
+	}
+	return nil
 }
 
 func validateConsole(config rawConsoleConfig) error {

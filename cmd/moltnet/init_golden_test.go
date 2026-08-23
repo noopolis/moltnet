@@ -105,7 +105,7 @@ func TestRunInitGoldenIDWithoutBearer(t *testing.T) {
 		"  ✓ created ~/.moltnet/beta/\n" +
 		"  ✓ wrote Moltnet       network: beta · auth: open\n" +
 		"  ✓ wrote MoltnetNode\n" +
-		"    tip: rerun with --bearer to generate an operator token for admin access\n" +
+		"    tip: rerun with --bearer to close open registration and add a console token\n" +
 		"\n" +
 		"  next: moltnet service install --id beta          run it as a service\n"
 	if verbose != wantVerbose {
@@ -152,7 +152,7 @@ func TestRunInitGoldenDirLocalID(t *testing.T) {
 		"  ✓ created ~/customdir2/\n" +
 		"  ✓ wrote Moltnet       network: local · auth: open\n" +
 		"  ✓ wrote MoltnetNode\n" +
-		"    tip: rerun with --bearer to generate an operator token for admin access\n" +
+		"    tip: rerun with --bearer to close open registration and add a console token\n" +
 		"\n" +
 		"  next: moltnet init --id <network-id>             re-init with a real network id before pairing\n"
 	if verbose != wantVerbose {
@@ -161,11 +161,17 @@ func TestRunInitGoldenDirLocalID(t *testing.T) {
 }
 
 // TestRunInitGoldenBearerOnExistingConfig pins `moltnet init --id <id>
-// --bearer` rerun against a config that already exists and has no
-// auth.tokens: P1-2's real fix adds the operator token to it via the
-// plaintext-preserving writeback (not the old no-op "no token was
-// generated" note); quiet mode still collapses to the single checkmark,
-// --verbose still names the "updated Moltnet" line truthfully.
+// --bearer` rerun against a config that already exists. Since PLAN.md phase
+// 7.0, plain `init`'s own setup call below already mints the operator-only
+// open config (auth.mode: open, one "operator" token, no "pair" scope), so
+// this --bearer rerun exercises 7.0's AddOperatorToken upgrade case
+// (config_writeback_tokens.go), not the old "genuinely empty auth.tokens"
+// path: it must leave the existing operator token completely untouched —
+// same secret, same 3 scopes — and only add the console token and flip
+// auth.mode to bearer. Quiet mode still collapses to the single checkmark;
+// --verbose names the "updated Moltnet" line and the token-added line
+// truthfully for this upgrade shape specifically (added console token, not
+// added operator token).
 func TestRunInitGoldenBearerOnExistingConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -198,6 +204,17 @@ func TestRunInitGoldenBearerOnExistingConfig(t *testing.T) {
 			t.Fatalf("runInit() setup error = %v", err)
 		}
 	})
+
+	configPath := filepath.Join(home2, ".moltnet", "friend", "Moltnet")
+	beforeBearer, err := app.LoadConfigForPath(configPath, "")
+	if err != nil {
+		t.Fatalf("LoadConfigForPath(%q) error = %v", configPath, err)
+	}
+	if len(beforeBearer.Auth.Tokens) != 1 || beforeBearer.Auth.Tokens[0].ID != "operator" {
+		t.Fatalf("expected plain init to have already minted a lone operator token, got %+v", beforeBearer.Auth.Tokens)
+	}
+	operatorValueBeforeBearer := beforeBearer.Auth.Tokens[0].Value
+
 	verbose := captureStdout(t, func() {
 		if err := runInit(context.Background(), []string{"--id", "friend", "--bearer", "--verbose"}); err != nil {
 			t.Fatalf("runInit() --bearer --verbose rerun error = %v", err)
@@ -208,9 +225,9 @@ func TestRunInitGoldenBearerOnExistingConfig(t *testing.T) {
 		"\n" +
 		"  ✓ friend ready        ~/.moltnet/friend/ (existing)\n" +
 		"  ✓ using ~/.moltnet/friend/\n" +
-		"  ✓ updated Moltnet     added operator token · auth: bearer\n" +
+		"  ✓ updated Moltnet     added console token · auth: bearer\n" +
 		"  · MoltnetNode already exists (unchanged)\n" +
-		"  ✓ operator + console tokens added to ~/.moltnet/friend/Moltnet (0600) — full access + read-only console\n" +
+		"  ✓ added a console token to ~/.moltnet/friend/Moltnet (0600) and switched auth.mode to bearer — full access + read-only console\n" +
 		"    commands pick it up automatically\n" +
 		"\n" +
 		"  next: moltnet service install --id friend        run it as a service\n"
@@ -218,14 +235,15 @@ func TestRunInitGoldenBearerOnExistingConfig(t *testing.T) {
 		t.Fatalf("init --bearer --verbose rerun output mismatch\n got:\n%s\nwant:\n%s", verbose, wantVerbose)
 	}
 
-	// Item 5: pin the console token's scopes on this existing-config path
-	// specifically (addOperatorTokenWithRollback's "extra" console token,
-	// init.go), not just on the fresh-config path
-	// TestRunInitBearerStoresTokenWithoutEverPrintingIt already covers --
+	// Item 5 (now PLAN.md phase 7.0's upgrade guarantee): pin the console
+	// token's scopes on this existing-config path specifically
+	// (addOperatorTokenWithRollback's "extra" console token, init.go) --
 	// `moltnet console` trusts consoleTokenScopes to be exactly [observe]
 	// wherever a console token comes from, so a regression that widened it
 	// on this path specifically would otherwise go unnoticed by any test.
-	configPath := filepath.Join(home2, ".moltnet", "friend", "Moltnet")
+	// The operator token's scope count (3, never "pair") and secret value
+	// must also survive byte-for-byte: this --bearer rerun is an upgrade of
+	// a pre-existing operator token, not a re-mint of a new one.
 	reloaded, err := app.LoadConfigForPath(configPath, "")
 	if err != nil {
 		t.Fatalf("LoadConfigForPath(%q) error = %v", configPath, err)
@@ -236,8 +254,11 @@ func TestRunInitGoldenBearerOnExistingConfig(t *testing.T) {
 	for _, token := range reloaded.Auth.Tokens {
 		switch token.ID {
 		case "operator":
-			if len(token.Scopes) != 4 {
-				t.Fatalf("expected the operator token to keep all 4 scopes on the existing-config path, got %v", token.Scopes)
+			if len(token.Scopes) != 3 {
+				t.Fatalf("expected the operator token to keep exactly its original 3 scopes (never gaining \"pair\") on the existing-config path, got %v", token.Scopes)
+			}
+			if token.Value != operatorValueBeforeBearer {
+				t.Fatalf("expected the --bearer upgrade to leave the operator token's secret untouched, got a different value")
 			}
 		case "console":
 			if len(token.Scopes) != 1 || string(token.Scopes[0]) != "observe" {

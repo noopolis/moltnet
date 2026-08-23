@@ -95,6 +95,29 @@ func defaultConfig(version string) Config {
 			AgentRegistration:   authn.AgentRegistrationDisabled,
 			ListenAddr:          defaultListenAddr,
 			TrustForwardedProto: false,
+			// F3 (confirmed live): RequirePairNetworkBinding defaulted to
+			// true as of 7B.2, on the assumption that an inviter's own
+			// pair-scoped credential gets its network binding filled in
+			// "once the peer has made contact" (bindPairingNetworks,
+			// pairing_bindings.go). No code does that: `pair invite`
+			// (cmd/moltnet/pair_invite.go) writes both the pairings[] entry
+			// and its auth.tokens[] credential with no known
+			// remote_network_id, and nothing ever persists the peer's real
+			// network id back into the config once first contact reveals
+			// it -- bindPairingNetworks only binds from RemoteNetworkID,
+			// which stays empty forever on the inviting side. Shipping the
+			// strict default made every inviter permanently unable to
+			// receive from the peer it invited, with the only way out being
+			// to turn the protection back off by hand. Defaulting to false
+			// again keeps the old permissive posture (logged warning
+			// instead of outright rejection, internal/rooms/pairing_binding.go)
+			// until that persistence actually exists. An operator can still
+			// opt into the stricter posture explicitly via
+			// `auth.require_pair_network_binding: true` or
+			// MOLTNET_REQUIRE_PAIR_NETWORK_BINDING=true -- see
+			// internal/auth/policy.go's field comment for exactly what that
+			// rejects.
+			RequirePairNetworkBinding: false,
 		},
 		ListenAddr:  defaultListenAddr,
 		NetworkID:   defaultNetworkID,
@@ -116,8 +139,8 @@ func mergeFileConfig(config Config, fileConfig rawConfigFile) Config {
 	if fileConfig.Network.Name != "" {
 		config.NetworkName = fileConfig.Network.Name
 	}
-	if fileConfig.Server.ListenAddr != "" {
-		config.ListenAddr = fileConfig.Server.ListenAddr
+	if trimmed := strings.TrimSpace(fileConfig.Server.ListenAddr); trimmed != "" {
+		config.ListenAddr = trimmed
 	}
 	config.Auth.ListenAddr = config.ListenAddr
 	if fileConfig.Server.HumanIngress != nil {

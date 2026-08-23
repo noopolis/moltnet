@@ -55,6 +55,79 @@ func addOperatorTokenWithRollback(path string, operatorToken app.AuthTokenWriteb
 	})
 }
 
+// existingOperatorTokenPresent reports whether the Moltnet config at path
+// already has at least one auth.tokens[] entry, read fresh right before
+// addOperatorTokenWithRollback's own write. It exists only to pick the
+// right verbose-mode wording (runInit's bearerUpgradeOnly) for what that
+// write is about to do: mint a brand-new operator+console pair into a
+// genuinely tokenless config, or leave a pre-existing operator token
+// untouched and add only the console token plus flip the mode
+// (app.AddOperatorToken's PLAN.md phase 7.0 upgrade case, triggered once
+// plain `init` started minting its own operator token). A read failure
+// here conservatively answers false rather than erroring — the write
+// immediately following it will hit and report the same underlying
+// failure, so this never affects a refusal or rollback decision, only
+// which sentence a successful add gets described with.
+func existingOperatorTokenPresent(path string) bool {
+	config, err := app.LoadConfigForPath(path, "")
+	if err != nil {
+		return false
+	}
+	return len(config.Auth.Tokens) > 0
+}
+
+// existingConfigHasAdminToken reports whether the Moltnet config at path
+// already carries a token scoped admin -- this network's owner can
+// administer with it, whatever its id. It backs P1-2's fix to
+// applyExistingServerConfigTokens' repair-skip note (init_server_config.go):
+// that note used to fire on ANY existing auth.tokens[], including a
+// perfectly healthy network hitting its own second `init`, which meant the
+// single most-repeated command in this CLI told a fine setup to hand-edit
+// auth: for no reason. A config that already has an admin-capable token
+// needs no note at all -- the repair this note explains genuinely has
+// nothing left to do for it. A read failure here conservatively answers
+// false (show the note) rather than silently assuming the network is fine;
+// applyExistingServerConfigTokens' own repair attempt immediately above
+// this call already surfaced the real underlying error if there is one.
+//
+// Round 2's P3 fix: this used to also treat any token literally named
+// "operator" as admin-capable regardless of its actual scopes, so a
+// hand-written `id: operator, scopes: [observe]` config was told it needed
+// no repair -- while `init --bearer`'s own canUpgradeOperatorOnlyOpenConfig
+// (config_writeback_tokens.go) deliberately refuses that exact shape,
+// requiring both admin and write scopes before trusting an "operator"-named
+// token. The id shortcut here disagreed with that refusal outright; scopes
+// alone are now the only signal, matching it.
+func existingConfigHasAdminToken(path string) bool {
+	config, err := app.LoadConfigForPath(path, "")
+	if err != nil {
+		return false
+	}
+	for _, token := range config.Auth.Tokens {
+		for _, scope := range token.Scopes {
+			if string(scope) == "admin" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// repairOperatorTokenWithRollback adds operatorToken to an existing
+// tokenless open-mode Moltnet config at path via
+// app.AddOperatorTokenPreservingOpenMode, backstopped by the same
+// writeConfigWithRollback guarantee every writeback in this package gets.
+// It is PLAN.md phase 7.0's repair path for a network that predates plain
+// `init` minting an operator token. Unlike addOperatorTokenWithRollback
+// (the --bearer path above), the underlying write never flips auth.mode:
+// AddOperatorTokenPreservingOpenMode leaves it exactly as read, so a plain
+// `init` rerun can never silently reverse phase 6a's local-first default.
+func repairOperatorTokenWithRollback(path string, operatorToken app.AuthTokenWriteback) error {
+	return writeConfigWithRollback(path, "added operator token", func() error {
+		return app.AddOperatorTokenPreservingOpenMode(path, operatorToken)
+	})
+}
+
 // addConsoleTokenWithRollback adds a single observe-only token to the
 // Moltnet config at path, for `moltnet console`'s self-heal path
 // (console_selfheal.go).
