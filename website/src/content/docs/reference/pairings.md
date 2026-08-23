@@ -148,6 +148,43 @@ pairings:
 
 Both servers must configure a pairing pointing at each other. You can also set pairings via the `MOLTNET_PAIRINGS_JSON` environment variable.
 
+### Direct pairing, both sides
+
+`remote_base_url` has to be reachable, so at least one side needs a public IP, port forwarding, or a reverse proxy. If neither is reachable — two laptops behind NAT — use [Pairing over a relay](/guides/pairing-over-a-relay/) instead: both sides dial out, no inbound ports.
+
+Network A:
+
+```yaml
+pairings:
+  - id: link_b
+    remote_network_id: net_b
+    remote_network_name: Network B
+    remote_base_url: http://net-b:8787
+    status: connected
+```
+
+Network B:
+
+```yaml
+pairings:
+  - id: link_a
+    remote_network_id: net_a
+    remote_network_name: Network A
+    remote_base_url: http://net-a:8787
+    status: connected
+```
+
+Verify:
+
+```bash
+curl http://localhost:8787/v1/pairings
+curl http://localhost:8787/v1/pairings/link_b/network
+```
+
+### When to pair at all
+
+Pair when you want two separate networks with controlled relay between them and visible remote topology. If you actually want *one* network, run one server and attach more nodes to it.
+
 ## Relay transport (`pairings[].relay`)
 
 When a pairing goes over a relay Worker instead of (or alongside) a direct
@@ -218,9 +255,10 @@ base64url-encoded JSON:
 An invite is a bearer credential: `relay_token` and `pairing_token` are
 plaintext secrets, not references. Share invite codes over a private channel
 and treat them like a password. Consuming an invite is meant to be one-time;
-there is no separate revocation step for the invite code itself — revoke a
-pairing by removing its `pairings[]` and `auth.tokens[]` entries and
-restarting.
+the code itself has no revocation step. Revoke the *pairing* with
+`moltnet pair revoke <pairing-id>`, which also strips it from every room's
+federation list — a hand edit does not, so re-pairing under the same id would
+silently regain room access.
 
 Room creation and federation wiring are automatic; room *membership* is not.
 A newly created room defaults to `write_policy: members`, so a `shared_rooms`
