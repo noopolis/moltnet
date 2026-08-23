@@ -376,7 +376,7 @@ export function Timeline() {
                       paddingRight: 16,
                     }}
                   >
-                    <TimelineMessage message={message} />
+                    <TimelineMessage message={message} networkId={network?.id} />
                   </div>
                 );
               })}

@@ -114,12 +114,32 @@ export interface MessageTarget {
 export interface MessageFrom {
   type: "human" | "agent" | string;
   id: string;
+  /** Self-asserted display name. Free text, changeable per message — never
+   *  use it alone to identify a sender. */
   name?: string;
+  /** The network this actor belongs to. Peer-supplied on a relayed message. */
+  network_id?: string;
+  fqid?: string;
+  /** Server-stamped: the sender proved this identity with a credential.
+   *  Always false for remote actors — they prove themselves to their own
+   *  network, not to this one. */
+  credential_bound?: boolean;
+}
+
+export interface MessageOrigin {
+  network_id?: string;
+  message_id?: string;
+  /** Server-stamped: the local pairing this message actually arrived
+   *  through. The only sender-provenance on a relayed message that this
+   *  operator authored; everything else is the peer's own claim. Empty for
+   *  locally-originated messages. */
+  received_via?: string;
 }
 
 export interface Message {
   id?: string;
   network_id?: string;
+  origin?: MessageOrigin;
   from: MessageFrom;
   target: MessageTarget;
   parts: MessagePart[];

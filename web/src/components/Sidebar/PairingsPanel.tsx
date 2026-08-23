@@ -1,3 +1,4 @@
+import type { Pairing } from "../../lib/types";
 import { usePairings } from "../../hooks/usePairings";
 import { pairingDisplayStatus, pairingToneClass } from "../../lib/pairingStatus";
 import { useSelection } from "../../providers";
@@ -22,8 +23,12 @@ export function PairingsList() {
                   key={pairing.id}
                   active={active}
                   onClick={() => select({ kind: "pairing", id: pairing.id })}
-                  title={pairing.remote_network_name || pairing.remote_network_id}
-                  subtitle={status.detail}
+                  // The pairing id is the one label this operator authored
+                  // and can act on: remote_network_name/id are the peer's own
+                  // claims, and on the inviting side both are empty until the
+                  // peer makes contact — which rendered a blank row.
+                  title={pairing.id}
+                  subtitle={pairingPeerLabel(pairing) ?? status.detail}
                   trailing={
                     <span className={pairingToneClass(status.tone)}>
                       {status.label}
@@ -36,4 +41,14 @@ export function PairingsList() {
         )}
       </>
   );
+}
+
+/**
+ * What the peer says it is, marked as a claim. Empty on the inviting side
+ * until the peer has actually connected, which is why it can never be the
+ * primary label.
+ */
+function pairingPeerLabel(pairing: Pairing): string | undefined {
+  const claimed = pairing.remote_network_name?.trim() || pairing.remote_network_id?.trim();
+  return claimed ? `peer: ${claimed}` : undefined;
 }
