@@ -76,7 +76,7 @@ func runPairJoin(ctx context.Context, args []string) error {
 		Scopes:  []string{"pair"},
 	}
 
-	if err := writePairingWithRollback(path, pairing, authToken, invite.SharedRooms, *force); err != nil {
+	if err := writePairingWithRollback(path, pairing, authToken, invite.SharedRooms, *force, nil); err != nil {
 		// ErrPairingExists already carries a "rerun with --force" hint from
 		// WritePairing, and --force here is the same flag name, so there is
 		// nothing to add.
@@ -93,17 +93,21 @@ func runPairJoin(ctx context.Context, args []string) error {
 }
 
 // splitPairJoinArgs separates the invite code positional argument from
-// `--force`/`--config`/`--id`/`--restart` flags regardless of order, since
-// Go's flag package stops parsing at the first non-flag token and the
-// invite code is always the first argument in the documented UX (`moltnet
-// pair <invite-code>`).
+// `--force`/`--config`/`--id`/`--network-id`/`--restart` flags regardless of
+// order, since Go's flag package stops parsing at the first non-flag token
+// and the invite code is always the first argument in the documented UX
+// (`moltnet pair <invite-code>`). --network-id is only ever registered by
+// `pair invite show` (the one caller among splitPairJoinArgs' three whose
+// own --id already means something else -- pair_invite.go), but is listed
+// here unconditionally alongside --config/--id since this function has no
+// way to know which FlagSet a caller is about to hand flagArgs to.
 func splitPairJoinArgs(args []string) ([]string, string, error) {
 	flagArgs := make([]string, 0, len(args))
 	code := ""
 
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
-		if arg == "--config" || arg == "--id" {
+		if arg == "--config" || arg == "--id" || arg == "--network-id" {
 			if index+1 >= len(args) {
 				return nil, "", fmt.Errorf("flag %s requires a value", arg)
 			}

@@ -341,7 +341,7 @@ func TestWritePairingWithRollbackRestoresConfigOnReloadFailure(t *testing.T) {
 	pairing := app.PairingWriteback{ID: "friend-net", RemoteNetworkID: "bob-net", Token: "pairing-token"}
 	authToken := app.AuthTokenWriteback{ID: "friend-net", Value: "pairing-token", Scopes: []string{"pair"}}
 
-	err = writePairingWithRollback(path, pairing, authToken, []string{"chat"}, false)
+	err = writePairingWithRollback(path, pairing, authToken, []string{"chat"}, false, nil)
 	if err == nil {
 		t.Fatal("expected writePairingWithRollback to fail the post-write reload")
 	}

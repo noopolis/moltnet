@@ -17,6 +17,24 @@ import (
 // exists in the target Moltnet config file.
 var ErrPairingExists = errors.New("pairing already exists")
 
+// ErrAuthTokenIDConflict indicates a pairing's id collides with an existing
+// auth.tokens[] entry that is not a plain pair-scoped credential.
+//
+// F5 (confirmed): the pairing id that ends up as AuthTokenWriteback.ID is
+// invite-controlled on both sides of a pairing -- `pair invite --id <id>`
+// picks it directly, and `pair <code>` takes whatever pairing_id the invite
+// names, with no round trip to confirm it first. upsertAuthToken
+// (below) overwrites-by-id unconditionally, so an invite (or a hand-crafted
+// one) naming an id that collides with an operator's own static token --
+// most dangerously "operator" itself -- used to silently replace that
+// token's value and scopes with a bare [pair]-scoped credential, locking the
+// real operator out of their own network. This is refused even under
+// --force: --force is documented and tested as "overwrite an existing
+// *pairing* with this id", never "overwrite an unrelated non-pair
+// credential" -- those are different invariants and only the first one is
+// what --force opts into.
+var ErrAuthTokenIDConflict = errors.New("pairing id collides with a non-pair auth token")
+
 // PairingWriteback is the plaintext pairings[] entry a pair command appends
 // to a Moltnet config file. It uses plain strings instead of
 // protocol.SecretString on purpose: SecretString marshals as [REDACTED], so
@@ -83,6 +101,9 @@ func WritePairing(path string, pairing PairingWriteback, authToken AuthTokenWrit
 	}
 
 	if err := upsertPairing(doc, pairing, force); err != nil {
+		return err
+	}
+	if err := rejectAuthTokenIDConflict(doc, authToken.ID); err != nil {
 		return err
 	}
 	upsertAuthToken(doc, authToken)
@@ -153,29 +174,6 @@ func upsertPairing(doc map[string]any, pairing PairingWriteback, force bool) err
 	list = append(list, entry)
 	doc["pairings"] = toAnySlice(list)
 	return nil
-}
-
-func upsertAuthToken(doc map[string]any, token AuthTokenWriteback) {
-	auth, _ := doc["auth"].(map[string]any)
-	if auth == nil {
-		auth = map[string]any{}
-	}
-
-	list := asMapSlice(auth["tokens"])
-	entry := authTokenWritebackMap(token)
-
-	for index, existing := range list {
-		if stringField(existing, "id") == token.ID {
-			list[index] = entry
-			auth["tokens"] = toAnySlice(list)
-			doc["auth"] = auth
-			return
-		}
-	}
-
-	list = append(list, entry)
-	auth["tokens"] = toAnySlice(list)
-	doc["auth"] = auth
 }
 
 // validateSharedRoomIDs rejects any non-blank id in roomIDs that would fail
@@ -277,18 +275,6 @@ func pairingWritebackMap(pairing PairingWriteback) map[string]any {
 			"room":  pairing.Relay.Room,
 			"token": pairing.Relay.Token,
 		}
-	}
-	return entry
-}
-
-func authTokenWritebackMap(token AuthTokenWriteback) map[string]any {
-	entry := map[string]any{
-		"id":     token.ID,
-		"value":  token.Value,
-		"scopes": append([]string(nil), token.Scopes...),
-	}
-	if token.Network != "" {
-		entry["network"] = token.Network
 	}
 	return entry
 }

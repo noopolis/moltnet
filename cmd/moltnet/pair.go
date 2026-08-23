@@ -23,8 +23,15 @@ func runPairCommand(ctx context.Context, args []string) error {
 		fmt.Fprint(stdout, buildPairUsage())
 		return nil
 	}
-	if args[0] == "invite" {
+	switch args[0] {
+	case "invite":
 		return runPairInvite(ctx, args[1:])
+	case "revoke":
+		return runPairRevoke(ctx, args[1:])
+	case "list":
+		return runPairList(args[1:])
+	case "show":
+		return runPairShow(args[1:])
 	}
 
 	return runPairJoin(ctx, args)
@@ -51,24 +58,77 @@ func resolvePairConfigPath(explicit string, id string) (string, error) {
 	return path, nil
 }
 
+// writePairingFunc is a seam for tests: writePairingWithRollback calls
+// through this indirection instead of app.WritePairing directly. Unit 4's
+// entire reason to exist is the ORDER writePairingWithRollback performs its
+// steps in -- the invite receipt must already be on disk before the pairing
+// commit runs, and both snapshot/restore calls must actually fire on
+// failure -- none of which a black-box call to app.WritePairing lets a test
+// observe directly. Overriding this var lets a test inspect (or control)
+// filesystem state at the exact moment WritePairing would run, the same way
+// isInteractive (below, this file) is a var rather than a plain func so
+// tests can force its otherwise-opaque outcome.
+var writePairingFunc = app.WritePairing
+
 // writePairingWithRollback writes pairing, authToken, and any invite-named
 // shared rooms into the Moltnet config at path, then re-runs the same full
 // config load the server uses at startup (env-merge included) as a
 // post-write check. If that reload fails, the file is restored to its prior
 // contents so a bad write never lingers.
-func writePairingWithRollback(path string, pairing app.PairingWriteback, authToken app.AuthTokenWriteback, roomIDs []string, force bool) error {
-	snapshot, err := snapshotFile(path)
+//
+// inviteReceipt is non-nil only on the invite side (`pair invite`,
+// pair_invite.go): it is written via app.WriteInviteReceipt *before*
+// WritePairing commits the pairing to config, so that by the time the
+// config commit succeeds, the exact code about to be printed is already
+// recoverable on disk (app.LoadInviteReceipt / `pair invite show`) --
+// closing the interruption window SETUP.md's "no journal" exception #1
+// describes between that commit and the print. `pair <code>` (the join
+// side, pair_join.go) always passes nil: it never generates a locally
+// printed code of its own, so it has nothing to persist a receipt for.
+//
+// Both files get the same snapshot-then-restore treatment on any failure
+// (WritePairing erroring outright, or the reload check below failing), so a
+// --force overwrite that fails partway never leaves the receipt for a
+// *different*, still-committed invite clobbered by an invite that never
+// actually landed.
+func writePairingWithRollback(path string, pairing app.PairingWriteback, authToken app.AuthTokenWriteback, roomIDs []string, force bool, inviteReceipt *app.InviteReceipt) error {
+	configSnapshot, err := snapshotFile(path)
 	if err != nil {
 		return err
 	}
 
-	if err := app.WritePairing(path, pairing, authToken, roomIDs, force); err != nil {
+	var receiptPath string
+	var receiptSnapshot fileSnapshot
+	if inviteReceipt != nil {
+		receiptPath = app.InviteReceiptPath(path, inviteReceipt.PairingID)
+		receiptSnapshot, err = snapshotFile(receiptPath)
+		if err != nil {
+			return err
+		}
+		if err := app.WriteInviteReceipt(path, *inviteReceipt); err != nil {
+			// Nothing was persisted yet at receiptPath's prior state, so
+			// there is nothing to restore.
+			return err
+		}
+	}
+
+	if err := writePairingFunc(path, pairing, authToken, roomIDs, force); err != nil {
+		if inviteReceipt != nil {
+			if restoreErr := receiptSnapshot.restore(receiptPath); restoreErr != nil {
+				return fmt.Errorf("%w (also failed to restore the prior invite receipt: %v)", err, restoreErr)
+			}
+		}
 		return err
 	}
 
 	if _, err := app.LoadConfigForPath(path, ""); err != nil {
-		if restoreErr := snapshot.restore(path); restoreErr != nil {
+		if restoreErr := configSnapshot.restore(path); restoreErr != nil {
 			return fmt.Errorf("wrote pairing but the config failed to reload (%v); restore also failed: %w", err, restoreErr)
+		}
+		if inviteReceipt != nil {
+			if restoreErr := receiptSnapshot.restore(receiptPath); restoreErr != nil {
+				return fmt.Errorf("wrote pairing but the config failed to reload; rolled back, but also failed to restore the prior invite receipt: %w", restoreErr)
+			}
 		}
 		return fmt.Errorf("wrote pairing but the config failed to reload; rolled back: %w", err)
 	}
