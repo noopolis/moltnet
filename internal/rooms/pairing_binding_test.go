@@ -293,3 +293,95 @@ func TestUnboundPairTokenIsPinnedToTheOriginItFirstAsserts(t *testing.T) {
 		t.Fatalf("the origin this credential was pinned to must still be accepted: %v", err)
 	}
 }
+
+// Provenance: the receiving network records WHICH pairing an inbound relayed
+// message actually arrived through, resolved from the presenting credential.
+// This is the only field on a relayed message the local operator authored --
+// every other identity field is the peer's own claim -- so it must be stamped
+// by the server, never read from the wire, and never sent onward.
+func TestInboundRelayedMessageRecordsThePairingItArrivedThrough(t *testing.T) {
+	t.Parallel()
+
+	service := newPairingCredentialBindingTestService()
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"remote-b:member"})
+	claims := authn.NewStaticClaims(authn.TokenConfig{
+		ID:      "pair-b",
+		Value:   "pair-b-secret",
+		Network: "remote-b",
+		Scopes:  []authn.Scope{authn.ScopePair},
+	})
+
+	request := roomSend("floor", "member")
+	request.Origin = protocol.MessageOrigin{
+		NetworkID: "remote-b",
+		MessageID: "remote-b-message",
+		// A hostile peer naming someone else's pairing. Must be discarded.
+		ReceivedVia: "pair-c",
+	}
+	request.From.NetworkID = "remote-b"
+
+	if _, err := service.SendMessageContext(bearerClaimsContext(claims), request); err != nil {
+		t.Fatalf("SendMessageContext() error = %v", err)
+	}
+
+	page, err := service.ListRoomMessages("floor", "", 10)
+	if err != nil {
+		t.Fatalf("ListRoomMessages() error = %v", err)
+	}
+	if len(page.Messages) != 1 {
+		t.Fatalf("stored %d messages, want 1", len(page.Messages))
+	}
+	if got := page.Messages[0].Origin.ReceivedVia; got != "pair-b" {
+		t.Fatalf("Origin.ReceivedVia = %q, want the pairing the credential actually resolves to (%q)", got, "pair-b")
+	}
+}
+
+// A locally-originated message has no pairing provenance: it did not arrive
+// through one. An empty value is what distinguishes "mine" from "a peer's".
+func TestLocalMessageRecordsNoPairingProvenance(t *testing.T) {
+	t.Parallel()
+
+	service := newPairingCredentialBindingTestService()
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"member"})
+
+	request := roomSend("floor", "member")
+	if _, err := service.SendMessageContext(t.Context(), request); err != nil {
+		t.Fatalf("SendMessageContext() error = %v", err)
+	}
+
+	page, err := service.ListRoomMessages("floor", "", 10)
+	if err != nil {
+		t.Fatalf("ListRoomMessages() error = %v", err)
+	}
+	if got := page.Messages[0].Origin.ReceivedVia; got != "" {
+		t.Fatalf("Origin.ReceivedVia = %q, want empty for a local message", got)
+	}
+}
+
+// The stamp is this network's own bookkeeping. Relaying it onward would hand
+// the far side a field it must never see, and it would arrive there as
+// testimony rather than as that network's own record.
+func TestRelayedRequestDoesNotCarryPairingProvenanceOnward(t *testing.T) {
+	t.Parallel()
+
+	service := newPairingCredentialBindingTestService()
+	message := protocol.Message{
+		ID:        "msg_1",
+		NetworkID: "local",
+		Origin:    protocol.MessageOrigin{NetworkID: "local", MessageID: "msg_1", ReceivedVia: "pair-b"},
+		Target:    protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "floor"},
+		From:      protocol.Actor{Type: "agent", ID: "member", NetworkID: "local"},
+		Parts:     []protocol.Part{{Kind: "text", Text: "hi"}},
+	}
+
+	relayed, ok := service.relayRequest(protocol.Pairing{ID: "pair-b"}, message)
+	if !ok {
+		t.Fatal("relayRequest() refused a room message")
+	}
+	if relayed.Origin.ReceivedVia != "" {
+		t.Fatalf("relayed Origin.ReceivedVia = %q, want it stripped", relayed.Origin.ReceivedVia)
+	}
+	if relayed.Origin.NetworkID != "local" {
+		t.Fatalf("stripping provenance must not disturb the rest of the origin: %+v", relayed.Origin)
+	}
+}

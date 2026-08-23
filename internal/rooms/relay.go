@@ -12,13 +12,22 @@ import (
 const pairingRelayTimeout = 5 * time.Second
 const pairingRelayErrorRetryAfter = 30 * time.Second
 
-func (s *Service) normalizeOrigin(origin protocol.MessageOrigin, messageID string) protocol.MessageOrigin {
+func (s *Service) normalizeOrigin(ctx context.Context, origin protocol.MessageOrigin, messageID string) protocol.MessageOrigin {
 	normalized := origin
 	if strings.TrimSpace(normalized.NetworkID) == "" {
 		normalized.NetworkID = s.networkID
 	}
 	if strings.TrimSpace(normalized.MessageID) == "" {
 		normalized.MessageID = messageID
+	}
+
+	// Server authority, never caller testimony -- the same discipline
+	// CredentialBound follows (messaging.go). Whatever the caller sent here
+	// is discarded: a peer must not be able to name the pairing its own
+	// message claims to have arrived through.
+	normalized.ReceivedVia = ""
+	if pairing, ok := s.pairingForPairScopedContext(ctx); ok {
+		normalized.ReceivedVia = pairing.ID
 	}
 
 	return normalized
@@ -263,9 +272,15 @@ func (s *Service) relayRequest(_ protocol.Pairing, message protocol.Message) (pr
 		}
 	}
 
+	// The pairing id is this network's own record of how the message
+	// reached it; relaying it onward would hand a peer a field it must
+	// never see and would arrive at the far side as testimony.
+	origin := message.Origin
+	origin.ReceivedVia = ""
+
 	return protocol.SendMessageRequest{
 		ID:       message.ID,
-		Origin:   message.Origin,
+		Origin:   origin,
 		Target:   target,
 		From:     message.From,
 		Parts:    append([]protocol.Part(nil), message.Parts...),

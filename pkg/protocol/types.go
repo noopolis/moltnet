@@ -61,6 +61,16 @@ type Actor struct {
 type MessageOrigin struct {
 	NetworkID string `json:"network_id"`
 	MessageID string `json:"message_id"`
+	// ReceivedVia is the local pairing id an inbound relayed message
+	// actually arrived through, resolved server-side from the presenting
+	// credential. Empty for locally-originated messages.
+	//
+	// This is the ONLY provenance on a relayed message the receiving
+	// operator authored: NetworkID and the sender's own network id are
+	// peer-supplied claims. It is never read from the wire (normalizeOrigin
+	// overwrites it unconditionally) and never sent outbound (relayRequest
+	// clears it), so it cannot become peer testimony in either direction.
+	ReceivedVia string `json:"received_via,omitempty"`
 }
 
 type Target struct {

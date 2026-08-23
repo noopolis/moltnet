@@ -63,7 +63,7 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 
 	now := time.Now().UTC()
 	target := s.normalizeTarget(request.Target, from)
-	origin := s.normalizeOrigin(request.Origin, messageID)
+	origin := s.normalizeOrigin(ctx, request.Origin, messageID)
 	message := protocol.Message{
 		ID:        messageID,
 		NetworkID: s.networkID,

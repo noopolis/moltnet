@@ -96,7 +96,7 @@ func TestRelayHelpers(t *testing.T) {
 		Broker:    events.NewBroker(),
 	})
 
-	origin := service.normalizeOrigin(protocol.MessageOrigin{}, "msg_net_a_1")
+	origin := service.normalizeOrigin(context.Background(), protocol.MessageOrigin{}, "msg_net_a_1")
 	if origin.NetworkID != "net_a" || origin.MessageID != "msg_net_a_1" {
 		t.Fatalf("unexpected normalized origin %#v", origin)
 	}
