@@ -36,18 +36,64 @@ const bannerAnimationHardCap = 1200 * time.Millisecond
 // actual slow writer to burn 1.2 real seconds.
 var nowFunc = time.Now
 
-// terminalWidth reports stdout's live column count: a TIOCGWINSZ ioctl
-// against the real fd when stdout is a genuine *os.File, so an interactive
-// resize is reflected, falling back to the COLUMNS environment variable
-// when the ioctl isn't available or errors. Returns (0, false) when
-// neither source yields a usable positive width; playBanner treats that as
-// "assume narrow" (P1) rather than risk animating into a terminal it never
-// actually measured.
+// fdFile is the minimal capability terminalWidth, stdoutIsRealTTY, and
+// isOutputTerminal (style.go) actually need from the stdout var: the raw OS
+// file descriptor behind it. It exists so a wrapper that is not literally an
+// *os.File — setup_header.go's live header, which forwards stdout's real
+// file through its own io.Writer for the whole time it owns the terminal,
+// including across a prompt's Suspend/Resume cycle — can still satisfy
+// these three checks exactly as if stdout were the bare file, rather than
+// having every one of them read "not a terminal" the moment setup wraps it.
+// *os.File already implements Fd() uintptr, so this widens what these three
+// checks accept without changing their answer for any caller that passes a
+// literal *os.File today (a real os.Stdout, or a test's os.Pipe()/pty
+// file).
+type fdFile interface {
+	Fd() uintptr
+}
+
+// terminalSize reports stdout's live column and row counts together, backed
+// by the one TIOCGWINSZ ioctl terminalWidth itself used to issue alone: a
+// winsize struct always carries both, so a caller that needs both values
+// (setup_header.go's viewport-height gate, P1-2) pays for a single syscall
+// rather than risking two independent ones observing different sizes either
+// side of an in-flight resize.
+//
+// colsOK and rowsOK are reported independently (P3-1): a real terminal can
+// legitimately report Row:0 while Col is perfectly good (observed on a real
+// pty: IoctlSetWinsize{Row:0,Col:80} round-trips exactly as set, no kernel
+// validation rejects it), and folding both into one combined ok — as an
+// earlier version of this function did — let a bad Row silently invalidate
+// a good Col, taking terminalWidth's own COLUMNS fallback down with it even
+// though COLUMNS is never actually exported by shells and so never actually
+// rescues anything. ok is false for a given value under exactly the
+// conditions terminalWidth's own doc comment already described for the
+// ioctl path. There is no environment-variable fallback for rows here — no
+// LINES analogue to COLUMNS is read anywhere else in this codebase — so an
+// ioctl-less environment (a plain pipe) always reports rowsOK false even
+// when cols alone might still be known via terminalWidth's own COLUMNS
+// fallback below.
+func terminalSize() (cols, rows int, colsOK, rowsOK bool) {
+	f, isFdFile := stdout.(fdFile)
+	if !isFdFile {
+		return 0, 0, false, false
+	}
+	ws, err := unix.IoctlGetWinsize(int(f.Fd()), unix.TIOCGWINSZ)
+	if err != nil {
+		return 0, 0, false, false
+	}
+	return int(ws.Col), int(ws.Row), ws.Col > 0, ws.Row > 0
+}
+
+// terminalWidth reports stdout's live column count: terminalSize's ioctl
+// when it succeeds, falling back to the COLUMNS environment variable when
+// the ioctl isn't available, errors, or reports Col as zero. Returns (0,
+// false) when neither source yields a usable positive width; playBanner
+// treats that as "assume narrow" (P1) rather than risk animating into a
+// terminal it never actually measured.
 func terminalWidth() (int, bool) {
-	if f, ok := stdout.(*os.File); ok {
-		if ws, err := unix.IoctlGetWinsize(int(f.Fd()), unix.TIOCGWINSZ); err == nil && ws.Col > 0 {
-			return int(ws.Col), true
-		}
+	if cols, _, colsOK, _ := terminalSize(); colsOK {
+		return cols, true
 	}
 	if raw := os.Getenv("COLUMNS"); raw != "" {
 		if cols, err := strconv.Atoi(raw); err == nil && cols > 0 {
@@ -70,7 +116,7 @@ func terminalWidth() (int, bool) {
 // always takes playBanner's static fallback; only a genuine pseudo-
 // terminal (requireTestPTY, openpty_test.go) makes it return true.
 func stdoutIsRealTTY() bool {
-	f, ok := stdout.(*os.File)
+	f, ok := stdout.(fdFile)
 	if !ok {
 		return false
 	}

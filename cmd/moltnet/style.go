@@ -27,8 +27,19 @@ const (
 // the TTY-styled path without a real terminal attached to stdout — see
 // cmd/moltnet/style_test.go, following the same seam pattern
 // cmd/moltnet/uninstall_test.go uses for isInteractive.
+//
+// The type assertion is against fdFile (banner_player.go), not the literal
+// *os.File it used to be: setup_header.go's live header wraps the real
+// stdout file in a small io.Writer that also forwards Fd() so it can keep
+// serving as the package's stdout var across a prompt's Suspend/Resume
+// cycle (SETUP.md's "ticker suspends while a prompt reads stdin") without
+// this check — and stdoutIsRealTTY's/terminalWidth's identical assertions —
+// suddenly reporting a genuine terminal as non-interactive. *os.File already
+// satisfies fdFile, so every existing caller (a real os.Stdout, or a test's
+// os.Pipe()/pty file) is unaffected; only that new wrapper type widens what
+// can pass.
 var isOutputTerminal = func() bool {
-	f, ok := stdout.(*os.File)
+	f, ok := stdout.(fdFile)
 	if !ok {
 		return false
 	}

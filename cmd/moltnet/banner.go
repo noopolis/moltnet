@@ -36,11 +36,11 @@ func printBanner() {
 // byte-for-byte to printBanner's own static dim(bannerText) otherwise.
 //
 // Bare `moltnet` (cli.go's no-command path) deliberately keeps calling
-// plain printBanner() instead of this — that path immediately starts the
-// long-running server, and animating there would add up to ~1s to every
-// server launch for a purely cosmetic flourish. `init` is already an
-// interactive, one-shot command that narrates several steps in sequence,
-// so the same ~1s reads as pacing rather than a delay.
+// plain printBanner() instead of this — it now just prints help and exits
+// (PLAN 7A.5), and animating there would add a purely cosmetic ~1s delay to
+// a one-shot help lookup. `init` is already an interactive, one-shot
+// command that narrates several steps in sequence, so the same ~1s reads as
+// pacing rather than a delay.
 //
 // ctx is threaded straight through to playBanner (banner_player.go), whose
 // doc comment covers what a cancelled ctx does mid-animation. When it comes

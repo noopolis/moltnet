@@ -26,10 +26,11 @@ the characters in place.
 
 ## banner-frames.txt / banner-frames-loop.txt
 
-`banner-frames.txt` (16 frames) and `banner-frames-loop.txt` (7 frames,
-kept in for a later "waiting" idle animation — not wired into any command
-yet) are animation frame sets for `banner.txt`'s wordmark, embedded and
-played by `cmd/moltnet/banner_player.go`. Same glyphcss pipeline as
+`banner-frames.txt` (16 frames, `init`'s settle animation, played by
+`cmd/moltnet/banner_player.go`) and `banner-frames-loop.txt` (7 frames,
+`moltnet setup`'s live idle-sway header, ping-ponged by
+`cmd/moltnet/setup_header.go`) are animation frame sets for `banner.txt`'s
+wordmark. Same glyphcss pipeline as
 `banner.txt` above (`compileScene` direct, Roboto-Bold, lowercase
 "moltnet", depth 2, `mode: solid`/`glyphPalette: solid`/`charMode:
 quadrant`/`cellAspect: 1.4`, orthographic, `rotX: 90`), with two differences
