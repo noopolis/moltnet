@@ -61,9 +61,10 @@ networks there (--id already names the pairing); "pair <invite-code>" takes
 init" first if no config is found.
 
 --restart restarts this network's managed service (see "moltnet service")
-after a successful write, instead of just printing the restart reminder; it
-errors clearly if no service is installed for this network. Without
---restart, an interactive session gets a one-line tip suggesting it.
+after a successful write, instead of just printing the restart reminder. A
+real restart failure fails the command; no service installed is only a
+warning, since the pairing is already written by then. Without --restart, an
+interactive session gets a one-line tip suggesting it.
 
 "pair revoke <pairing-id>" is the missing half of the peering lifecycle: it
 removes the pairings[] entry, the peer's inbound auth.tokens[] credential
