@@ -277,3 +277,34 @@ func (reader *stagedReadCloser) Close() error {
 	})
 	return nil
 }
+
+// terminalWriteSignal wraps the session's output and closes its channel after
+// the first response is written. emitTerminal (session_lifecycle.go) claims the
+// terminal in the registry *before* writing it, so a test gating input on this
+// signal knows the target correlation is already final — which is the only way
+// to establish the precondition "the operation completed, then a cancel
+// arrived" without depending on goroutine scheduling.
+type terminalWriteSignal struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+	once   sync.Once
+	signal chan struct{}
+}
+
+func newTerminalWriteSignal() *terminalWriteSignal {
+	return &terminalWriteSignal{signal: make(chan struct{})}
+}
+
+func (writer *terminalWriteSignal) Write(p []byte) (int, error) {
+	writer.mu.Lock()
+	n, err := writer.buffer.Write(p)
+	writer.mu.Unlock()
+	writer.once.Do(func() { close(writer.signal) })
+	return n, err
+}
+
+func (writer *terminalWriteSignal) Bytes() []byte {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return append([]byte(nil), writer.buffer.Bytes()...)
+}
