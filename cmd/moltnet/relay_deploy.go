@@ -45,6 +45,7 @@ func runRelayDeploy(args []string) error {
 		configPath  = flags.String("config", "", "Moltnet config path")
 		id          = flags.String("id", "", "network id to select under ~/.moltnet when several exist")
 		verboseFlag = flags.Bool("verbose", false, "print full detail: per-step checkmarks, stored-token source, credential paths, the rotation warning")
+		subdomain   = flags.String("subdomain", "", "claim this workers.dev subdomain for the Cloudflare account non-interactively, instead of the interactive prompt (required when stdin/stdout are not both terminals and the account has no existing claim); claiming a workers.dev subdomain is PERMANENT for the account and Cloudflare allows exactly one, ever — passing this flag is your explicit confirmation of that claim. Ignored (adopted silently) if it matches an existing claim; refused if it names a different one")
 	)
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -67,6 +68,36 @@ func runRelayDeploy(args []string) error {
 		existingToken = strings.TrimSpace(os.Getenv(*tokenEnv))
 		if existingToken == "" {
 			return fmt.Errorf("environment variable %q named by --token-env is empty or not set", *tokenEnv)
+		}
+	}
+
+	// Same rationale as --token-env above: an invalid --subdomain name is a
+	// config-independent usage error, caught here rather than surfaced from
+	// deep inside relaydeploy.Deploy after a header already printed.
+	// Normalizing (lowercasing) here, once, is what lets deployOpts.Subdomain
+	// below and the equality checks inside relaydeploy.Deploy assume a
+	// canonical form — the same rule
+	// attemptInteractiveWorkersDevSubdomainClaim applies to a typed name
+	// (relay_deploy_subdomain_claim.go).
+	//
+	// A whitespace-only --subdomain "   " (given but blank after trimming)
+	// is rejected outright rather than silently treated as though the flag
+	// were absent -- before this fix, that value trimmed to "" here, the
+	// run then behaved exactly as if --subdomain had never been passed, and
+	// died on the generic unclaimed-subdomain error with no hint the flag
+	// itself had been ignored. NormalizeWorkersDevSubdomainName only ever
+	// lowercases (never blanks a non-whitespace value), so an empty result
+	// here is unambiguously "trimmed to nothing," never a name the
+	// subdomain-shape validation below would have rejected for some other
+	// reason.
+	rawSubdomain := *subdomain
+	subdomainName := relaydeploy.NormalizeWorkersDevSubdomainName(strings.TrimSpace(rawSubdomain))
+	if subdomainName == "" && rawSubdomain != "" {
+		return fmt.Errorf("--subdomain: must not be blank")
+	}
+	if subdomainName != "" {
+		if err := relaydeploy.ValidateWorkersDevSubdomainName(subdomainName); err != nil {
+			return fmt.Errorf("--subdomain: %w", err)
 		}
 	}
 
@@ -181,6 +212,7 @@ func runRelayDeploy(args []string) error {
 		ScriptName:      scriptName,
 		ExistingToken:   existingToken,
 		PriorToken:      priorToken,
+		Subdomain:       subdomainName,
 		ResolveHostname: resolveRelayDeployHostname,
 		StoredTokenPath: storedTokenPathForDeploy,
 	}
@@ -260,6 +292,18 @@ func runRelayDeploy(args []string) error {
 	if claimedSubdomainName == "" {
 		sections.start()
 	}
+	// result.Claimed is the non-interactive --subdomain counterpart: a
+	// first-ever, permanent, account-level workers.dev claim performed by
+	// this exact call, made unconditionally (not --verbose only, matching
+	// the interactive path's own always-on receipt above) since adopting an
+	// existing claim is otherwise indistinguishable from making a new,
+	// irreversible one. Never true at the same time as claimedSubdomainName
+	// being non-empty: that variable is only ever set by the interactive
+	// claim prompt, whose own redeploy call passes no --subdomain and so
+	// only ever adopts (relaydeploy.Deploy's own Claimed doc comment).
+	if result.Claimed {
+		printInitConfigCheckLine(fmt.Sprintf("claimed workers.dev subdomain %q", result.Subdomain), "")
+	}
 	printedStepLines := false
 	if verbose {
 		printInitConfigCheckLine(fmt.Sprintf("deployed relay Worker %q", result.ScriptName), "")
@@ -309,49 +353,6 @@ func runRelayDeploy(args []string) error {
 	return nil
 }
 
-// abbreviatePathInMessage returns err's message with every occurrence of
-// rawPath rewritten to its ~-abbreviated form (abbreviateHome), for display
-// only (P2-3). This is a presentation-layer transform: it never changes what
-// relaydeploy itself returns to its own callers — internal/relaydeploy's own
-// tests pin the raw absolute path in the errors it returns — it only cleans
-// up the copy this CLI prints or returns as its own top-level error, so a
-// path shown here reads consistently with every other ~-abbreviated path in
-// this output. A targeted string replace, not a general parser: err or an
-// empty rawPath returns err's message (or "") unchanged, and a message that
-// never mentions rawPath comes back byte-identical.
-func abbreviatePathInMessage(err error, rawPath string) string {
-	if err == nil {
-		return ""
-	}
-	if rawPath == "" {
-		return err.Error()
-	}
-	abbreviated := abbreviateHome(rawPath)
-	if abbreviated == rawPath {
-		return err.Error()
-	}
-	return strings.ReplaceAll(err.Error(), rawPath, abbreviated)
-}
-
-// abbreviatePathError is abbreviatePathInMessage's error-returning
-// counterpart, for a returned (rather than printed) error: the rejected-
-// stored-token error wrapStoredTokenError (internal/relaydeploy/deploy.go)
-// produces, which this CLI returns rather than printing directly, so
-// whatever eventually prints it (main.go's top-level error path) shows the
-// abbreviated path too. Returns err itself, unchanged, whenever rawPath is
-// empty (no stored token was in play) or never appears in err's message —
-// which also means every unrelated error (including
-// relaydeploy.ErrWorkersDevSubdomainUnclaimed, handled just above every call
-// site of this function) passes through with its errors.Is/errors.As chain
-// intact; only the one shape that actually names rawPath gets rebuilt as a
-// plain error carrying the rewritten text.
-func abbreviatePathError(err error, rawPath string) error {
-	if err == nil || rawPath == "" {
-		return err
-	}
-	rewritten := abbreviatePathInMessage(err, rawPath)
-	if rewritten == err.Error() {
-		return err
-	}
-	return errors.New(rewritten)
-}
+// abbreviatePathInMessage and abbreviatePathError live in
+// relay_deploy_path_abbrev.go -- split out to keep this file under the
+// repo's 400-line limit.

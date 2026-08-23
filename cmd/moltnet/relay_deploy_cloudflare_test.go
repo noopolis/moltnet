@@ -72,6 +72,20 @@ type fakeCloudflareCLIServer struct {
 	// covers — Cloudflare error code 10063 — until a PUT
 	// /workers/subdomain claims one.
 	subdomain string
+	// claimAttempts counts every PUT /workers/subdomain request this fake
+	// has received, regardless of outcome — the --subdomain flag tests
+	// (relay_deploy_subdomain_flag_test.go) use this to prove an already-
+	// matching claim is adopted without a redundant re-claim PUT.
+	claimAttempts int
+	// requests counts every request this fake has received across every
+	// registered route, regardless of method or outcome — unlike
+	// claimAttempts, which only ever sees the one PUT /workers/subdomain
+	// route. "--print-commands must never contact Cloudflare" needs this
+	// wider count: VerifyToken/ResolveAccountID/WorkersDevSubdomain are all
+	// plain GETs that claimAttemptCount cannot see, so a regression that
+	// starts issuing those calls under --print-commands would otherwise
+	// leave claimAttemptCount() == 0 and the suite green.
+	requests int
 }
 
 func startFakeCloudflareCLIServer(t *testing.T, wantToken string) *fakeCloudflareCLIServer {
@@ -173,6 +187,9 @@ func newFakeCloudflareCLIServer(t *testing.T, wantToken, initialSubdomain, accep
 
 func (f *fakeCloudflareCLIServer) authenticated(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.requests++
+		f.mu.Unlock()
 		if f.wantToken != "" && r.Header.Get("Authorization") != "Bearer "+f.wantToken {
 			writeFakeCloudflareEnvelope(w, http.StatusUnauthorized, false, nil)
 			return
@@ -245,6 +262,10 @@ func (f *fakeCloudflareCLIServer) handleGetSubdomain(w http.ResponseWriter, r *h
 // successful claim updates f.subdomain unless simulateClaimLag is set (see
 // its doc comment).
 func (f *fakeCloudflareCLIServer) handleClaimSubdomain(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	f.claimAttempts++
+	f.mu.Unlock()
+
 	var payload struct {
 		Subdomain string `json:"subdomain"`
 	}
@@ -266,6 +287,24 @@ func (f *fakeCloudflareCLIServer) handleClaimSubdomain(w http.ResponseWriter, r 
 	}
 	f.mu.Unlock()
 	writeFakeCloudflareEnvelope(w, http.StatusOK, true, json.RawMessage(fmt.Sprintf(`{"subdomain":%q}`, payload.Subdomain)))
+}
+
+// claimAttemptCount returns how many PUT /workers/subdomain requests this
+// fake has received so far, regardless of outcome.
+func (f *fakeCloudflareCLIServer) claimAttemptCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.claimAttempts
+}
+
+// requestCount returns how many requests this fake has received so far,
+// across every registered route — the total-contact count "--print-commands
+// must never contact Cloudflare" actually needs (see the requests field's
+// doc comment).
+func (f *fakeCloudflareCLIServer) requestCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.requests
 }
 
 func writeFakeCloudflareEnvelope(w http.ResponseWriter, status int, success bool, result json.RawMessage) {

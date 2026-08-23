@@ -127,13 +127,15 @@ func buildWorkersDevSubdomainClaimIntro() string {
 func buildWorkersDevSubdomainGuidance(id string) string {
 	return fmt.Sprintf(`  This account has not claimed a workers.dev subdomain yet. Run this
   command interactively (both stdin and stdout attached to a terminal) and
-  you will be prompted to claim one in place. Otherwise, claim it by hand:
+  you will be prompted to claim one in place, or pass --subdomain <name> to
+  claim one non-interactively (e.g. from a script or CI). Otherwise, claim
+  it by hand:
 
     1. Open https://dash.cloudflare.com and choose this account
     2. Go to Workers & Pages
     3. Claim (or confirm) this account's workers.dev subdomain
 
-  Then rerun: moltnet relay deploy --id %s
+  Then rerun: moltnet relay deploy --id %s --subdomain <name>
 `, id)
 }
 

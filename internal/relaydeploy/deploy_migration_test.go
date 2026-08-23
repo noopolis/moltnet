@@ -149,25 +149,29 @@ func TestDeployClaimThenRerunFreshScriptSendsMigration(t *testing.T) {
 }
 
 // TestDeployClaimThenRerunExistingScriptOmitsMigration covers the
-// claim-then-rerun flow's "script already exists" branch: the *primary*
-// ErrWorkersDevSubdomainUnclaimed detection path (same setup as
-// TestDeployWorkersDevSubdomainUnclaimed) still lets upload and secret both
-// succeed before Deploy's own WorkersDevSubdomain check returns the
-// sentinel, so the script is already created and migrated to "v1" by the
-// time the operator claims a subdomain and the CLI re-runs Deploy in full —
-// that rerun must find the existing "v1" tag and omit the migrations key,
-// not resend it.
+// claim-then-rerun flow's "script already exists" branch. Since the
+// claim-state-before-any-mutation fix (deploy.go), Deploy's first attempt on
+// an unclaimed account never uploads anything at all — see
+// TestDeployWorkersDevSubdomainUnclaimedFailsBeforeAnyUpload — so a script
+// that already exists and is migrated to "v1" by the time of the
+// claim-then-rerun must have gotten there some other way (e.g. a deploy
+// while the account still had a different, since-abandoned claim); this test
+// models that by seeding the migration tag directly, then exercises the
+// scenario the fix's docstring above cares about: the rerun after claiming
+// must find the existing "v1" tag and omit the migrations key, not resend
+// it.
 func TestDeployClaimThenRerunExistingScriptOmitsMigration(t *testing.T) {
 	t.Parallel()
 
 	fake := newFakeCloudflareServer(t, fakeCloudflareConfig{authOK: true, subdomain: "", claimSubdomain: "apresmoi"})
+	fake.seedScriptMigrationTag("moltnet-relay", "v1")
 	opts := Options{ScriptName: "moltnet-relay", ResolveHostname: stubResolveHostname(true)}
 
 	if _, err := Deploy(context.Background(), fake.client(), opts); !errors.Is(err, ErrWorkersDevSubdomainUnclaimed) {
 		t.Fatalf("first Deploy() error = %v, want ErrWorkersDevSubdomainUnclaimed", err)
 	}
-	if fake.uploadedScript == nil {
-		t.Fatal("expected the worker upload to have happened despite the unclaimed subdomain")
+	if fake.uploadedScript != nil {
+		t.Fatal("expected no worker upload before the subdomain claim check (the bug this fix closes)")
 	}
 
 	if err := fake.client().ClaimWorkersDevSubdomain(context.Background(), fake.cfg.accountID, "apresmoi"); err != nil {

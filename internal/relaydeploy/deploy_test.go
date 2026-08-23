@@ -104,13 +104,16 @@ func TestDeployExistingTokenOverridesPriorToken(t *testing.T) {
 	}
 }
 
-func TestDeployWorkersDevSubdomainUnclaimed(t *testing.T) {
+// TestDeployWorkersDevSubdomainUnclaimedFailsBeforeAnyUpload covers the
+// bug fix: claim state is resolved before any remote mutation, so a deploy
+// that fails on an unclaimed subdomain (no Options.Subdomain given) must
+// never have uploaded a Worker or set a secret in the first place — unlike
+// the old order, which called UploadWorkerModule and SetSecret first and
+// only then checked WorkersDevSubdomain, leaving partial external state
+// behind on exactly this failure.
+func TestDeployWorkersDevSubdomainUnclaimedFailsBeforeAnyUpload(t *testing.T) {
 	t.Parallel()
 
-	// Primary detection path: WorkersDevSubdomain itself reports the
-	// account has no claimed subdomain. Deploy must catch this before ever
-	// calling EnableWorkersDevRoute (which the real Cloudflare API would
-	// fail with error code 10007 for the same reason).
 	fake := newFakeCloudflareServer(t, fakeCloudflareConfig{authOK: true, subdomain: ""})
 	result, err := Deploy(context.Background(), fake.client(), Options{})
 	if !errors.Is(err, ErrWorkersDevSubdomainUnclaimed) {
@@ -127,13 +130,17 @@ func TestDeployWorkersDevSubdomainUnclaimed(t *testing.T) {
 	if result.AccountID != fake.cfg.accountID {
 		t.Fatalf("Result.AccountID = %q, want %q even on ErrWorkersDevSubdomainUnclaimed from the primary GET-check path", result.AccountID, fake.cfg.accountID)
 	}
-	// The worker was still uploaded and the secret still set; only the
-	// route/URL step is blocked on the one-time dashboard claim.
-	if fake.uploadedScript == nil {
-		t.Fatal("expected the worker upload to have happened before the subdomain check")
+	if fake.uploadedScript != nil {
+		t.Fatal("expected no worker upload before the subdomain claim check (the bug this fix closes)")
+	}
+	if _, ok := fake.secretValue(relayTokenSecretName); ok {
+		t.Fatal("expected no RELAY_TOKEN secret to be set before the subdomain claim check")
 	}
 	if fake.routeEnabled {
 		t.Fatal("expected EnableWorkersDevRoute to never be reached once WorkersDevSubdomain reports unclaimed")
+	}
+	if want := 3; fake.callCount() != want {
+		t.Fatalf("expected exactly VerifyToken + ResolveAccountID + the one WorkersDevSubdomain check before failing (%d calls), got %d: %v", want, fake.callCount(), fake.calls)
 	}
 }
 
@@ -162,16 +169,18 @@ func TestDeployWorkersDevSubdomainUnclaimedViaEnableRoute10007(t *testing.T) {
 func TestDeployWorkersDevSubdomainUnclaimedViaUpload10063(t *testing.T) {
 	t.Parallel()
 
-	// Field-observed failure mode: a minimal-scope token whose auth itself
-	// succeeds, but where Cloudflare rejects the worker upload itself with
+	// Belt-and-braces detection path, now that the primary
+	// resolveWorkersDevSubdomainClaim check runs before UploadWorkerModule:
+	// the account is claimed ("acme", so the check adopts it and Deploy
+	// proceeds), but the upload call itself still fails with Cloudflare
 	// error code 10063 ("You need a workers.dev subdomain in order to
-	// proceed.") on an account with no claimed subdomain — before Deploy
-	// ever reaches the WorkersDevSubdomain check or EnableWorkersDevRoute.
-	// The raw 403/10063 error must not leak past Deploy; it must map to the
-	// same ErrWorkersDevSubdomainUnclaimed sentinel as the 10007 paths.
+	// proceed.") — e.g. a minimal-scope token whose write path independently
+	// rejects, a race the check above cannot observe. The raw 403/10063
+	// error must not leak past Deploy; it must map to the same
+	// ErrWorkersDevSubdomainUnclaimed sentinel as the 10007 path.
 	fake := newFakeCloudflareServer(t, fakeCloudflareConfig{
 		authOK:           true,
-		subdomain:        "",
+		subdomain:        "acme",
 		forceUpload10063: true,
 	})
 	_, err := Deploy(context.Background(), fake.client(), Options{})
