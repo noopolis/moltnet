@@ -210,6 +210,10 @@ func newPairingCredentialBindingTestServiceWithStrictBinding(requirePairNetworkB
 		Pairings: []protocol.Pairing{
 			{ID: "pair-b", RemoteNetworkID: "remote-b", Token: "pair-b-secret"},
 			{ID: "pair-c", RemoteNetworkID: "network-c", Token: "pair-c-secret"},
+			// The inviting side's own shape: `pair invite` mints the
+			// credential before the peer has ever spoken, so RemoteNetworkID
+			// is empty and bindPairingNetworks has nothing to bind from.
+			{ID: "pair-unbound", Token: "pair-unbound-secret"},
 		},
 		Store:    memory,
 		Messages: memory,
@@ -239,4 +243,53 @@ func roomMessageCount(t *testing.T, service *Service, roomID string) int {
 		t.Fatalf("ListRoomMessages(%q) error = %v", roomID, err)
 	}
 	return len(page.Messages)
+}
+
+// An UNBOUND pair credential — the shape `moltnet pair invite` always mints,
+// because the inviting side never learns its peer's real network id — used to
+// be allowed to assert any origin network on every message, forever. That is
+// the cross-pairing impersonation the code logged about but permitted.
+//
+// Trust-on-first-use closes it: the first origin such a credential asserts is
+// the one it is held to for the rest of the process.
+func TestUnboundPairTokenIsPinnedToTheOriginItFirstAsserts(t *testing.T) {
+	t.Parallel()
+
+	service := newPairingCredentialBindingTestService()
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"remote-b:member", "network-c:member"})
+	// Network deliberately empty: this is the inviter-side credential shape.
+	claims := authn.NewStaticClaims(authn.TokenConfig{
+		ID:     "pair-unbound",
+		Value:  "pair-unbound-secret",
+		Scopes: []authn.Scope{authn.ScopePair},
+	})
+
+	first := roomSend("floor", "member")
+	first.Origin = protocol.MessageOrigin{NetworkID: "remote-b", MessageID: "remote-b-1"}
+	first.From.NetworkID = "remote-b"
+	if _, err := service.SendMessageContext(bearerClaimsContext(claims), first); err != nil {
+		t.Fatalf("first contact from an unbound pair credential should be accepted: %v", err)
+	}
+
+	// Same credential, different claimed origin. Before the learned binding
+	// this was accepted and stored as if it came from network-c.
+	forged := roomSend("floor", "member")
+	forged.Origin = protocol.MessageOrigin{NetworkID: "network-c", MessageID: "network-c-1"}
+	forged.From.NetworkID = "network-c"
+
+	before := roomMessageCount(t, service, "floor")
+	if _, err := service.SendMessageContext(bearerClaimsContext(claims), forged); err == nil {
+		t.Fatal("expected a second, different origin from the same credential to be rejected")
+	}
+	if after := roomMessageCount(t, service, "floor"); after != before {
+		t.Fatalf("stored message count = %d, want %d after rejected forgery", after, before)
+	}
+
+	// The pinned origin must keep working.
+	again := roomSend("floor", "member")
+	again.Origin = protocol.MessageOrigin{NetworkID: "remote-b", MessageID: "remote-b-2"}
+	again.From.NetworkID = "remote-b"
+	if _, err := service.SendMessageContext(bearerClaimsContext(claims), again); err != nil {
+		t.Fatalf("the origin this credential was pinned to must still be accepted: %v", err)
+	}
 }

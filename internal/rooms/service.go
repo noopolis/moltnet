@@ -70,6 +70,10 @@ type Service struct {
 	pairingsMu                sync.RWMutex
 	pairingPublishMu          sync.Mutex
 	pairingStatuses           map[string]pairingStatus
+	// learnedPairNetworks pins a pair credential to the origin network it
+	// first asserted, for credentials config never bound (the inviting side).
+	// Guarded by pairingsMu. See pairing_binding.go.
+	learnedPairNetworks map[string]string
 	// roomCredentials deliberately stay in memory: protocol.Room is persisted
 	// and publicly serialized, while configured credentials are repopulated by
 	// ApplyConfigContext at boot and must never enter either surface.
