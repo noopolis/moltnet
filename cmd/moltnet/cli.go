@@ -24,8 +24,17 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		fmt.Fprint(stdout, buildUsage())
 		return nil
 	case "":
+		// PLAN 7A.5: bare `moltnet` used to start a foreground daemon here,
+		// but it is advertised nowhere — the help block lists `start` — so
+		// someone typing the bare command to discover the tool got a
+		// blocked terminal with no explanation. Print help (plus a `next:`
+		// hint toward the command this used to run silently) instead; `rest`
+		// is deliberately unused now, since there is no longer a server to
+		// hand it to.
 		printBanner()
-		return runServer(ctx, rest, buildVersion)
+		fmt.Fprint(stdout, buildUsage())
+		printNextStep(nextStep{command: "moltnet start", description: "start the Moltnet server"})
+		return nil
 	case "start", "server":
 		return runServer(ctx, rest, buildVersion)
 	case "admin":
@@ -50,6 +59,8 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runPairCommand(ctx, rest)
 	case "relay":
 		return runRelayCommand(rest)
+	case "room":
+		return runRoomCommand(ctx, rest)
 	case "service":
 		return runServiceCommand(ctx, rest)
 	case "participants":
@@ -60,8 +71,12 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runRegisterAgent(rest)
 	case "send":
 		return runSend(rest)
+	case "setup":
+		return runSetup(ctx, rest)
 	case "skill":
 		return runSkillCommand(rest)
+	case "status":
+		return runStatus(rest)
 	case "uninstall":
 		return runUninstallCommand(ctx, rest)
 	case "update":
