@@ -5,3 +5,7 @@ coverage.out
 /Moltnet
 /MoltnetNode
 .plans/
+
+# internal planning docs — kept locally under .plans/
+/PLAN.md
+/MAP.md
