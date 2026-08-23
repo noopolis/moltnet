@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/noopolis/moltnet/internal/app"
@@ -28,21 +27,6 @@ import (
 // below): add --base-url and --token-env explicitly, and drop --network.
 func pairMembershipCommand(room, memberSpec, networkID string) string {
 	return fmt.Sprintf("moltnet admin room members add --room %s --member %s --network %s", room, memberSpec, networkID)
-}
-
-// pairMembershipRoomLabel renders the shared rooms a pairing declared as the
-// short English phrase both aftercare printers below name in their
-// membership-guidance sentence: "room \"chat\"" for one, "rooms \"chat\",
-// \"news\"" for several.
-func pairMembershipRoomLabel(rooms []string) string {
-	if len(rooms) == 1 {
-		return fmt.Sprintf("room %q", rooms[0])
-	}
-	quoted := make([]string, len(rooms))
-	for i, room := range rooms {
-		quoted[i] = strconv.Quote(room)
-	}
-	return "rooms " + strings.Join(quoted, ", ")
 }
 
 // pairRemoteAdminNote is the --verbose-only dim aside both aftercare

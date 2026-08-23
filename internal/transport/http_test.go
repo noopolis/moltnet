@@ -181,6 +181,34 @@ func (f *fakeService) ListPairingsContext(ctx context.Context, page protocol.Pag
 	}
 	return protocol.PairingPage{Pairings: f.pairings}, nil
 }
+
+// PairingForPairScopedContext is a minimal stand-in for
+// rooms.Service.PairingForPairScopedContext (internal/rooms/federation_access.go):
+// token-id-first against f.pairings, falling back to claims.Network(),
+// mirroring the one real resolution strategy filterPairScopedRoomDiscovery
+// (federation_discovery.go) now delegates to via the Service interface,
+// rather than a second, independent one of fakeService's own.
+func (f *fakeService) PairingForPairScopedContext(ctx context.Context) (protocol.Pairing, bool) {
+	claims, ok := authn.ClaimsFromContext(ctx)
+	if !ok {
+		return protocol.Pairing{}, false
+	}
+	for _, pairing := range f.pairings {
+		if pairing.ID == claims.TokenID {
+			return pairing, true
+		}
+	}
+	remoteNetworkID := claims.Network()
+	if remoteNetworkID == "" {
+		return protocol.Pairing{}, false
+	}
+	for _, pairing := range f.pairings {
+		if pairing.RemoteNetworkID == remoteNetworkID {
+			return pairing, true
+		}
+	}
+	return protocol.Pairing{}, false
+}
 func (f *fakeService) PairingNetwork(ctx context.Context, pairingID string) (protocol.Network, error) {
 	if f.pairingErr != nil {
 		return protocol.Network{}, f.pairingErr

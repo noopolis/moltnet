@@ -99,6 +99,12 @@ func TestServiceRelaysRoomMessagesWithPairingToken(t *testing.T) {
 		t.Fatalf("RegisterAgentContext() local collision setup error = %v", err)
 	}
 
+	// P3: pairingsMu guards every production read of Service.pairings
+	// (findPairingByID/findPairingByRemoteNetwork/snapshotPairings); taking
+	// it here too, even though this setup runs before either service is
+	// exercised concurrently, keeps this test from being the one place in
+	// the package that assumes the field is safe to touch unguarded.
+	serviceA.pairingsMu.Lock()
 	serviceA.pairings = []protocol.Pairing{{
 		ID:              "pair_b",
 		RemoteNetworkID: "net_b",
@@ -106,6 +112,22 @@ func TestServiceRelaysRoomMessagesWithPairingToken(t *testing.T) {
 		Token:           "pair-secret",
 		Status:          "connected",
 	}}
+	serviceA.pairingsMu.Unlock()
+	// 7B.1: the relayed send below authenticates against serviceB with a
+	// pair-scoped credential minted TokenID "pair-relay" (newRelayTestHandler
+	// above), so serviceB needs a matching pairing for
+	// pairingForPairScopedContext to resolve it -- otherwise "research"'s
+	// federation: all is never even reached. RemoteNetworkID mirrors net_a
+	// for realism but plays no role in resolution here (TokenID is what
+	// matches).
+	serviceB.pairingsMu.Lock()
+	serviceB.pairings = []protocol.Pairing{{
+		ID:              "pair-relay",
+		RemoteNetworkID: "net_a",
+		RemoteBaseURL:   serverA.URL,
+		Status:          "connected",
+	}}
+	serviceB.pairingsMu.Unlock()
 
 	for _, service := range []*Service{serviceA, serviceB} {
 		if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research", Members: []string{"alpha", "beta"}, Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll}}); err != nil {
@@ -181,6 +203,113 @@ func TestServiceRelaysScopedDirectMessagesAcrossPairings(t *testing.T) {
 	}
 	if len(conversations.DMs) != 1 || len(conversations.DMs[0].ParticipantIDs) != 2 || conversations.DMs[0].ParticipantIDs[0] != "net_a:alpha" || conversations.DMs[0].ParticipantIDs[1] != "net_b:gamma" {
 		t.Fatalf("unexpected relayed conversations %#v", conversations)
+	}
+}
+
+// TestServiceDoesNotRelayToRevokedPairing is F2's required regression
+// (review round 2, confirmed live): a pairing hand-marked `status: revoked`
+// -- firstUniqueActivePairing's own doc comment calls this the manual
+// stopgap an operator reaches for before `pair revoke` finishes, and says it
+// "must never be resolved as live" -- must not keep receiving messages
+// relayed out of a room whose federation list still names it.
+// snapshotRelayPairings previously applied no status filter at all, so
+// relayMessage (relay.go) fed it directly into shouldAttemptRelayToPairing
+// regardless of status.
+//
+// The diagnostic cache (pairingStatuses) is deliberately seeded to
+// "connected", not "revoked": this is the realistic shape of the bug, not
+// just its simplest repro. This codebase has no in-process hot-reload of
+// pairing state (pair_revoke.go's own doc comment) -- an operator hand-edits
+// `status: revoked` into the on-disk config of an already-running process
+// whose pairing was live and connected moments before, and that edit alone
+// never touches the running process's diagnostic cache. A fix that filtered
+// on the live cache's status instead of the raw config-declared field would
+// pass a same-value repro (both "revoked") while still relaying in this one.
+func TestServiceDoesNotRelayToRevokedPairing(t *testing.T) {
+	t.Parallel()
+
+	serviceA, serverA := newRelayTestService(t, "net_a", "Net A")
+	defer serverA.Close()
+	serviceB, serverB := newRelayTestService(t, "net_b", "Net B")
+	defer serverB.Close()
+
+	serviceA.pairings = []protocol.Pairing{{
+		ID:              "pair_b",
+		RemoteNetworkID: "net_b",
+		RemoteBaseURL:   serverB.URL,
+		Status:          protocol.PairingStatusRevoked,
+	}}
+	serviceA.pairingStatuses["pair_b"] = pairingStatus{value: protocol.PairingStatusConnected}
+	serviceB.pairings = []protocol.Pairing{{
+		ID:              "pair_a",
+		RemoteNetworkID: "net_a",
+		RemoteBaseURL:   serverA.URL,
+		Status:          "connected",
+	}}
+
+	for _, service := range []*Service{serviceA, serviceB} {
+		if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research", Members: []string{"alpha", "beta"}, Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll}}); err != nil {
+			t.Fatalf("CreateRoom() error = %v", err)
+		}
+	}
+
+	if _, err := serviceA.SendMessage(protocol.SendMessageRequest{
+		Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+		From:   protocol.Actor{Type: "agent", ID: "alpha"},
+		Parts:  []protocol.Part{{Kind: "text", Text: "must not reach the revoked pairing"}},
+	}); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+
+	// relayMessage's revoked-pairing filter runs synchronously, before any
+	// relay goroutine is spawned, so there is no network round trip to race
+	// against here -- but give any (incorrect) relay attempt a moment to
+	// land before asserting its absence, to keep this test honest if the
+	// filter ever moves later in the call chain.
+	time.Sleep(100 * time.Millisecond)
+
+	pageB, err := serviceB.ListRoomMessages("research", "", 10)
+	if err != nil {
+		t.Fatalf("ListRoomMessages(net_b) error = %v", err)
+	}
+	if len(pageB.Messages) != 0 {
+		t.Fatalf("revoked pairing received a relayed message: %#v", pageB.Messages)
+	}
+}
+
+// TestSnapshotRelayPairingsExcludesRevokedByRawStatus is
+// TestServiceDoesNotRelayToRevokedPairing's unit-level counterpart, isolating
+// snapshotRelayPairings itself from pairingRelayAttemptReady/
+// pairingRelayAllowed's own (incidental, value-switch-based) refusal to
+// treat an unrecognized status as ready -- so this fails on its own if
+// snapshotRelayPairings' filter regresses, independent of whether some other
+// gate happens to also catch the same case.
+func TestSnapshotRelayPairingsExcludesRevokedByRawStatus(t *testing.T) {
+	t.Parallel()
+
+	memory := store.NewMemoryStore()
+	service := NewService(ServiceConfig{
+		NetworkID: "local",
+		Store:     memory, Messages: memory, Broker: events.NewBroker(),
+	})
+	service.pairings = []protocol.Pairing{
+		{ID: "pair_live", RemoteNetworkID: "remote-live", RemoteBaseURL: "http://example.invalid", Status: protocol.PairingStatusConnected},
+		{ID: "pair_revoked", RemoteNetworkID: "remote-revoked", RemoteBaseURL: "http://example.invalid", Status: protocol.PairingStatusRevoked},
+	}
+	// The diagnostic cache still says "connected" for the revoked pairing --
+	// exactly the stale-cache-after-hand-edit shape described above -- so
+	// this only passes if the filter reads the raw field, not the cache.
+	service.pairingStatuses["pair_revoked"] = pairingStatus{value: protocol.PairingStatusConnected}
+
+	ids := make(map[string]bool)
+	for _, pairing := range service.snapshotRelayPairings() {
+		ids[pairing.ID] = true
+	}
+	if !ids["pair_live"] {
+		t.Fatalf("snapshotRelayPairings() dropped a live pairing: %v", ids)
+	}
+	if ids["pair_revoked"] {
+		t.Fatalf("snapshotRelayPairings() included a revoked pairing despite its stale-connected diagnostic cache: %v", ids)
 	}
 }
 

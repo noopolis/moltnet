@@ -143,3 +143,51 @@ func TestServicePairingErrors(t *testing.T) {
 		t.Fatal("expected pairing client failure")
 	}
 }
+
+// TestFindPairingByIDRefusesRevokedStatus and
+// TestFindPairingByIDRefusesDuplicateIDs are the P2 finding's required
+// regressions for firstUniqueActivePairing: a config entry hand-marked
+// `status: revoked`, or two pairings sharing the same id, must never resolve
+// as an active pairing -- silently trusting either is exactly the stale/
+// duplicate-credential fallback the finding flagged.
+func TestFindPairingByIDRefusesRevokedStatus(t *testing.T) {
+	t.Parallel()
+
+	memory := store.NewMemoryStore()
+	service := NewService(ServiceConfig{
+		NetworkID: "local",
+		Store:     memory,
+		Messages:  memory,
+		Broker:    events.NewBroker(),
+		Pairings: []protocol.Pairing{
+			{ID: "pair_1", RemoteNetworkID: "remote", Status: protocol.PairingStatusRevoked},
+		},
+	})
+
+	if _, err := service.findPairingByID("pair_1"); err == nil {
+		t.Fatal("expected findPairingByID to refuse a pairing hand-marked status: revoked")
+	}
+	if _, err := service.findPairingByRemoteNetwork("remote"); err == nil {
+		t.Fatal("expected findPairingByRemoteNetwork to refuse a pairing hand-marked status: revoked")
+	}
+}
+
+func TestFindPairingByIDRefusesDuplicateIDs(t *testing.T) {
+	t.Parallel()
+
+	memory := store.NewMemoryStore()
+	service := NewService(ServiceConfig{
+		NetworkID: "local",
+		Store:     memory,
+		Messages:  memory,
+		Broker:    events.NewBroker(),
+		Pairings: []protocol.Pairing{
+			{ID: "pair_1", RemoteNetworkID: "remote-old", Token: "stale-token"},
+			{ID: "pair_1", RemoteNetworkID: "remote-new", Token: "fresh-token"},
+		},
+	})
+
+	if _, err := service.findPairingByID("pair_1"); err == nil {
+		t.Fatal("expected findPairingByID to refuse a duplicate id rather than resolve the first match")
+	}
+}

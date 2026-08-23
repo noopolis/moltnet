@@ -55,11 +55,21 @@ func TestRegisterAgentCredentialOwnership(t *testing.T) {
 func TestRegisteredSenderCredentialIsEnforced(t *testing.T) {
 	t.Parallel()
 
-	service := newAgentRegistryTestService()
+	// 7B.1: the final assertion below sends through a pair-scoped credential
+	// claiming a remote origin, which federation_access.go now enforces
+	// against the room's federation stance (see pairingForPairScopedContext's
+	// doc comment) — this test is about sender-identity conflicts, not
+	// federation, so the pairing id used by authContextForScope("pair", ...)
+	// below is configured here and the room is left open to every pairing
+	// ("all") precisely so the federation gate stays out of this test's way.
+	service := newAgentRegistryTestServiceWithPairings([]protocol.Pairing{{ID: "pair", RemoteNetworkID: "remote"}})
 	firstCtx := authn.WithClaims(context.Background(), authn.Claims{TokenID: "one"})
 	secondCtx := authn.WithClaims(context.Background(), authn.Claims{TokenID: "two"})
 
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research", Members: []string{"director"}}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID: "research", Members: []string{"director"},
+		Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.RegisterAgentContext(firstCtx, protocol.RegisterAgentRequest{
@@ -140,12 +150,20 @@ func TestRegisterAgentGeneratesASCIIHandle(t *testing.T) {
 }
 
 func newAgentRegistryTestService() *Service {
+	return newAgentRegistryTestServiceWithPairings(nil)
+}
+
+// newAgentRegistryTestServiceWithPairings is newAgentRegistryTestService plus
+// configured pairings, for tests that also need a pair-scoped credential to
+// resolve against a real pairing under federation_access.go's enforcement.
+func newAgentRegistryTestServiceWithPairings(pairings []protocol.Pairing) *Service {
 	memory := store.NewMemoryStore()
 	return NewService(ServiceConfig{
 		AllowHumanIngress: true,
 		NetworkID:         "local",
 		NetworkName:       "Local",
 		Version:           "test",
+		Pairings:          pairings,
 		Store:             memory,
 		Messages:          memory,
 		Broker:            events.NewBroker(),

@@ -103,8 +103,15 @@ func TestSendMessageClearsCredentialBindingOutsideLocalActorCredential(t *testin
 	})
 
 	t.Run("paired remote relay", func(t *testing.T) {
-		service := newAgentRegistryTestService()
-		if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "pitch", Members: []string{"remote:world"}}); err != nil {
+		// 7B.1: this pair-scoped send is now checked against "pitch"'s
+		// federation stance, so the matching pairing is configured and the
+		// room is opened to every pairing ("all") -- this subtest is about
+		// credential-binding provenance, not federation.
+		service := newAgentRegistryTestServiceWithPairings([]protocol.Pairing{{ID: "pair", RemoteNetworkID: "remote"}})
+		if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+			ID: "pitch", Members: []string{"remote:world"},
+			Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll},
+		}); err != nil {
 			t.Fatal(err)
 		}
 		claims := authn.NewStaticClaims(authn.TokenConfig{

@@ -22,6 +22,7 @@ type Service interface {
 	GetThreadContext(ctx context.Context, threadID string) (protocol.Thread, error)
 	ListAgentsContext(ctx context.Context, page protocol.PageRequest) (protocol.AgentPage, error)
 	ListPairingsContext(ctx context.Context, page protocol.PageRequest) (protocol.PairingPage, error)
+	PairingForPairScopedContext(ctx context.Context) (protocol.Pairing, bool)
 	PairingNetwork(ctx context.Context, pairingID string) (protocol.Network, error)
 	PairingRoomsContext(ctx context.Context, pairingID string, page protocol.PageRequest) (protocol.RoomPage, error)
 	PairingAgentsContext(ctx context.Context, pairingID string, page protocol.PageRequest) (protocol.AgentPage, error)
@@ -257,7 +258,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 		writeJSON(response, http.StatusOK, room)
 	}))
 
-	mux.HandleFunc("POST /v1/rooms/{roomID}/join", authorizedAnyWithVerifier(policy, service, []authn.Scope{authn.ScopeWrite, authn.ScopePair}, handleJoinRoom(service)))
+	mux.HandleFunc("POST /v1/rooms/{roomID}/join", authorizedAnyWithVerifier(policy, service, joinRoomScopes, handleJoinRoom(service)))
 
 	mux.HandleFunc("GET /v1/rooms/{roomID}/messages", publicInOpen(policy, service, readScopes, func(response http.ResponseWriter, request *http.Request) {
 		pageRequest, err := readPageRequest(request)

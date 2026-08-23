@@ -274,8 +274,17 @@ func newInboundHandlerFixture(t *testing.T) (http.Handler, *rooms.Service) {
 		NetworkID:   "local",
 		NetworkName: "Local",
 		Version:     "test",
+		// 7B.1: the "pair-token" credential below is now checked against
+		// relay-room's federation stance (internal/rooms/federation_access.go),
+		// so a matching pairing is configured here and the room is opened to
+		// every pairing ("all") -- this fixture is about relay transport and
+		// token auth, not federation.
+		Pairings: []protocol.Pairing{{ID: "pair-token", RemoteNetworkID: "remote"}},
 	})
-	if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "relay-room", Members: []string{"remote:director"}}); err != nil {
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID: "relay-room", Members: []string{"remote:director"},
+		Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll},
+	}); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
 	policy, err := authn.NewPolicy(authn.Config{Mode: authn.ModeBearer, Tokens: []authn.TokenConfig{{

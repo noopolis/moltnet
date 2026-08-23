@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
+	"github.com/noopolis/moltnet/internal/events"
+	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -92,12 +94,25 @@ func TestWritePolicyOperatorsAllowsOnlyStaticWriteTokens(t *testing.T) {
 	}
 }
 
+// TestPairRelayDoesNotBypassMembership exercises the write-policy check
+// underneath the federation gates, using a fully bound pair credential on a
+// service that explicitly opts into require_pair_network_binding
+// (newBoundPairTestService, below). auth.require_pair_network_binding
+// itself defaults to false (F3's revert -- see config_load.go's
+// defaultConfig doc comment), not true; it is this test's service, not the
+// global default, that makes an unbound credential like
+// TestUnboundPairCredentialIsRefused's get refused before reaching
+// membership at all. The pairing and the room's federation list both name "pair_remote"
+// so 7B.1's identity-based enforcement (federation_access.go) also passes
+// cleanly, isolating this test to what it actually means to check: a
+// relayed message still has to satisfy the room's own write policy.
 func TestPairRelayDoesNotBypassMembership(t *testing.T) {
 	t.Parallel()
 
-	service := newTestService()
-	mustCreatePolicyRoom(t, service, "floor", []string{"remote:member"}, protocol.RoomWritePolicyMembers)
-	pairCtx := bearerClaimsContext(staticClaims("pair", authn.ScopePair))
+	service := newBoundPairTestService(t)
+	mustCreatePolicyRoomWithFederation(t, service, "floor", []string{"remote:member"}, protocol.RoomWritePolicyMembers,
+		&protocol.RoomFederation{Mode: protocol.RoomFederationList, Pairings: []string{"pair_remote"}})
+	pairCtx := bearerClaimsContext(boundPairClaims())
 
 	outsider := roomSend("floor", "outsider")
 	outsider.Origin = protocol.MessageOrigin{NetworkID: "remote", MessageID: "remote_outsider"}
@@ -111,6 +126,86 @@ func TestPairRelayDoesNotBypassMembership(t *testing.T) {
 	member.From.NetworkID = "remote"
 	if _, err := service.SendMessageContext(pairCtx, member); err != nil {
 		t.Fatalf("expected remote member relay, got %v", err)
+	}
+}
+
+// TestUnboundPairCredentialIsRefused is 7B.2's required regression: with
+// require_pair_network_binding explicitly enabled on this service (the
+// default reverted to false under F3 -- see config_load.go's defaultConfig
+// doc comment -- but the underlying enforcement this test exercises is
+// unchanged and still opt-in via auth.require_pair_network_binding: true), a
+// pair-scoped credential with no bound network claiming a remote origin must
+// be refused, not merely warned about. The rejection surfaces from
+// validateSenderIdentity's remote-origin actor check (messaging.go), not the
+// room's write policy, so it is asserted on ErrWriteForbidden's sibling
+// ErrAgentForbidden rather than ErrWriteForbidden.
+//
+// F3 (confirmed live): this used to assert ErrAgentConflict, because the
+// unbound-credential path fell through into agentCollisionID's generic
+// "agent already registered with different credentials" 409 -- a real, but
+// wildly misleading, error for what is actually a pair-credential binding
+// refusal. remoteOriginPairStatus (messaging.go) now gives this its own
+// accurate ErrAgentForbidden instead of falling through.
+func TestUnboundPairCredentialIsRefused(t *testing.T) {
+	t.Parallel()
+
+	service := newBoundPairTestService(t)
+	mustCreatePolicyRoomWithFederation(t, service, "floor", []string{"remote:member"}, protocol.RoomWritePolicyMembers,
+		&protocol.RoomFederation{Mode: protocol.RoomFederationList, Pairings: []string{"pair_remote"}})
+	unboundCtx := bearerClaimsContext(staticClaims("pair_remote", authn.ScopePair))
+
+	member := roomSend("floor", "member")
+	member.Origin = protocol.MessageOrigin{NetworkID: "remote", MessageID: "remote_member_unbound"}
+	member.From.NetworkID = "remote"
+	if _, err := service.SendMessageContext(unboundCtx, member); !errors.Is(err, ErrAgentForbidden) {
+		t.Fatalf("expected unbound pair credential to be refused with ErrAgentForbidden, got %v", err)
+	}
+}
+
+// newBoundPairTestService builds a Service with require_pair_network_binding
+// explicitly enabled -- opt-in only, not the default (F3's revert; see
+// config_load.go's defaultConfig doc comment) -- and a single pairing,
+// "pair_remote", bound to remote network id "remote".
+func newBoundPairTestService(t *testing.T) *Service {
+	t.Helper()
+	memory := store.NewMemoryStore()
+	return NewService(ServiceConfig{
+		NetworkID:                 "local",
+		NetworkName:               "Local",
+		Version:                   "test",
+		RequirePairNetworkBinding: true,
+		Pairings:                  []protocol.Pairing{{ID: "pair_remote", RemoteNetworkID: "remote"}},
+		Store:                     memory,
+		Messages:                  memory,
+		Broker:                    events.NewBroker(),
+	})
+}
+
+// boundPairClaims returns a pair-scoped credential bound to "remote" and
+// carrying TokenID "pair_remote" -- the shape a join-side pairing (or an
+// inviter-side pairing once its peer's real network id is confirmed) mints.
+func boundPairClaims() authn.Claims {
+	return authn.NewStaticClaims(authn.TokenConfig{
+		ID:      "pair_remote",
+		Network: "remote",
+		Scopes:  []authn.Scope{authn.ScopePair},
+	})
+}
+
+// mustCreatePolicyRoomWithFederation is mustCreatePolicyRoom plus an explicit
+// federation stance, for the pair-credential tests above that need the room
+// to actually allow the pairing under test.
+func mustCreatePolicyRoomWithFederation(t *testing.T, service *Service, id string, members []string, policy string, federation *protocol.RoomFederation) {
+	t.Helper()
+
+	_, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:          id,
+		Members:     members,
+		WritePolicy: policy,
+		Federation:  federation,
+	})
+	if err != nil {
+		t.Fatalf("CreateRoom(%s) error = %v", id, err)
 	}
 }
 

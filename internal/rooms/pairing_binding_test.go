@@ -117,9 +117,15 @@ func TestStrictPairNetworkBindingRejectsUnboundRemoteOriginSenders(t *testing.T)
 		t.Run(senderType, func(t *testing.T) {
 			service := newPairingCredentialBindingTestServiceWithStrictBinding(true)
 			mustCreateFederatedPolicyRoom(t, service, "floor", []string{"remote-b:member"})
+			// TokenID "pair-b" matches a real configured pairing (unlike a
+			// fictitious id, which 7B.1's federation_access.go would now
+			// refuse outright regardless of RequirePairNetworkBinding,
+			// making this no longer isolate the strict-binding check this
+			// test exists to exercise). Network is left unset -- that is
+			// exactly the "unbound" shape under test here.
 			claims := authn.NewStaticClaims(authn.TokenConfig{
-				ID:     "pair-unbound",
-				Value:  "pair-unbound-secret",
+				ID:     "pair-b",
+				Value:  "pair-b-secret",
 				Scopes: []authn.Scope{authn.ScopePair},
 			})
 			request := roomSend("floor", "member")
@@ -167,9 +173,13 @@ func TestDefaultPairNetworkBindingAcceptsUnboundRemoteOriginCredential(t *testin
 
 	service := newPairingCredentialBindingTestService()
 	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"remote-b:member"})
+	// TokenID "pair-b" matches a real configured pairing -- see
+	// TestStrictPairNetworkBindingRejectsUnboundRemoteOriginSenders's comment
+	// above for why a fictitious id no longer works here under 7B.1. Network
+	// is left unset: that is the "unbound" shape this test is about.
 	claims := authn.NewStaticClaims(authn.TokenConfig{
-		ID:     "pair-unbound",
-		Value:  "pair-unbound-secret",
+		ID:     "pair-b",
+		Value:  "pair-b-secret",
 		Scopes: []authn.Scope{authn.ScopePair},
 	})
 	request := roomSend("floor", "member")

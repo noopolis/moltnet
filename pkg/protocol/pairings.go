@@ -12,6 +12,16 @@ const (
 	PairingStatusIncompatible = "incompatible"
 	PairingStatusError        = "error"
 	PairingStatusUnknown      = "unknown"
+	// PairingStatusRevoked marks a pairing `moltnet pair revoke` has torn
+	// down: both the pairings[] entry and the peer's inbound auth.tokens[]
+	// credential are removed from config together (see
+	// internal/app/config_writeback.go's RevokePairing), so in practice a
+	// revoked pairing no longer exists in config at all rather than lingering
+	// with this status. It exists as a constant for callers that need to
+	// name the state in transit -- e.g. printing what is about to happen, or
+	// a future soft-revoke that marks status before the config write lands --
+	// without inventing an ad hoc string.
+	PairingStatusRevoked = "revoked"
 )
 
 type PairingRelay struct {

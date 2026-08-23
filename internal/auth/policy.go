@@ -3,7 +3,6 @@ package auth
 import (
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -48,10 +47,25 @@ type Config struct {
 	ListenAddr          string
 	AllowedOrigins      []string
 	TrustForwardedProto bool
-	// RequirePairNetworkBinding rejects remote-origin pairing messages when their
-	// pair credential has no bound network. Default false preserves current
-	// behavior and keeps TestPairRelayDoesNotBypassMembership passing; new
-	// deployments should enable it for the safe posture.
+	// RequirePairNetworkBinding rejects remote-origin pairing messages when
+	// their pair credential has no bound network (internal/rooms's
+	// pairCredentialMatchesOrigin). Defaults to false (internal/app's
+	// defaultConfig, config_load.go) — an inbound pair-scoped message that
+	// claims a remote origin but carries a credential with no confirmed
+	// network binding is accepted with a logged warning rather than refused
+	// outright. F3: 7B.2 shipped this defaulting to true on the assumption
+	// that the inviting side's credential gets bound "once the peer has made
+	// contact" — no code does that persistence today (see config_load.go's
+	// field comment), so a strict default left every `pair invite` inviter
+	// permanently unable to receive from the peer it invited. Set
+	// `auth.require_pair_network_binding: true` in the config file, or
+	// MOLTNET_REQUIRE_PAIR_NETWORK_BINDING=true, to opt into the stricter
+	// posture once you have confirmed (e.g. via `pair show`) that this
+	// pairing's credential is actually bound. This is a distinct, narrower
+	// gate than 7B.1's federation-list enforcement
+	// (internal/rooms/federation_access.go): that one is keyed on credential
+	// identity and cannot be disabled, this one is keyed on the credential's
+	// bound network and is operator-configurable.
 	RequirePairNetworkBinding bool
 	Tokens                    []TokenConfig
 }
@@ -68,14 +82,6 @@ type Policy struct {
 type tokenRecord struct {
 	hash   [32]byte
 	config TokenConfig
-}
-
-type Claims struct {
-	TokenID       string
-	CredentialKey string
-	network       string
-	scopes        map[Scope]struct{}
-	agents        map[string]struct{}
 }
 
 type Error struct {
@@ -262,129 +268,6 @@ func (p *Policy) lookupToken(value string) (TokenConfig, bool) {
 		}
 	}
 	return TokenConfig{}, false
-}
-
-func (c Claims) Allows(scope Scope) bool {
-	if len(c.scopes) == 0 {
-		return false
-	}
-
-	_, ok := c.scopes[scope]
-	return ok
-}
-
-func (c Claims) AllowsAny(scopes []Scope) bool {
-	for _, scope := range scopes {
-		if c.Allows(scope) {
-			return true
-		}
-	}
-	return false
-}
-
-func (c Claims) AllowsAgent(agentID string) bool {
-	if len(c.agents) == 0 {
-		return true
-	}
-
-	_, ok := c.agents[strings.TrimSpace(agentID)]
-	return ok
-}
-
-func (c Claims) HasAgentRestriction() bool {
-	return len(c.agents) > 0
-}
-
-func (c Claims) StaticToken() bool {
-	return strings.HasPrefix(strings.TrimSpace(c.CredentialKey), "token:")
-}
-
-func (c Claims) AgentToken() bool {
-	return strings.HasPrefix(strings.TrimSpace(c.CredentialKey), "agent-token:")
-}
-
-func (c Claims) Network() string {
-	return c.network
-}
-
-func (c Claims) AgentIDs() []string {
-	agents := make([]string, 0, len(c.agents))
-	for agentID := range c.agents {
-		if strings.TrimSpace(agentID) != "" {
-			agents = append(agents, agentID)
-		}
-	}
-	return agents
-}
-
-func StaticCredentialKey(tokenID string) string {
-	return "token:" + strings.TrimSpace(tokenID)
-}
-
-func TokenConfigID(token TokenConfig) string {
-	id := strings.TrimSpace(token.ID)
-	if id != "" {
-		return id
-	}
-	hash := sha256.Sum256([]byte(strings.TrimSpace(token.Value)))
-	return "tok_" + hex.EncodeToString(hash[:8])
-}
-
-func TokenConfigCredentialKey(token TokenConfig) string {
-	return StaticCredentialKey(TokenConfigID(token))
-}
-
-func NewStaticClaims(config TokenConfig) Claims {
-	claims := Claims{
-		TokenID: strings.TrimSpace(config.ID),
-		network: strings.TrimSpace(config.Network),
-		scopes:  make(map[Scope]struct{}),
-		agents:  make(map[string]struct{}),
-	}
-	claims.CredentialKey = StaticCredentialKey(claims.TokenID)
-
-	for _, scope := range config.Scopes {
-		claims.scopes[scope] = struct{}{}
-	}
-	for _, agent := range config.Agents {
-		trimmed := strings.TrimSpace(agent)
-		if trimmed != "" {
-			claims.agents[trimmed] = struct{}{}
-		}
-	}
-
-	return claims
-}
-
-func NewAgentTokenClaims(agentID string, credentialKey string) Claims {
-	trimmedAgentID := strings.TrimSpace(agentID)
-	claims := Claims{
-		CredentialKey: strings.TrimSpace(credentialKey),
-		// P2-2: observe too, not just write+attach — without it this token
-		// can't read on a bearer network with public_read: false, so the
-		// join guide's own next command 403s. Still agent-scoped (agents
-		// below), never admin or pair: no room creation, no /metrics.
-		scopes: map[Scope]struct{}{
-			ScopeObserve: {},
-			ScopeWrite:   {},
-			ScopeAttach:  {},
-		},
-		agents: make(map[string]struct{}),
-	}
-	if trimmedAgentID != "" {
-		claims.agents[trimmedAgentID] = struct{}{}
-	}
-	return claims
-}
-
-func NewCredentialClaims(credentialKey string) Claims {
-	return Claims{
-		CredentialKey: strings.TrimSpace(credentialKey),
-	}
-}
-
-func newClaims(config TokenConfig) Claims {
-	return NewStaticClaims(config)
 }
 
 func isSupportedScope(scope Scope) bool {

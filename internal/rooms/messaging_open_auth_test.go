@@ -12,10 +12,16 @@ import (
 func TestOpenModeWriteTokenRejectsUnpairedRemoteOriginActor(t *testing.T) {
 	t.Parallel()
 
-	service := newTestService()
+	// 7B.1: the pair-scoped send below is now checked against the room's
+	// federation stance (federation_access.go), so this test — about
+	// write-scope-vs-pair-scope on a remote-origin actor, not federation —
+	// configures the matching pairing and leaves the room open to every
+	// pairing ("all") so that gate stays out of its way.
+	service := newTestServiceWithPairings([]protocol.Pairing{{ID: "pair-writer", RemoteNetworkID: "remote"}})
 	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
-		ID:      "research",
-		Members: []string{"remote:remote-agent"},
+		ID:         "research",
+		Members:    []string{"remote:remote-agent"},
+		Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -51,10 +57,14 @@ func TestOpenModeWriteTokenRejectsUnpairedRemoteOriginActor(t *testing.T) {
 func TestPairRemoteOriginRequiresExplicitConsistentActorNetwork(t *testing.T) {
 	t.Parallel()
 
-	service := newTestService()
+	// 7B.1: see TestOpenModeWriteTokenRejectsUnpairedRemoteOriginActor's
+	// comment above -- same reasoning, this test is about actor/origin
+	// network consistency, not federation.
+	service := newTestServiceWithPairings([]protocol.Pairing{{ID: "pair", RemoteNetworkID: "remote"}})
 	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
-		ID:      "research",
-		Members: []string{"remote:luna"},
+		ID:         "research",
+		Members:    []string{"remote:luna"},
+		Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -93,10 +103,14 @@ func TestPairRemoteOriginRequiresExplicitConsistentActorNetwork(t *testing.T) {
 func TestPairRemoteOriginRequiresExplicitConsistentHumanNetwork(t *testing.T) {
 	t.Parallel()
 
-	service := newTestService()
+	// 7B.1: see TestOpenModeWriteTokenRejectsUnpairedRemoteOriginActor's
+	// comment above -- same reasoning, this test is about human actor/origin
+	// network consistency, not federation.
+	service := newTestServiceWithPairings([]protocol.Pairing{{ID: "pair", RemoteNetworkID: "remote"}})
 	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
-		ID:      "research",
-		Members: []string{"remote:operator"},
+		ID:         "research",
+		Members:    []string{"remote:operator"},
+		Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -134,10 +148,14 @@ func TestPairRemoteOriginRequiresExplicitConsistentHumanNetwork(t *testing.T) {
 func TestRemoteOriginHumanRequiresPairScope(t *testing.T) {
 	t.Parallel()
 
-	service := newTestService()
+	// 7B.1: see TestOpenModeWriteTokenRejectsUnpairedRemoteOriginActor's
+	// comment above -- same reasoning, this test is about requiring pair
+	// scope at all for a remote-origin human sender, not federation.
+	service := newTestServiceWithPairings([]protocol.Pairing{{ID: "pair", RemoteNetworkID: "remote"}})
 	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
-		ID:      "research",
-		Members: []string{"remote:operator"},
+		ID:         "research",
+		Members:    []string{"remote:operator"},
+		Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll},
 	}); err != nil {
 		t.Fatal(err)
 	}

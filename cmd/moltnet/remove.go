@@ -6,22 +6,8 @@ import (
 	"strings"
 
 	"github.com/noopolis/moltnet/internal/app"
-	moltnetclient "github.com/noopolis/moltnet/internal/client"
-	"github.com/noopolis/moltnet/pkg/bridgeconfig"
-	"github.com/noopolis/moltnet/pkg/clientconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
-
-type adminClientOptions struct {
-	authMode   string
-	baseURL    string
-	configPath string
-	networkID  string
-	memberID   string
-	token      string
-	tokenEnv   string
-	tokenPath  string
-}
 
 type repeatedStringFlag []string
 
@@ -180,8 +166,37 @@ func runAdminRemoveAgent(args []string) error {
 	return printJSON(result)
 }
 
+// runAdminRemoveRoom implements the deprecated "moltnet admin room remove"
+// entry point (PLAN.md 7A.0's namespace decision (a) moved room verbs to the
+// top-level "room" namespace and kept this one as an alias that still
+// works). It prints a one-line deprecation note, then delegates to
+// removeRoomCommand for the actual work — the same implementation
+// "moltnet room remove" (room.go) calls directly, without the note, since it
+// is not the deprecated spelling.
 func runAdminRemoveRoom(args []string) error {
-	flags := flag.NewFlagSet("moltnet admin room remove", flag.ContinueOnError)
+	fmt.Fprintln(stderr, "deprecated: \"moltnet admin room remove\" is now \"moltnet room remove\" (both still work identically)")
+	return removeRoomCommand("moltnet admin room remove", args)
+}
+
+// removeRoomCommand is the shared implementation behind both
+// "moltnet room remove" and the deprecated "moltnet admin room remove": it
+// resolves an admin-scoped client (bindAdminClientFlags/resolveAdminClientResolution,
+// identical to every other admin command) and calls DELETE /v1/rooms/{id}
+// (moltnetclient.RemoveRoom). commandName only affects the flag.FlagSet's
+// own usage/error prefix, so each entry point's error messages still name
+// the command the caller actually typed.
+//
+// P0-1 (final-gate review): the live DELETE alone leaves a config-declared
+// room's rooms[] entry in place, which reliably bricks the network's next
+// restart (see roomRemoveConfigWriteback's doc comment, room_remove_writeback.go,
+// for the exact mechanism). resolveAdminClientResolution (rather than
+// resolveAdminClient) is used here so the aftercare writeback can reuse the
+// resolution's own LocalServerConfigPath -- the same F4 discipline
+// runAdminRoomMembers (below) already follows -- instead of re-deriving a
+// "local" config path independently and risking it diverging from wherever
+// the live request above actually went.
+func removeRoomCommand(commandName string, args []string) error {
+	flags := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	flags.SetOutput(stdout)
 
 	options, roomID := bindAdminClientFlags(flags, "room", "room id to remove")
@@ -189,20 +204,24 @@ func runAdminRemoveRoom(args []string) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return fmt.Errorf("admin room remove does not accept positional arguments")
+		return fmt.Errorf("%s does not accept positional arguments", commandName)
 	}
-	if strings.TrimSpace(*roomID) == "" {
-		return fmt.Errorf("admin room remove requires --room")
+	trimmedRoomID := strings.TrimSpace(*roomID)
+	if trimmedRoomID == "" {
+		return fmt.Errorf("%s requires --room", commandName)
 	}
 
-	client, err := resolveAdminClient(flags, options)
+	client, resolution, err := resolveAdminClientResolution(flags, options)
 	if err != nil {
 		return err
 	}
-	result, err := client.RemoveRoom(commandContext(), strings.TrimSpace(*roomID))
+	result, err := client.RemoveRoom(commandContext(), trimmedRoomID)
 	if err != nil {
 		return err
 	}
+
+	roomRemoveConfigWriteback(resolution.LocalServerConfigPath, trimmedRoomID)
+
 	return printJSON(result)
 }
 
@@ -242,7 +261,7 @@ func runAdminRoomMembers(args []string) error {
 	case "remove":
 		request.Remove = []string(members)
 	}
-	client, err := resolveAdminClient(flags, options)
+	client, resolution, err := resolveAdminClientResolution(flags, options)
 	if err != nil {
 		return err
 	}
@@ -250,105 +269,26 @@ func runAdminRoomMembers(args []string) error {
 	if err != nil {
 		return err
 	}
+
+	// 7B.5: persist the change into the local Moltnet server config, if this
+	// command resolved one, so it survives the next restart instead of being
+	// silently reconciled away (see
+	// internal/app/config_writeback_membership.go's doc comment).
+	//
+	// F4 (confirmed live): this used to gate on "--base-url/--config were not
+	// passed" and then independently re-resolve a local server config by
+	// --network alone. That is wrong whenever a client config
+	// (.moltnet/config.json, MOLTNET_CLIENT_CONFIG, or the legacy
+	// .spawnfile/moltnet.json) exists and points the live request above at a
+	// different — possibly remote — server: the PATCH above lands on that
+	// client config's target, but the writeback would land on whatever local
+	// server config --network happened to name, silently. resolution.LocalServerConfigPath
+	// (admin_client_resolve.go) is non-empty only when resolveAdminClient
+	// itself resolved through the local-server-config fallback — no
+	// --base-url and no client config found at all — which is the only case
+	// a follow-up write to that same path is guaranteed to target the server
+	// the live request just went to.
+	adminRoomMembersConfigWriteback(resolution.LocalServerConfigPath, strings.TrimSpace(*roomID), request.Add, request.Remove)
+
 	return printJSON(room)
-}
-
-func bindAdminOnlyFlags(flags *flag.FlagSet) *adminClientOptions {
-	return bindAdminClientResolverFlags(flags, true)
-}
-
-func bindAdminClientResolverFlags(flags *flag.FlagSet, includeMemberFlag bool) *adminClientOptions {
-	options := &adminClientOptions{}
-	flags.StringVar(&options.authMode, "auth-mode", "none", "client auth mode: none, bearer, or open")
-	flags.StringVar(&options.baseURL, "base-url", "", "Moltnet base URL")
-	flags.StringVar(&options.configPath, "config", "", "existing Moltnet client config path")
-	if includeMemberFlag {
-		flags.StringVar(&options.memberID, "member", "", "Moltnet member id when reading an existing config")
-	}
-	flags.StringVar(&options.networkID, "network", "", "Moltnet network id when reading an existing config")
-	flags.StringVar(&options.token, "token", "", "plain bearer token")
-	flags.StringVar(&options.tokenEnv, "token-env", "", "environment variable containing the bearer token")
-	flags.StringVar(&options.tokenPath, "token-path", "", "file containing the bearer token")
-	return options
-}
-
-func bindAdminClientFlags(flags *flag.FlagSet, targetName string, targetUsage string) (*adminClientOptions, *string) {
-	options := bindAdminOnlyFlags(flags)
-	target := flags.String(targetName, "", targetUsage)
-	return options, target
-}
-
-func resolveAdminClient(flags *flag.FlagSet, options *adminClientOptions) (*moltnetclient.Client, error) {
-	attachment := clientconfig.AttachmentConfig{
-		Auth: clientconfig.AuthConfig{
-			Mode:      strings.TrimSpace(options.authMode),
-			Token:     strings.TrimSpace(options.token),
-			TokenEnv:  strings.TrimSpace(options.tokenEnv),
-			TokenPath: strings.TrimSpace(options.tokenPath),
-		},
-		BaseURL:   strings.TrimSpace(options.baseURL),
-		MemberID:  strings.TrimSpace(options.memberID),
-		NetworkID: strings.TrimSpace(options.networkID),
-	}
-
-	explicitClientConfig := strings.TrimSpace(options.configPath) != ""
-	if explicitClientConfig || attachment.BaseURL == "" {
-		config, _, err := loadClientConfig(options.configPath)
-		switch {
-		case err == nil:
-			resolved, resolveErr := config.ResolveAttachmentFor(options.networkID, options.memberID)
-			if resolveErr != nil {
-				return nil, resolveErr
-			}
-			if attachment.BaseURL == "" {
-				attachment.BaseURL = resolved.BaseURL
-			}
-			if attachment.MemberID == "" {
-				attachment.MemberID = resolved.MemberID
-			}
-			if attachment.NetworkID == "" {
-				attachment.NetworkID = resolved.NetworkID
-			}
-			sourceExplicit := flagWasSet(flags, "token") ||
-				flagWasSet(flags, "token-env") ||
-				flagWasSet(flags, "token-path")
-			attachment.Auth = mergeAuthFromConfig(resolved.Auth, attachment.Auth, flagWasSet(flags, "auth-mode"), sourceExplicit)
-		case explicitClientConfig:
-			return nil, err
-		default:
-			// No client config (.moltnet/config.json) on disk. Before giving
-			// up, fall back to the local Moltnet *server* config (PLAN.md
-			// phase 4's shared config resolution), deriving --base-url and an
-			// admin-scoped token from it — --network doubles as the network
-			// id to disambiguate ~/.moltnet/ when several networks exist,
-			// exactly like start/pair/relay's --id.
-			if attachment.BaseURL == "" {
-				derived, ok, derivedErr := resolveAdminFromServerConfig(options.networkID)
-				if derivedErr != nil {
-					return nil, derivedErr
-				}
-				if ok {
-					attachment.BaseURL = derived.BaseURL
-					if attachment.NetworkID == "" {
-						attachment.NetworkID = derived.NetworkID
-					}
-					sourceExplicit := flagWasSet(flags, "token") ||
-						flagWasSet(flags, "token-env") ||
-						flagWasSet(flags, "token-path")
-					attachment.Auth = mergeAuthFromConfig(derived.Auth, attachment.Auth, flagWasSet(flags, "auth-mode"), sourceExplicit)
-				}
-			}
-		}
-	}
-
-	if attachment.BaseURL == "" {
-		return nil, fmt.Errorf("admin command requires --base-url or --config")
-	}
-	if strings.TrimSpace(attachment.Auth.Mode) == "" || strings.TrimSpace(attachment.Auth.Mode) == bridgeconfig.AuthModeNone {
-		if attachment.Auth.HasTokenSource() {
-			attachment.Auth.Mode = bridgeconfig.AuthModeBearer
-		}
-	}
-
-	return moltnetclient.New(attachment)
 }

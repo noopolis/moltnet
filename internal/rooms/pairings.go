@@ -184,13 +184,28 @@ func (s *Service) findPairing(pairingID string) (protocol.Pairing, error) {
 
 	s.pairingsMu.RLock()
 	defer s.pairingsMu.RUnlock()
-	for _, pairing := range s.pairings {
-		if pairing.ID == pairingID {
-			return pairing, nil
-		}
-	}
+	return firstUniqueActivePairing(s.pairings, func(pairing protocol.Pairing) bool {
+		return pairing.ID == pairingID
+	}, pairingID)
+}
 
-	return protocol.Pairing{}, unknownPairingError(pairingID)
+// findPairingByID resolves a pairing by its exact id, without depending on a
+// configured transport client — unlike the exported findPairing, which
+// requires s.pairingClient because it also backs outbound diagnostics
+// queries. This is the lookup pairingForPairScopedContext (federation_access.go)
+// uses for the 7B.1 placeholder binding: a pair-scoped credential's TokenID
+// is minted identical to its pairing's id, so this resolves it even when the
+// credential has no confirmed network binding yet.
+func (s *Service) findPairingByID(pairingID string) (protocol.Pairing, error) {
+	pairingID = strings.TrimSpace(pairingID)
+	if pairingID == "" {
+		return protocol.Pairing{}, unknownPairingError(pairingID)
+	}
+	s.pairingsMu.RLock()
+	defer s.pairingsMu.RUnlock()
+	return firstUniqueActivePairing(s.pairings, func(pairing protocol.Pairing) bool {
+		return pairing.ID == pairingID
+	}, pairingID)
 }
 
 // findPairingByRemoteNetwork resolves an inbound pairing credential without
@@ -199,20 +214,110 @@ func (s *Service) findPairingByRemoteNetwork(remoteNetworkID string) (protocol.P
 	remoteNetworkID = strings.TrimSpace(remoteNetworkID)
 	s.pairingsMu.RLock()
 	defer s.pairingsMu.RUnlock()
-	for _, pairing := range s.pairings {
-		if strings.TrimSpace(pairing.RemoteNetworkID) == remoteNetworkID {
-			return pairing, nil
+	return firstUniqueActivePairing(s.pairings, func(pairing protocol.Pairing) bool {
+		return strings.TrimSpace(pairing.RemoteNetworkID) == remoteNetworkID
+	}, remoteNetworkID)
+}
+
+// firstUniqueActivePairing resolves exactly one pairing matching predicate
+// out of pairings, failing closed (unknownPairingError) instead of silently
+// trusting the first match, in either of two cases (P2, recorded on review):
+//
+//   - the match's config-declared status is protocol.PairingStatusRevoked --
+//     an operator's own hand-edit (`status: revoked` written directly into
+//     pairings[] as a manual stopgap before running the actual `pair
+//     revoke`, or a config an older revoke path left in this state) must
+//     never be resolved as live, even though the pairing/token entries are
+//     still physically present in config.
+//   - more than one pairing matches predicate (duplicate ids, or -- for the
+//     by-remote-network lookup -- two pairings sharing a remote_network_id,
+//     one of them plausibly stale): resolving to "whichever came first" is
+//     exactly the silent fallback across a stale credential this guards
+//     against, so an ambiguous match is treated as no match at all.
+func firstUniqueActivePairing(pairings []protocol.Pairing, predicate func(protocol.Pairing) bool, lookupKey string) (protocol.Pairing, error) {
+	var match protocol.Pairing
+	found := false
+	for _, pairing := range pairings {
+		if !predicate(pairing) {
+			continue
 		}
+		if strings.EqualFold(strings.TrimSpace(pairing.Status), protocol.PairingStatusRevoked) {
+			return protocol.Pairing{}, unknownPairingError(lookupKey)
+		}
+		if found {
+			return protocol.Pairing{}, unknownPairingError(lookupKey)
+		}
+		match = pairing
+		found = true
 	}
-	return protocol.Pairing{}, unknownPairingError(remoteNetworkID)
+	if !found {
+		return protocol.Pairing{}, unknownPairingError(lookupKey)
+	}
+	return match, nil
 }
 
 func (s *Service) snapshotPairings() []protocol.Pairing {
 	return s.snapshotPairingsWithTokenPolicy(false)
 }
 
+// snapshotRelayPairings is relayMessage/shouldRelayMessage's (relay.go) view
+// of the pairing table: unlike snapshotPairings (which lists every
+// configured pairing, revoked or not, for `pair list`/`status` reporting),
+// this must never hand back a pairing whose status is revoked. F2 (review
+// round 2, confirmed live): firstUniqueActivePairing already refuses a
+// revoked pairing for direct lookups, and its own doc comment says a
+// hand-edited `status: revoked` pairing "must never be resolved as live" --
+// but this function, unfiltered, fed relayMessage's iteration directly, so
+// that exact hand-edit (the doc's own recommended manual stopgap before
+// `pair revoke` finishes, or a config an older revoke path left in this
+// state) kept receiving every message relayed out of any room whose
+// federation still listed it.
+//
+// The exclusion is keyed on revokedPairingIDs' raw, config-declared status
+// -- the same field firstUniqueActivePairing checks -- not the live
+// diagnostic status snapshotPairingsWithTokenPolicy substitutes into each
+// returned Pairing.Status. The two cannot diverge for a pairing this process
+// loaded as revoked from the start (nothing ever refreshes diagnostics for
+// one, since pairingDiagnosticsNeedRefresh/pairingRelayAttemptReady treat an
+// unrecognized status value as not-ready), but this codebase has no
+// in-process hot-reload of pairing state at all (pair_revoke.go's own doc
+// comment): a pairing that was already connected before an operator
+// hand-edited `status: revoked` into a still-running process's on-disk
+// config keeps its stale "connected" diagnostic cache regardless. Reading
+// the raw field directly means this filter does not depend on that cache
+// ever being consistent with the file.
 func (s *Service) snapshotRelayPairings() []protocol.Pairing {
-	return s.snapshotPairingsWithTokenPolicy(true)
+	revoked := s.revokedPairingIDs()
+	pairings := s.snapshotPairingsWithTokenPolicy(true)
+	if len(revoked) == 0 {
+		return pairings
+	}
+	active := make([]protocol.Pairing, 0, len(pairings))
+	for _, pairing := range pairings {
+		if _, isRevoked := revoked[pairing.ID]; isRevoked {
+			continue
+		}
+		active = append(active, pairing)
+	}
+	return active
+}
+
+// revokedPairingIDs returns the set of pairing ids whose raw, config-declared
+// Status (s.pairings, before snapshotPairingsWithTokenPolicy overwrites it
+// with the live diagnostic status) is revoked. See snapshotRelayPairings'
+// doc comment for why the raw field, not the processed one, is what matters
+// here.
+func (s *Service) revokedPairingIDs() map[string]struct{} {
+	s.pairingsMu.RLock()
+	defer s.pairingsMu.RUnlock()
+
+	revoked := make(map[string]struct{})
+	for _, pairing := range s.pairings {
+		if strings.EqualFold(strings.TrimSpace(pairing.Status), protocol.PairingStatusRevoked) {
+			revoked[pairing.ID] = struct{}{}
+		}
+	}
+	return revoked
 }
 
 func (s *Service) snapshotPairingsWithTokenPolicy(includeTokens bool) []protocol.Pairing {
