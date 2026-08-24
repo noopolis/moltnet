@@ -28,7 +28,7 @@ export function PairingsList() {
                   // claims, and on the inviting side both are empty until the
                   // peer makes contact — which rendered a blank row.
                   title={pairing.id}
-                  subtitle={pairingPeerLabel(pairing) ?? status.detail}
+                  subtitle={pairingSubtitle(pairing, status.detail)}
                   trailing={
                     <span className={pairingToneClass(status.tone)}>
                       {status.label}
@@ -48,7 +48,11 @@ export function PairingsList() {
  * until the peer has actually connected, which is why it can never be the
  * primary label.
  */
-function pairingPeerLabel(pairing: Pairing): string | undefined {
+function pairingSubtitle(pairing: Pairing, detail?: string): string | undefined {
   const claimed = pairing.remote_network_name?.trim() || pairing.remote_network_id?.trim();
-  return claimed ? `peer: ${claimed}` : undefined;
+  const peer = claimed ? `peer: ${claimed}` : undefined;
+  // Both, when both exist: the peer's claimed identity is useful context, but
+  // it must not displace status detail such as a relay error -- that detail is
+  // the actionable half.
+  return [peer, detail].filter(Boolean).join(" · ") || undefined;
 }

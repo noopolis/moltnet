@@ -467,3 +467,38 @@ func TestOperatorCredentialNeverReceivesPairingProvenance(t *testing.T) {
 		t.Fatalf("Origin.ReceivedVia = %q, want empty: an operator is not a paired peer", got)
 	}
 }
+
+// The discard of caller-supplied provenance must be tested with a credential
+// that resolves to NO pairing. With a pair credential the stamp overwrites the
+// forged value anyway, so such a test passes whether or not the discard
+// actually happens -- it routes around the defect it claims to cover.
+//
+// This is the real exposure: an ordinary write token (or any caller on an
+// auth-none network) supplying origin.received_via would otherwise have it
+// stored verbatim and rendered by the console as verified provenance.
+func TestNonPairCallerCannotSupplyPairingProvenance(t *testing.T) {
+	t.Parallel()
+
+	service := newPairingCredentialBindingTestService()
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"member"})
+	writer := authn.NewStaticClaims(authn.TokenConfig{
+		ID:     "plain-writer",
+		Value:  "plain-writer-secret",
+		Scopes: []authn.Scope{authn.ScopeWrite},
+	})
+
+	request := roomSend("floor", "member")
+	request.Origin = protocol.MessageOrigin{ReceivedVia: "bob-invite"}
+
+	if _, err := service.SendMessageContext(bearerClaimsContext(writer), request); err != nil {
+		t.Fatalf("SendMessageContext() error = %v", err)
+	}
+
+	page, err := service.ListRoomMessages("floor", "", 10)
+	if err != nil {
+		t.Fatalf("ListRoomMessages() error = %v", err)
+	}
+	if got := page.Messages[0].Origin.ReceivedVia; got != "" {
+		t.Fatalf("Origin.ReceivedVia = %q, want empty: a non-pair caller cannot name a pairing", got)
+	}
+}

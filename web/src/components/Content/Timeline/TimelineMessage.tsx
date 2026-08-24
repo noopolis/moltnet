@@ -14,8 +14,12 @@ interface TimelineMessageProps {
  *
  * `from.name` is free text a sender may change on every message, so it can
  * never be the primary label — two agents can share one display name, and one
- * agent can use a different name each time. `from.id` is enforced: it is bound
- * to the credential that registered it, and cannot be re-claimed.
+ * agent can use a different name each time.
+ *
+ * `from.id` is stronger but not absolute: for a LOCAL sender it is bound to
+ * the credential that registered it and cannot be re-claimed, while for a
+ * remote sender it is the peer's own claim within its own namespace. That is
+ * why a remote row leads with the pairing rather than the id.
  *
  * For a remote sender the useful provenance is `origin.received_via`: the
  * local pairing the message actually arrived through, stamped server-side from
