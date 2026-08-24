@@ -304,6 +304,17 @@ So turning this on today permanently rejects messages from every peer you invite
 
 There is no way to inspect a pairing's binding state: `moltnet pair show` reports the peer's network, rooms, and agents, not this pairing's own binding. The only signal is which command you ran.
 
+Since the inviter's credential starts unbound, the server pins it on first
+contact: the first origin network such a credential asserts is the one it is
+held to, and a later message claiming a different origin is rejected. That
+binding is process-local — a restart re-learns from the next message — so it
+closes cross-pairing impersonation during a run rather than permanently.
+
+`require_pair_network_binding: true` does **not** learn: it refuses any
+credential without a binding already in config. Enabling it on the inviting
+side therefore rejects every message from peers you invited unless you first
+set that pairing's `remote_network_id` by hand.
+
 This is separate from per-room `federation` enforcement (`rooms[].federation`), which is always on and keys on the pairing's identity rather than its network binding. Enabling one does not substitute for the other.
 
 ## Token Storage

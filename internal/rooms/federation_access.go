@@ -44,6 +44,17 @@ func (s *Service) pairingForPairScopedContext(ctx context.Context) (protocol.Pai
 	if !ok || !claims.Allows(authn.ScopePair) {
 		return protocol.Pairing{}, false
 	}
+	// An operator is this network's own owner, never a peer, even on a
+	// legacy token minted with four scopes ([observe write admin pair]).
+	// Every gate that consumes this resolver already excluded that shape
+	// individually; doing it here means a new consumer cannot forget to.
+	// Without it, an operator token whose id happens to match a pairing id
+	// resolves to that pairing -- which would stamp the operator's own
+	// locally-submitted messages with remote pairing provenance and filter
+	// their agent list as though they were a peer.
+	if isOperatorClaims(claims) {
+		return protocol.Pairing{}, false
+	}
 	if pairing, err := s.findPairingByID(claims.TokenID); err == nil {
 		return pairing, true
 	}

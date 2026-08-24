@@ -61,25 +61,50 @@ func (s *Service) pairCredentialMatchesOrigin(ctx context.Context, claims authn.
 		return true
 	}
 
-	if learned, ok := s.learnedPairNetwork(credentialKey); ok {
-		if learned == originNetworkID {
-			return true
-		}
-		observability.Logger(ctx, "rooms.pairing",
-			"origin_network_id", originNetworkID, "bound_network_id", learned).
-			Warn("rejecting inbound pair-scoped message whose origin network id differs from the one this credential first asserted")
-		return false
-	}
-
 	if strict {
+		// Strict mode never learns: only a binding config established at
+		// pairing time counts, and this credential has none.
 		logPairBindingRefusal(ctx, originNetworkID)
 		return false
 	}
 
-	s.learnPairNetwork(credentialKey, originNetworkID)
-	observability.Logger(ctx, "rooms.pairing", "origin_network_id", originNetworkID).
-		Info("binding this pair credential to the origin network it first asserted; later messages claiming a different origin will be rejected")
-	return true
+	matched, firstContact := s.bindOrMatchPairNetwork(credentialKey, originNetworkID)
+	switch {
+	case firstContact:
+		observability.Logger(ctx, "rooms.pairing", "origin_network_id", originNetworkID).
+			Info("binding this pair credential to the origin network it first asserted; later messages claiming a different origin will be rejected")
+	case !matched:
+		observability.Logger(ctx, "rooms.pairing", "origin_network_id", originNetworkID).
+			Warn("rejecting inbound pair-scoped message whose origin network id differs from the one this credential first asserted")
+	}
+	return matched
+}
+
+// bindOrMatchPairNetwork compares originNetworkID against this credential's
+// learned binding, establishing it if there is none — as ONE atomic step
+// under a single exclusive lock.
+//
+// Splitting this into a read followed by a later write loses the guarantee
+// entirely: two concurrent first-contact messages asserting different origins
+// would both find no binding, both proceed, and both be accepted, with only
+// later messages constrained to whichever write happened to land. The whole
+// point is that the first origin wins and every other origin loses, so the
+// comparison and the establishment cannot be separated.
+//
+// Returns whether the origin is acceptable, and whether this call is the one
+// that established the binding.
+func (s *Service) bindOrMatchPairNetwork(credentialKey, originNetworkID string) (matched bool, firstContact bool) {
+	s.pairingsMu.Lock()
+	defer s.pairingsMu.Unlock()
+
+	if s.learnedPairNetworks == nil {
+		s.learnedPairNetworks = map[string]string{}
+	}
+	if learned, ok := s.learnedPairNetworks[credentialKey]; ok {
+		return learned == originNetworkID, false
+	}
+	s.learnedPairNetworks[credentialKey] = originNetworkID
+	return true, true
 }
 
 func logPairBindingRefusal(ctx context.Context, originNetworkID string) {
@@ -99,26 +124,4 @@ func pairBindingKey(claims authn.Claims) string {
 		return "token:" + tokenID
 	}
 	return strings.TrimSpace(claims.CredentialKey)
-}
-
-func (s *Service) learnedPairNetwork(credentialKey string) (string, bool) {
-	s.pairingsMu.RLock()
-	defer s.pairingsMu.RUnlock()
-	networkID, ok := s.learnedPairNetworks[credentialKey]
-	return networkID, ok
-}
-
-func (s *Service) learnPairNetwork(credentialKey, networkID string) {
-	s.pairingsMu.Lock()
-	defer s.pairingsMu.Unlock()
-	if s.learnedPairNetworks == nil {
-		s.learnedPairNetworks = map[string]string{}
-	}
-	if _, exists := s.learnedPairNetworks[credentialKey]; exists {
-		// Another goroutine won the race between the read above and this
-		// write; keep the first value so two concurrent first-contact
-		// messages cannot disagree about what was learned.
-		return
-	}
-	s.learnedPairNetworks[credentialKey] = networkID
 }

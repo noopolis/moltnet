@@ -2,6 +2,9 @@ package rooms
 
 import (
 	"errors"
+	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
@@ -383,5 +386,84 @@ func TestRelayedRequestDoesNotCarryPairingProvenanceOnward(t *testing.T) {
 	}
 	if relayed.Origin.NetworkID != "local" {
 		t.Fatalf("stripping provenance must not disturb the rest of the origin: %+v", relayed.Origin)
+	}
+}
+
+// The first origin a credential asserts must win against every other origin,
+// including ones asserted at the same instant. A split lookup-then-insert lets
+// two concurrent first-contact messages with different origins both pass --
+// neither finds a binding, both proceed -- which defeats the pinning for
+// exactly the window it exists to protect.
+//
+// Scope, stated honestly: under -race this fails if the map is touched
+// without holding the mutex at all. It does NOT reliably catch a split
+// lookup-then-insert -- the vulnerable interval there is only the gap between
+// releasing a read lock and taking the write lock, and Go's mutex handoff
+// makes landing inside it rare even across thousands of rounds. Atomicity of
+// bindOrMatchPairNetwork rests on it holding one exclusive lock across both
+// the comparison and the insert, which is a structural property of that
+// function, not something this test proves. Keep them in one critical
+// section.
+func TestConcurrentFirstContactBindsExactlyOneOrigin(t *testing.T) {
+	t.Parallel()
+
+	service := newPairingCredentialBindingTestService()
+	origins := [2]string{"remote-b", "network-c"}
+
+	for round := 0; round < 2000; round++ {
+		key := fmt.Sprintf("token:round-%d", round)
+		var accepted [2]int32
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+
+		for i := 0; i < 16; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				<-start
+				if matched, _ := service.bindOrMatchPairNetwork(key, origins[i%2]); matched {
+					atomic.AddInt32(&accepted[i%2], 1)
+				}
+			}(i)
+		}
+		close(start)
+		wg.Wait()
+
+		if accepted[0] > 0 && accepted[1] > 0 {
+			t.Fatalf("round %d: both origins were accepted; the binding must admit exactly one", round)
+		}
+		if accepted[0] == 0 && accepted[1] == 0 {
+			t.Fatalf("round %d: neither origin was accepted; first contact must succeed", round)
+		}
+	}
+}
+
+// A legacy operator token minted with four scopes ([observe write admin pair])
+// resolves to a pairing by token id, but it is this network's own operator,
+// not a peer. Stamping its locally-submitted messages with pairing provenance
+// would make the console present the operator's own words as remote traffic.
+func TestOperatorCredentialNeverReceivesPairingProvenance(t *testing.T) {
+	t.Parallel()
+
+	service := newPairingCredentialBindingTestService()
+	mustCreateFederatedPolicyRoom(t, service, "floor", []string{"member"})
+	// Token id deliberately collides with a configured pairing.
+	operator := authn.NewStaticClaims(authn.TokenConfig{
+		ID:     "pair-b",
+		Value:  "operator-secret",
+		Scopes: []authn.Scope{authn.ScopeObserve, authn.ScopeWrite, authn.ScopeAdmin, authn.ScopePair},
+	})
+
+	request := roomSend("floor", "member")
+	if _, err := service.SendMessageContext(bearerClaimsContext(operator), request); err != nil {
+		t.Fatalf("SendMessageContext() error = %v", err)
+	}
+
+	page, err := service.ListRoomMessages("floor", "", 10)
+	if err != nil {
+		t.Fatalf("ListRoomMessages() error = %v", err)
+	}
+	if got := page.Messages[0].Origin.ReceivedVia; got != "" {
+		t.Fatalf("Origin.ReceivedVia = %q, want empty: an operator is not a paired peer", got)
 	}
 }
