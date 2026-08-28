@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -24,24 +25,26 @@ var newControlDeliveryBackoff = func() *bridgeutil.Backoff {
 // transport hiccuped" the way a bare `return err` out of the attachment
 // handler used to.
 //
-// It always returns nil unless the failure is genuinely fatal
-// (classifyControlError's controlErrorFatal — context shutdown). That
-// means the caller (RunControlLoop's handle closure, in turn
-// moltnet.go's StreamEventsReady) always ACKs and advances the cursor past
-// this event.ID: a permanently-failing wake is skipped, not replayed
-// forever. The ACK is for result.frame.Cursor, the cursor of the frame
-// actually received on this connection — never a synthesized or
-// skipped-ahead cursor — so it stays compatible with the broker's
-// exactly-once session.Ack, which requires pending membership.
+// Legacy completion codecs return nil after a terminal delivery failure so a
+// permanently failing wake is skipped instead of replay-storming forever.
+// DurableAcceptanceCodec is different by contract: failed acceptance returns
+// an error after bounded reporting, so StreamEventsReady does not ACK and the
+// stored event remains replayable. Successful paths always ACK the cursor of
+// the frame actually received, never a synthesized or skipped-ahead cursor.
 func deliverControlMessage(
 	ctx context.Context,
 	controlClient *http.Client,
 	client *MoltnetClient,
 	config bridgeconfig.Config,
+	codec ControlCodec,
 	event protocol.Event,
 	deliveries *controlDeliveryTracker,
 ) error {
 	state := deliveries.stateFor(event.ID)
+	requiresAcceptance := false
+	if acceptanceCodec, ok := codec.(DurableAcceptanceCodec); ok {
+		requiresAcceptance = acceptanceCodec.RequiresDurableAcceptance()
+	}
 
 	if state.permanent {
 		// Idempotent re-delivery: this event.ID already exhausted its
@@ -60,24 +63,45 @@ func deliverControlMessage(
 	for {
 		state.attempts++
 
-		response, err := sendControlMessage(ctx, controlClient, config, event)
+		result, err := sendControlMessageWithCodec(ctx, controlClient, config, event, codec)
 		if err == nil {
-			return publishControlResponse(ctx, client, config, event.Message.Target, event.Message.ID, response)
+			if result.Acceptance != nil {
+				asyncCodec, ok := codec.(AsyncControlCodec)
+				if !ok {
+					return fmt.Errorf("control codec returned asynchronous acceptance without a handler")
+				}
+				if err := asyncCodec.ControlAccepted(config, event, *result.Acceptance); err != nil {
+					return fmt.Errorf("persist asynchronous control acceptance: %w", err)
+				}
+			}
+			published, publishErr := publishControlResult(ctx, client, config, event.Message.Target, event.Message.ID, result)
+			if publishErr == nil && published && result.PublishOnce {
+				if observer, ok := codec.(ControlPublicationObserver); ok {
+					observer.ControlResultPublished(ControlDelivery{EventID: protocol.MessageEventID(event.Message.ID)})
+				}
+			}
+			return publishErr
 		}
 
 		switch classifyControlError(ctx, err) {
 		case controlErrorFatal:
 			return err
 		case controlErrorPermanent:
+			reportWakeFailure(ctx, client, config, event, state.attempts, protocol.WakeFailureClassificationPermanent, err)
+			if requiresAcceptance {
+				return err
+			}
 			state.permanent = true
 			state.lastErr = err
-			reportWakeFailure(ctx, client, config, event, state.attempts, protocol.WakeFailureClassificationPermanent, err)
 			return nil
 		default: // controlErrorTransient
 			if state.attempts >= maxControlDeliveryAttempts {
+				reportWakeFailure(ctx, client, config, event, state.attempts, protocol.WakeFailureClassificationRetryExhausted, err)
+				if requiresAcceptance {
+					return err
+				}
 				state.permanent = true
 				state.lastErr = err
-				reportWakeFailure(ctx, client, config, event, state.attempts, protocol.WakeFailureClassificationRetryExhausted, err)
 				return nil
 			}
 			select {

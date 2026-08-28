@@ -1,11 +1,8 @@
 package loop
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -16,32 +13,6 @@ import (
 )
 
 const controlRequestTimeout = 5 * time.Minute
-const maxControlResponseBytes = 1 << 20
-
-type controlRequest struct {
-	ContextID string `json:"context_id,omitempty"`
-	// EventID is the moltnet causal event id ("moltnet:<messageID>", via
-	// protocol.MessageEventID) of the inbound message.created event that
-	// triggered this control wake. It is empty for bootstrap sends, which
-	// have no inbound moltnet message to derive an id from. The runtime's
-	// control source (src/runtime/pi/appControlSource.ts
-	// formatControlEventId) prefers this field verbatim over its
-	// synthesized context_id+timestamp fallback, so daimon and mneme chain
-	// off a real moltnet id instead of a stand-in.
-	EventID string `json:"event_id,omitempty"`
-	From    string `json:"from"`
-	Message string `json:"message"`
-	// TransportText preserves the exact provider message body separately
-	// from Message's human-facing transport rendering. Runtimes may use it
-	// to recognize a versioned machine envelope without parsing display text.
-	TransportText string `json:"transport_text,omitempty"`
-	To            string `json:"to"`
-}
-
-type controlResponse struct {
-	From    string `json:"from"`
-	Message string `json:"message"`
-}
 
 type bootstrapTarget struct {
 	message string
@@ -49,7 +20,19 @@ type bootstrapTarget struct {
 }
 
 func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
+	return RunControlLoopWithCodec(ctx, config, &legacyControlCodec{})
+}
+
+func RunControlLoopWithCodec(ctx context.Context, config bridgeconfig.Config, codec ControlCodec) error {
+	loopCtx, cancelLoop := context.WithCancel(ctx)
+	defer cancelLoop()
+
 	client := NewMoltnetClient(config)
+	if asyncCodec, ok := codec.(AsyncControlCodec); ok {
+		if err := asyncCodec.StartControlAsync(loopCtx, client, config); err != nil {
+			return err
+		}
+	}
 	controlClient := &http.Client{Timeout: controlRequestTimeout}
 	backoff := bridgeutil.NewBackoff(bridgeutil.DefaultReconnectBaseDelay, bridgeutil.DefaultReconnectMaxDelay)
 	attempt := 0
@@ -65,7 +48,7 @@ func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
 			return nil
 		}
 
-		streamCtx, cancelStream := context.WithCancel(ctx)
+		streamCtx, cancelStream := context.WithCancel(loopCtx)
 		bootstrapDone := make(chan error, 1)
 		bootstrapStarted := false
 
@@ -76,7 +59,7 @@ func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
 			bootstrapStarted = true
 
 			go func() {
-				err := sendBootstrapControlMessages(streamCtx, controlClient, config)
+				err := sendBootstrapControlMessages(streamCtx, controlClient, config, codec)
 				if err != nil {
 					bootstrapDone <- err
 					cancelStream()
@@ -98,7 +81,7 @@ func RunControlLoop(ctx context.Context, config bridgeconfig.Config) error {
 				return nil
 			}
 
-			return deliverControlMessage(ctx, controlClient, client, config, event, deliveries)
+			return deliverControlMessage(ctx, controlClient, client, config, codec, event, deliveries)
 		})
 		cancelStream()
 
@@ -138,6 +121,7 @@ func sendBootstrapControlMessages(
 	ctx context.Context,
 	controlClient *http.Client,
 	config bridgeconfig.Config,
+	codec ControlCodec,
 ) error {
 	for _, target := range bootstrapTargets(config) {
 		_, err := sendControlText(
@@ -149,6 +133,8 @@ func sendBootstrapControlMessages(
 			"Moltnet Bootstrap",
 			target.message,
 			"",
+			time.Time{},
+			codec,
 		)
 		if err != nil {
 			return err
@@ -185,12 +171,26 @@ func sendControlMessage(
 	controlClient *http.Client,
 	config bridgeconfig.Config,
 	event protocol.Event,
-) (controlResponse, error) {
+) (ControlResult, error) {
+	return sendControlMessageWithCodec(ctx, controlClient, config, event, &legacyControlCodec{})
+}
+
+func sendControlMessageWithCodec(
+	ctx context.Context,
+	controlClient *http.Client,
+	config bridgeconfig.Config,
+	event protocol.Event,
+	codec ControlCodec,
+) (ControlResult, error) {
 	if event.Type != protocol.EventTypeMessageCreated {
-		return controlResponse{}, fmt.Errorf("control wake requires %s event, got %s", protocol.EventTypeMessageCreated, event.Type)
+		return ControlResult{}, fmt.Errorf("control wake requires %s event, got %s", protocol.EventTypeMessageCreated, event.Type)
 	}
 	if event.Message == nil {
-		return controlResponse{}, fmt.Errorf("event has no message")
+		return ControlResult{}, fmt.Errorf("event has no message")
+	}
+	occurredAt := event.Message.CreatedAt
+	if occurredAt.IsZero() {
+		occurredAt = event.CreatedAt
 	}
 
 	return sendControlText(
@@ -207,6 +207,8 @@ func sendControlMessage(
 		event.Message.From.ID,
 		bridgeutil.RenderInboundText(event.Message),
 		bridgeutil.RenderMessageBody(event.Message),
+		occurredAt,
+		codec,
 	)
 }
 
@@ -219,68 +221,51 @@ func sendControlText(
 	from string,
 	message string,
 	transportText string,
-) (controlResponse, error) {
-	contextID := conversationContextIDForTarget(config.Moltnet.NetworkID, target)
-
-	body, err := json.Marshal(controlRequest{
-		ContextID:     contextID,
+	occurredAt time.Time,
+	codec ControlCodec,
+) (ControlResult, error) {
+	if codec == nil {
+		return ControlResult{}, fmt.Errorf("control codec is required")
+	}
+	delivery := ControlDelivery{
+		Target:        target,
 		EventID:       eventID,
 		From:          from,
 		Message:       message,
 		TransportText: transportText,
-		To:            config.Agent.ID,
-	})
-	if err != nil {
-		return controlResponse{}, fmt.Errorf("encode control request: %w", err)
+		OccurredAt:    occurredAt,
 	}
-
-	request, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		config.Runtime.ControlURL,
-		bytes.NewReader(body),
-	)
+	request, err := codec.EncodeRequest(ctx, config, delivery)
 	if err != nil {
-		return controlResponse{}, fmt.Errorf("build control request: %w", err)
+		return ControlResult{}, err
 	}
-
-	request.Header.Set("Content-Type", "application/json")
-	if token := strings.TrimSpace(config.Runtime.Token.Reveal()); token != "" {
-		request.Header.Set("Authorization", "Bearer "+token)
+	if request == nil {
+		return ControlResult{}, nil
 	}
 
 	response, err := controlClient.Do(request)
 	if err != nil {
-		return controlResponse{}, fmt.Errorf("request control url %s: %w", request.URL.Redacted(), err)
+		return ControlResult{}, fmt.Errorf("request control url %s: %w", request.URL.Redacted(), err)
 	}
 	defer response.Body.Close()
 
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return controlResponse{}, fmt.Errorf("control url returned %s", response.Status)
-	}
-
-	var payload controlResponse
-	if err := json.NewDecoder(io.LimitReader(response.Body, maxControlResponseBytes)).Decode(&payload); err != nil {
-		return controlResponse{}, fmt.Errorf("decode control response: %w", err)
-	}
-
-	return payload, nil
+	return codec.DecodeResponse(config, delivery, response)
 }
 
-func publishControlResponse(
+func publishControlResult(
 	ctx context.Context,
 	client *MoltnetClient,
 	config bridgeconfig.Config,
 	target protocol.Target,
 	inboundMessageID string,
-	response controlResponse,
-) error {
-	if config.Runtime.Kind != bridgeconfig.RuntimePi {
-		return nil
+	result ControlResult,
+) (bool, error) {
+	if !result.Publish {
+		return false, nil
 	}
-	message := strings.TrimSpace(response.Message)
+	message := strings.TrimSpace(result.Text)
 	if message == "" {
-		return nil
+		return false, nil
 	}
 	_, err := client.SendMessage(ctx, protocol.SendMessageRequest{
 		Target: target,
@@ -292,26 +277,40 @@ func publishControlResponse(
 		Parts:         []protocol.Part{{Kind: protocol.PartKindText, Text: message}},
 		CauseEventIDs: []string{protocol.MessageEventID(inboundMessageID)},
 	})
-	return err
+	return err == nil, err
 }
 
 func buildBootstrapControlMessage(config bridgeconfig.Config, target protocol.Target) string {
-	return strings.Join([]string{
+	lines := []string{
 		"Moltnet bootstrap delivery.",
 		"This is a live wake for the attached Moltnet conversation.",
 		"You may stay silent, but if your own instructions define a startup action for an empty room, execute that startup action now instead of waiting for another prompt.",
 		"The Moltnet CLI contract is already installed in your workspace.",
 		"Do not answer this bootstrap with a status summary.",
-		"Nothing will be sent automatically from this wake. If you choose to act, you must run the tool or command that sends the message yourself.",
+	}
+	if config.Runtime.Kind == bridgeconfig.RuntimeDaimon {
+		lines = append(lines,
+			"Your final response to this wake will be published automatically to the original Moltnet target.",
+			"Use your final response to reply and mention colleagues when needed; return only the message to publish, not process notes or a promise to send it later.",
+			"Do not use `moltnet send`, the Moltnet CLI, or another Moltnet messaging tool for this reply unless your own instructions independently configure a separate message.",
+		)
+	} else {
+		lines = append(lines, "Nothing will be sent automatically from this wake. If you choose to act, you must run the tool or command that sends the message yourself.")
+	}
+	lines = append(lines,
 		"If your own instructions say to coordinate privately, direct other agents, or never speak publicly, obey those local instructions.",
 		"Read recent Moltnet history for the attached target. If the room is empty, it is appropriate to start it according to your local instructions, and you should do that in this wake.",
-		"If you decide to speak, use the exec tool with `moltnet send --target ... --text ...` and choose an explicit target.",
-		"",
+	)
+	if config.Runtime.Kind != bridgeconfig.RuntimeDaimon {
+		lines = append(lines, "If you decide to speak, use the exec tool with `moltnet send --target ... --text ...` and choose an explicit target.")
+	}
+	lines = append(lines, "",
 		fmt.Sprintf(`{"kind":"bootstrap","source":"moltnet","network_id":%q,"conversation":%q,"target":{"kind":%q,"room_id":%q}}`,
 			config.Moltnet.NetworkID,
 			conversationContextIDForTarget(config.Moltnet.NetworkID, target),
 			target.Kind,
 			target.RoomID,
 		),
-	}, "\n")
+	)
+	return strings.Join(lines, "\n")
 }

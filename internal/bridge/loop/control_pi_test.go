@@ -93,7 +93,7 @@ func TestRunControlLoopPublishesPiControlResponse(t *testing.T) {
 		Rooms:   []bridgeconfig.RoomBinding{{ID: "research", Wake: bridgeconfig.WakeMentions}},
 	}
 
-	if err := RunControlLoop(context.Background(), config); err != nil {
+	if err := RunControlLoopWithCodec(context.Background(), config, &legacyControlCodec{publish: true}); err != nil {
 		t.Fatalf("RunControlLoop() error = %v", err)
 	}
 

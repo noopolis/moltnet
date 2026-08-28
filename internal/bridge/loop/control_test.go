@@ -534,7 +534,7 @@ func TestSendControlMessageIncludesRuntimeAuthToken(t *testing.T) {
 	}
 }
 
-func TestBuildBootstrapControlMessage(t *testing.T) {
+func TestBuildBootstrapControlMessagePreservesLegacyManualReply(t *testing.T) {
 	t.Parallel()
 
 	message := buildBootstrapControlMessage(bridgeconfig.Config{
@@ -544,16 +544,47 @@ func TestBuildBootstrapControlMessage(t *testing.T) {
 		RoomID: "research",
 	})
 
-	if !strings.Contains(message, "Moltnet bootstrap delivery.") {
-		t.Fatalf("expected bootstrap preamble, got %q", message)
+	want := strings.Join([]string{
+		"Moltnet bootstrap delivery.",
+		"This is a live wake for the attached Moltnet conversation.",
+		"You may stay silent, but if your own instructions define a startup action for an empty room, execute that startup action now instead of waiting for another prompt.",
+		"The Moltnet CLI contract is already installed in your workspace.",
+		"Do not answer this bootstrap with a status summary.",
+		"Nothing will be sent automatically from this wake. If you choose to act, you must run the tool or command that sends the message yourself.",
+		"If your own instructions say to coordinate privately, direct other agents, or never speak publicly, obey those local instructions.",
+		"Read recent Moltnet history for the attached target. If the room is empty, it is appropriate to start it according to your local instructions, and you should do that in this wake.",
+		"If you decide to speak, use the exec tool with `moltnet send --target ... --text ...` and choose an explicit target.",
+		"",
+		`{"kind":"bootstrap","source":"moltnet","network_id":"local","conversation":"moltnet:local:room:research","target":{"kind":"room","room_id":"research"}}`,
+	}, "\n")
+	if message != want {
+		t.Fatalf("legacy bootstrap message:\n got %q\nwant %q", message, want)
 	}
-	if !strings.Contains(message, "execute that startup action now") {
-		t.Fatalf("expected explicit startup instruction, got %q", message)
-	}
-	if !strings.Contains(message, `"kind":"bootstrap"`) {
-		t.Fatalf("expected bootstrap payload marker, got %q", message)
-	}
-	if !strings.Contains(message, `"conversation":"moltnet:local:room:research"`) {
-		t.Fatalf("expected stable bootstrap conversation id, got %q", message)
+}
+
+func TestBuildBootstrapControlMessageDaimonUsesAutomaticFinalReply(t *testing.T) {
+	t.Parallel()
+
+	message := buildBootstrapControlMessage(bridgeconfig.Config{
+		Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "local"},
+		Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeDaimon},
+	}, protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"})
+
+	want := strings.Join([]string{
+		"Moltnet bootstrap delivery.",
+		"This is a live wake for the attached Moltnet conversation.",
+		"You may stay silent, but if your own instructions define a startup action for an empty room, execute that startup action now instead of waiting for another prompt.",
+		"The Moltnet CLI contract is already installed in your workspace.",
+		"Do not answer this bootstrap with a status summary.",
+		"Your final response to this wake will be published automatically to the original Moltnet target.",
+		"Use your final response to reply and mention colleagues when needed; return only the message to publish, not process notes or a promise to send it later.",
+		"Do not use `moltnet send`, the Moltnet CLI, or another Moltnet messaging tool for this reply unless your own instructions independently configure a separate message.",
+		"If your own instructions say to coordinate privately, direct other agents, or never speak publicly, obey those local instructions.",
+		"Read recent Moltnet history for the attached target. If the room is empty, it is appropriate to start it according to your local instructions, and you should do that in this wake.",
+		"",
+		`{"kind":"bootstrap","source":"moltnet","network_id":"local","conversation":"moltnet:local:room:research","target":{"kind":"room","room_id":"research"}}`,
+	}, "\n")
+	if message != want {
+		t.Fatalf("Daimon bootstrap message:\n got %q\nwant %q", message, want)
 	}
 }
