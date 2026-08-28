@@ -83,23 +83,8 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		CreatedAt: now,
 	}
 
-	lifecycle := store.AppendLifecycle{}
-	if s.lifecycleMessages != nil {
-		lifecycle, err = s.lifecycleMessages.AppendMessageWithLifecycleContext(ctx, message)
-		if err != nil {
-			if errors.Is(err, store.ErrDuplicateMessage) {
-				return protocol.MessageAccepted{
-					MessageID: message.ID,
-					EventID:   event.ID,
-					Accepted:  true,
-				}, nil
-			}
-			if errors.Is(err, store.ErrDMTopologyConflict) {
-				return protocol.MessageAccepted{}, dmTopologyConflictError()
-			}
-			return protocol.MessageAccepted{}, err
-		}
-	} else if err := s.appendMessage(ctx, message); err != nil {
+	lifecycle, err := s.appendAndPublishMessage(ctx, request, message, event)
+	if err != nil {
 		if errors.Is(err, store.ErrDuplicateMessage) {
 			return protocol.MessageAccepted{
 				MessageID: message.ID,
@@ -111,37 +96,7 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 			return protocol.MessageAccepted{}, dmTopologyConflictError()
 		}
 		return protocol.MessageAccepted{}, err
-	} else {
-		lifecycle, err = s.conversationLifecycle(ctx, message)
-		if err != nil {
-			return protocol.MessageAccepted{}, err
-		}
 	}
-
-	// The durable append above has succeeded and this is not a duplicate
-	// (both ErrDuplicateMessage branches return before reaching here), so
-	// this is exactly one message.accepted causal stamp per accepted message.
-	s.stampMessageAccepted(ctx, message, request)
-
-	if lifecycle.Thread != nil {
-		s.publishEvent(protocol.Event{
-			ID:        newPrefixedID("evt"),
-			Type:      protocol.EventTypeThreadCreated,
-			NetworkID: s.networkID,
-			Thread:    lifecycle.Thread,
-			CreatedAt: now,
-		})
-	}
-	if lifecycle.DM != nil {
-		s.publishEvent(protocol.Event{
-			ID:        newPrefixedID("evt"),
-			Type:      protocol.EventTypeDMCreated,
-			NetworkID: s.networkID,
-			DM:        lifecycle.DM,
-			CreatedAt: now,
-		})
-	}
-	s.publishEvent(event)
 	s.relayMessage(message)
 
 	return protocol.MessageAccepted{
@@ -151,6 +106,59 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		ThreadCreated: lifecycle.Thread != nil,
 		DMCreated:     lifecycle.DM != nil,
 	}, nil
+}
+
+func (s *Service) appendAndPublishMessage(
+	ctx context.Context,
+	request protocol.SendMessageRequest,
+	message protocol.Message,
+	event protocol.Event,
+) (store.AppendLifecycle, error) {
+	s.deliveryMu.Lock()
+	defer s.deliveryMu.Unlock()
+
+	var (
+		lifecycle store.AppendLifecycle
+		err       error
+	)
+	switch {
+	case s.deliveryStore != nil:
+		lifecycle, err = s.deliveryStore.AppendMessageEventWithLifecycleContext(ctx, message, event)
+	case s.lifecycleMessages != nil:
+		lifecycle, err = s.lifecycleMessages.AppendMessageWithLifecycleContext(ctx, message)
+	default:
+		err = s.appendMessage(ctx, message)
+		if err == nil {
+			lifecycle, err = s.conversationLifecycle(ctx, message)
+		}
+	}
+	if err != nil {
+		return store.AppendLifecycle{}, err
+	}
+
+	// The durable append above succeeded and was not a duplicate, so stamp and
+	// fan out exactly once while attachment baseline creation remains excluded.
+	s.stampMessageAccepted(ctx, message, request)
+	if lifecycle.Thread != nil {
+		s.publishEvent(protocol.Event{
+			ID:        newPrefixedID("evt"),
+			Type:      protocol.EventTypeThreadCreated,
+			NetworkID: s.networkID,
+			Thread:    lifecycle.Thread,
+			CreatedAt: event.CreatedAt,
+		})
+	}
+	if lifecycle.DM != nil {
+		s.publishEvent(protocol.Event{
+			ID:        newPrefixedID("evt"),
+			Type:      protocol.EventTypeDMCreated,
+			NetworkID: s.networkID,
+			DM:        lifecycle.DM,
+			CreatedAt: event.CreatedAt,
+		})
+	}
+	s.publishEvent(event)
+	return lifecycle, nil
 }
 
 func (s *Service) validateDMSenderTopology(target protocol.Target, actor protocol.Actor) error {

@@ -204,3 +204,72 @@ func TestServiceSubscribeFromFallsBackToLiveSubscribe(t *testing.T) {
 		t.Fatal("timed out waiting for live event")
 	}
 }
+
+func TestDurableAttachmentRegistrationBaselineAndRestartACK(t *testing.T) {
+	memory := store.NewMemoryStore()
+	service := NewService(ServiceConfig{
+		NetworkID: "local", NetworkName: "Local", Version: "test",
+		Store: memory, Messages: memory, Broker: events.NewBroker(memory),
+	})
+	send := func(id string) protocol.MessageAccepted {
+		accepted, err := service.SendMessage(protocol.SendMessageRequest{
+			ID: id,
+			Target: protocol.Target{
+				Kind: protocol.TargetKindDM, DMID: "dm_alpha_writer",
+				ParticipantIDs: []string{"alpha", "writer"},
+			},
+			From:  protocol.Actor{Type: "agent", ID: "writer"},
+			Parts: []protocol.Part{{Kind: protocol.PartKindText, Text: id}},
+		})
+		if err != nil {
+			t.Fatalf("send %s: %v", id, err)
+		}
+		return accepted
+	}
+	send("msg_before_attach")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	registration, stream, supported, err := service.RegisterDurableAttachmentContext(
+		ctx, protocol.RegisterAgentRequest{RequestedAgentID: "alpha"},
+	)
+	if err != nil || !supported || registration.AgentID != "alpha" {
+		t.Fatalf("durable registration = %#v supported=%v err=%v", registration, supported, err)
+	}
+	select {
+	case event := <-stream:
+		t.Fatalf("first attachment replayed pre-baseline event %#v", event)
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	accepted := send("msg_after_attach")
+	select {
+	case event := <-stream:
+		if event.ID != accepted.EventID {
+			t.Fatalf("live durable event = %q, want %q", event.ID, accepted.EventID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for post-baseline event")
+	}
+	if err := service.AcknowledgeAttachmentContext(t.Context(), "alpha", accepted.EventID); err != nil {
+		t.Fatalf("persist attachment ACK: %v", err)
+	}
+	cancel()
+
+	restarted := NewService(ServiceConfig{
+		NetworkID: "local", NetworkName: "Local", Version: "test",
+		Store: memory, Messages: memory, Broker: events.NewBroker(memory),
+	})
+	restartCtx, cancelRestart := context.WithCancel(context.Background())
+	defer cancelRestart()
+	_, replay, supported, err := restarted.RegisterDurableAttachmentContext(
+		restartCtx, protocol.RegisterAgentRequest{RequestedAgentID: "alpha"},
+	)
+	if err != nil || !supported {
+		t.Fatalf("restart durable registration supported=%v err=%v", supported, err)
+	}
+	select {
+	case event := <-replay:
+		t.Fatalf("acknowledged event replayed after restart %#v", event)
+	case <-time.After(25 * time.Millisecond):
+	}
+}

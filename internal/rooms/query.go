@@ -15,6 +15,45 @@ type replayingBroker interface {
 	SubscribeFrom(ctx context.Context, lastEventID string) <-chan protocol.Event
 }
 
+type attachmentDeliveryBroker interface {
+	SubscribeAgent(ctx context.Context, agentID string) (<-chan protocol.Event, error)
+	AcknowledgeAgent(ctx context.Context, agentID string, eventID string) error
+	DurableDeliveryConfigured() bool
+}
+
+// RegisterDurableAttachmentContext closes the registration/subscription gap:
+// the agent is authenticated and registered before its durable baseline is
+// created, while message commit and publication are excluded by deliveryMu.
+func (s *Service) RegisterDurableAttachmentContext(
+	ctx context.Context,
+	request protocol.RegisterAgentRequest,
+) (protocol.AgentRegistration, <-chan protocol.Event, bool, error) {
+	broker, ok := s.broker.(attachmentDeliveryBroker)
+	if !ok || s.deliveryStore == nil {
+		return protocol.AgentRegistration{}, nil, false, nil
+	}
+
+	s.deliveryMu.Lock()
+	defer s.deliveryMu.Unlock()
+	registration, err := s.RegisterAgentContext(ctx, request)
+	if err != nil {
+		return protocol.AgentRegistration{}, nil, true, err
+	}
+	stream, err := broker.SubscribeAgent(ctx, registration.AgentID)
+	if err != nil {
+		return protocol.AgentRegistration{}, nil, true, err
+	}
+	return registration, s.filterEvents(ctx, stream), true, nil
+}
+
+func (s *Service) AcknowledgeAttachmentContext(ctx context.Context, agentID string, eventID string) error {
+	broker, ok := s.broker.(attachmentDeliveryBroker)
+	if !ok || s.deliveryStore == nil {
+		return nil
+	}
+	return broker.AcknowledgeAgent(ctx, agentID, eventID)
+}
+
 func (s *Service) SubscribeFrom(ctx context.Context, lastEventID string) <-chan protocol.Event {
 	if broker, ok := s.broker.(replayingBroker); ok {
 		return s.filterEvents(ctx, broker.SubscribeFrom(ctx, lastEventID))
