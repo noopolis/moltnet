@@ -34,6 +34,17 @@ type MoltnetClient struct {
 	cursor   string
 }
 
+type attachmentReadyKey struct{}
+
+func WithAttachmentReady(ctx context.Context, ready func()) context.Context {
+	return context.WithValue(ctx, attachmentReadyKey{}, ready)
+}
+func MarkAttachmentReady(ctx context.Context) {
+	if ready, ok := ctx.Value(attachmentReadyKey{}).(func()); ok {
+		ready()
+	}
+}
+
 func NewMoltnetClient(config bridgeconfig.Config) *MoltnetClient {
 	token, _, err := config.Moltnet.ResolveToken()
 	return &MoltnetClient{
@@ -87,6 +98,7 @@ func (c *MoltnetClient) StreamEventsReady(
 	if err := c.applyReadyToken(config, ready.AgentToken); err != nil {
 		return err
 	}
+	MarkAttachmentReady(ctx)
 	if onReady != nil {
 		onReady()
 	}

@@ -6,11 +6,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	bridgeloop "github.com/noopolis/moltnet/internal/bridge/loop"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/nodeconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
@@ -21,6 +24,7 @@ type fakeRunner struct {
 }
 
 func (f *fakeRunner) Run(ctx context.Context) error {
+	bridgeloop.MarkAttachmentReady(ctx)
 	return f.run(ctx)
 }
 
@@ -60,6 +64,26 @@ func TestNewRejectsInvalidConfig(t *testing.T) {
 
 	if _, err := New(nodeconfig.Config{}); err == nil {
 		t.Fatal("expected invalid config error")
+	}
+}
+
+func TestWriteReadinessReceiptBindsSortedAuthenticatedAttachments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ready.json")
+	t.Setenv(readinessReceiptEnv, path)
+	configs := []bridgeconfig.Config{{Agent: bridgeconfig.AgentConfig{ID: "zeta"}, Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "net"}}, {Agent: bridgeconfig.AgentConfig{ID: "alpha"}, Moltnet: bridgeconfig.MoltnetConfig{NetworkID: "net"}}}
+	if err := writeReadinessReceipt(configs); err != nil {
+		t.Fatal(err)
+	}
+	var receipt readinessReceipt
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(bytes, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Version != "moltnet.node-readiness.v1" || receipt.Attachments[0].AgentID != "alpha" || receipt.Attachments[1].AgentID != "zeta" {
+		t.Fatalf("unexpected receipt %#v", receipt)
 	}
 }
 
