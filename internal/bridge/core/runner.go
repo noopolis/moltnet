@@ -6,6 +6,7 @@ import (
 
 	"github.com/noopolis/moltnet/internal/bridge/claudecode"
 	"github.com/noopolis/moltnet/internal/bridge/codex"
+	"github.com/noopolis/moltnet/internal/bridge/daimon"
 	"github.com/noopolis/moltnet/internal/bridge/openclaw"
 	"github.com/noopolis/moltnet/internal/bridge/pi"
 	"github.com/noopolis/moltnet/internal/bridge/picoclaw"
@@ -82,6 +83,8 @@ func selectAdapter(kind string) (RuntimeAdapter, error) {
 		return picoclaw.New(), nil
 	case bridgeconfig.RuntimePi:
 		return pi.New(), nil
+	case bridgeconfig.RuntimeDaimon:
+		return daimon.New(), nil
 	case bridgeconfig.RuntimeClaudeCode:
 		return claudecode.New(), nil
 	case bridgeconfig.RuntimeCodex:

@@ -22,6 +22,8 @@ matters because the node is built from the same attachment runner primitives.
 - `tinyclaw/`: TinyClaw adapter
 - `openclaw/`: OpenClaw adapter
 - `picoclaw/`: PicoClaw adapter
+- `pi/`: Pi control-URL adapter
+- `daimon/`: authenticated Daimon v2 durable wake-acceptance adapter
 
 ## Rules
 
