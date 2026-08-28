@@ -129,6 +129,47 @@ func TestPairRelayDoesNotBypassMembership(t *testing.T) {
 	}
 }
 
+func TestPairRelayMembershipIsScopedAcrossRemoteNetworks(t *testing.T) {
+	t.Parallel()
+
+	service := newPairingCredentialBindingTestServiceWithStrictBinding(true)
+	mustCreatePolicyRoomWithFederation(
+		t,
+		service,
+		"floor",
+		[]string{"research-sensor", "remote-b:research-sensor"},
+		protocol.RoomWritePolicyMembers,
+		&protocol.RoomFederation{Mode: protocol.RoomFederationAll},
+	)
+
+	remoteB := roomSend("floor", "research-sensor")
+	remoteB.Origin = protocol.MessageOrigin{NetworkID: "remote-b", MessageID: "remote-b-research"}
+	remoteB.From.NetworkID = "remote-b"
+	remoteBClaims := authn.NewStaticClaims(authn.TokenConfig{
+		ID:      "pair-b",
+		Network: "remote-b",
+		Scopes:  []authn.Scope{authn.ScopePair},
+	})
+	if _, err := service.SendMessageContext(bearerClaimsContext(remoteBClaims), remoteB); err != nil {
+		t.Fatalf("expected explicitly scoped remote-b member to send, got %v", err)
+	}
+
+	networkC := roomSend("floor", "research-sensor")
+	networkC.Origin = protocol.MessageOrigin{NetworkID: "network-c", MessageID: "network-c-research"}
+	networkC.From.NetworkID = "network-c"
+	networkCClaims := authn.NewStaticClaims(authn.TokenConfig{
+		ID:      "pair-c",
+		Network: "network-c",
+		Scopes:  []authn.Scope{authn.ScopePair},
+	})
+	if _, err := service.SendMessageContext(bearerClaimsContext(networkCClaims), networkC); !errors.Is(err, ErrWriteForbidden) {
+		t.Fatalf("expected same bare id from another remote network to be rejected, got %v", err)
+	}
+	if got := roomMessageCount(t, service, "floor"); got != 1 {
+		t.Fatalf("stored message count = %d, want only the explicitly scoped remote sender", got)
+	}
+}
+
 // TestUnboundPairCredentialIsRefused is 7B.2's required regression: with
 // require_pair_network_binding explicitly enabled on this service (the
 // default reverted to false under F3 -- see config_load.go's defaultConfig

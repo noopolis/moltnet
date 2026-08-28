@@ -73,6 +73,25 @@ func ActorMatches(networkID string, actorID string, candidate string) bool {
 	return false
 }
 
+func ActorMatchesIdentity(defaultNetworkID string, actor Actor, candidate string) bool {
+	normalized := NormalizeActor(defaultNetworkID, actor)
+	actorNetworkID := strings.TrimSpace(normalized.NetworkID)
+	actorID := strings.TrimSpace(normalized.ID)
+	if actorNetworkID == "" || actorID == "" {
+		return false
+	}
+
+	candidateNetworkID := strings.TrimSpace(defaultNetworkID)
+	candidateID := strings.TrimSpace(candidate)
+	if networkID, agentID, ok := ParseScopedAgentID(candidateID); ok {
+		candidateNetworkID, candidateID = networkID, agentID
+	} else if networkID, agentID, ok := ParseAgentFQID(candidateID); ok {
+		candidateNetworkID, candidateID = networkID, agentID
+	}
+
+	return actorNetworkID == strings.TrimSpace(candidateNetworkID) && actorID == strings.TrimSpace(candidateID)
+}
+
 func RemoteParticipantID(currentNetworkID string, actor Actor) string {
 	normalized := NormalizeActor(currentNetworkID, actor)
 	if normalized.NetworkID != "" && normalized.NetworkID != currentNetworkID {

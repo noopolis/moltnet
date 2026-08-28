@@ -70,9 +70,8 @@ func (s *Service) canWriteRoom(ctx context.Context, room protocol.Room, actor pr
 }
 
 func actorIsRoomMember(room protocol.Room, actor protocol.Actor) bool {
-	normalized := protocol.NormalizeActor(room.NetworkID, actor)
 	for _, memberID := range room.Members {
-		if protocol.ActorMatches(normalized.NetworkID, normalized.ID, memberID) {
+		if protocol.ActorMatchesIdentity(room.NetworkID, actor, memberID) {
 			return true
 		}
 	}

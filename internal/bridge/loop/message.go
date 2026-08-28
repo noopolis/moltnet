@@ -12,7 +12,7 @@ func ShouldHandle(config bridgeconfig.Config, event protocol.Event) bool {
 	}
 
 	message := event.Message
-	if message.NetworkID != config.Moltnet.NetworkID || protocol.ActorMatches(config.Moltnet.NetworkID, config.Agent.ID, message.From.ID) {
+	if message.NetworkID != config.Moltnet.NetworkID || protocol.ActorMatchesIdentity(config.Moltnet.NetworkID, message.From, config.Agent.ID) {
 		return false
 	}
 
