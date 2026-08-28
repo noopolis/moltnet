@@ -278,4 +278,35 @@ var sqlMigrations = []migration{
 			`ALTER TABLE rooms ADD COLUMN federation TEXT NOT NULL DEFAULT '"none"'`,
 		},
 	},
+	{
+		Version: 10,
+		Name:    "attachment_delivery",
+		SQLiteStatements: []string{
+			`CREATE TABLE IF NOT EXISTS attachment_delivery_events (
+				seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				event_id TEXT NOT NULL UNIQUE,
+				event_json TEXT NOT NULL,
+				created_at TEXT NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS attachment_delivery_cursors (
+				agent_id TEXT PRIMARY KEY,
+				event_seq INTEGER NOT NULL,
+				updated_at TEXT NOT NULL,
+				FOREIGN KEY (agent_id) REFERENCES agents(agent_id) ON DELETE CASCADE
+			)`,
+		},
+		PostgresStatements: []string{
+			`CREATE TABLE IF NOT EXISTS attachment_delivery_events (
+				seq BIGSERIAL PRIMARY KEY,
+				event_id TEXT NOT NULL UNIQUE,
+				event_json TEXT NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS attachment_delivery_cursors (
+				agent_id TEXT PRIMARY KEY REFERENCES agents(agent_id) ON DELETE CASCADE,
+				event_seq BIGINT NOT NULL,
+				updated_at TIMESTAMPTZ NOT NULL
+			)`,
+		},
+	},
 }

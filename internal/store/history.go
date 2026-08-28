@@ -106,6 +106,67 @@ func (s *MemoryStore) AppendMessageWithLifecycleContext(_ context.Context, messa
 	return lifecycle, nil
 }
 
+func (s *MemoryStore) AppendMessageEventWithLifecycleContext(
+	ctx context.Context,
+	message protocol.Message,
+	event protocol.Event,
+) (AppendLifecycle, error) {
+	lifecycle, err := s.AppendMessageWithLifecycleContext(ctx, message)
+	if err != nil {
+		return AppendLifecycle{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deliveryEvents = append(s.deliveryEvents, event)
+	return lifecycle, nil
+}
+
+func (s *MemoryStore) PrepareAttachmentDeliveryContext(
+	_ context.Context,
+	agentID string,
+) ([]protocol.Event, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := strings.TrimSpace(agentID)
+	cursor, exists := s.deliveryCursors[id]
+	if !exists {
+		s.deliveryCursors[id] = len(s.deliveryEvents)
+		return nil, nil
+	}
+	if cursor < 0 || cursor > len(s.deliveryEvents) {
+		cursor = len(s.deliveryEvents)
+		s.deliveryCursors[id] = cursor
+	}
+	return append([]protocol.Event(nil), s.deliveryEvents[cursor:]...), nil
+}
+
+func (s *MemoryStore) AcknowledgeAttachmentDeliveryContext(
+	_ context.Context,
+	agentID string,
+	eventID string,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sequence := 0
+	for index, event := range s.deliveryEvents {
+		if event.ID == strings.TrimSpace(eventID) {
+			sequence = index + 1
+			break
+		}
+	}
+	if sequence == 0 {
+		return nil
+	}
+	id := strings.TrimSpace(agentID)
+	if sequence > s.deliveryCursors[id] {
+		s.deliveryCursors[id] = sequence
+	}
+	return nil
+}
+
 func (s *MemoryStore) ListRoomMessages(roomID string, before string, limit int) (protocol.MessagePage, error) {
 	return s.ListRoomMessagesContext(context.Background(), roomID, protocol.PageRequest{
 		Before: before,
