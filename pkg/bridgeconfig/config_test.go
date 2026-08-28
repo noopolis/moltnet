@@ -344,6 +344,26 @@ func TestLoadFile(t *testing.T) {
 	}
 }
 
+func TestLoadFileDoesNotResolveDaimonTokenEnvironment(t *testing.T) {
+	t.Setenv("DAIMON_LOAD_TOKEN", "")
+	path := filepath.Join(t.TempDir(), "daimon.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version":"moltnet.bridge.v1",
+  "agent":{"id":"researcher"},
+  "moltnet":{"base_url":"http://127.0.0.1:8787","network_id":"local"},
+  "runtime":{"kind":"daimon","control_url":"http://127.0.0.1:19690","token_env":"DAIMON_LOAD_TOKEN","receipt_store_path":"/tmp/daimon-receipts.json"}
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile() resolved runtime token too early: %v", err)
+	}
+	if config.Runtime.TokenEnv != "DAIMON_LOAD_TOKEN" || config.Runtime.Token.Reveal() != "" {
+		t.Fatalf("unexpected runtime token config %#v", config.Runtime)
+	}
+}
+
 func TestConfigValidateBaseFieldErrors(t *testing.T) {
 	t.Parallel()
 

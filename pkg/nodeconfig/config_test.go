@@ -3,6 +3,7 @@ package nodeconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
@@ -181,6 +182,20 @@ func TestValidate(t *testing.T) {
 	})
 	if err := config.Validate(); err == nil {
 		t.Fatal("expected duplicate agent id error")
+	}
+}
+
+func TestValidateRejectsSharedDaimonReceiptStore(t *testing.T) {
+	config := Config{
+		Version: VersionV1,
+		Moltnet: bridgeconfig.MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+		Attachments: []AttachmentConfig{
+			{Agent: bridgeconfig.AgentConfig{ID: "alpha"}, Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeDaimon, ControlURL: "http://127.0.0.1:19690", TokenEnv: "DAIMON_TOKEN", ReceiptStorePath: "/tmp/shared-receipts.json"}},
+			{Agent: bridgeconfig.AgentConfig{ID: "beta"}, Runtime: bridgeconfig.RuntimeConfig{Kind: bridgeconfig.RuntimeDaimon, ControlURL: "http://127.0.0.1:19690", TokenEnv: "DAIMON_TOKEN", ReceiptStorePath: "/tmp/shared-receipts.json"}},
+		},
+	}
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "already used") {
+		t.Fatalf("expected shared Daimon receipt store error, got %v", err)
 	}
 }
 

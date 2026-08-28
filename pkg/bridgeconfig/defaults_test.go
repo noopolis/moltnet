@@ -11,6 +11,19 @@ func TestRuntimeConfigNormalized(t *testing.T) {
 		want RuntimeConfig
 	}{
 		{
+			name: "daimon remains explicit",
+			in: RuntimeConfig{
+				Kind:       RuntimeDaimon,
+				ControlURL: "http://127.0.0.1:19690",
+				TokenEnv:   "DAIMON_TOKEN",
+			},
+			want: RuntimeConfig{
+				Kind:       RuntimeDaimon,
+				ControlURL: "http://127.0.0.1:19690",
+				TokenEnv:   "DAIMON_TOKEN",
+			},
+		},
+		{
 			name: "openclaw gateway",
 			in:   RuntimeConfig{Kind: RuntimeOpenClaw},
 			want: RuntimeConfig{Kind: RuntimeOpenClaw, GatewayURL: DefaultOpenClawGatewayURL},
