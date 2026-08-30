@@ -8,6 +8,7 @@ on:
 
 jobs:
   go-test:
+    name: go vet + staticcheck + coverage
     timeout-minutes: 25
     runs-on: ubuntu-latest
     steps:
@@ -54,6 +55,7 @@ jobs:
           awk -v total="$total" 'BEGIN { if (total + 0 < 80.0) exit 1 }'
 
   go-test-postgres:
+    name: postgres-backed store tests
     timeout-minutes: 25
     runs-on: ubuntu-latest
     services:
@@ -88,6 +90,7 @@ jobs:
         run: go test -race ./internal/store
 
   go-race:
+    name: go test -race
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
@@ -111,6 +114,7 @@ jobs:
         run: go test -race ./...
 
   console-build:
+    name: operator console build
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
@@ -140,6 +144,7 @@ jobs:
         run: git diff --exit-code web/dist
 
   relay-test:
+    name: cloudflare relay tests
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
@@ -162,6 +167,7 @@ jobs:
         run: npm test
 
   docs-build:
+    name: docs site build
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
