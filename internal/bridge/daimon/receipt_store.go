@@ -203,6 +203,17 @@ func (s *receiptStore) pruneTerminal() {
 	}
 }
 
+// Seams for the durability tests in receipt_store_test.go, which must be able
+// to fail the chmod and the write of the temporary file. Both steps write to a
+// freshly created temp file, so no filesystem-level setup can make either fail
+// on its own: every way to make a directory hostile fails at CreateTemp
+// instead, which is a different branch. Production always runs the real
+// methods; only the test replaces them, and it restores them immediately.
+var (
+	receiptStoreChmod = func(file *os.File, mode os.FileMode) error { return file.Chmod(mode) }
+	receiptStoreWrite = func(file *os.File, contents []byte) (int, error) { return file.Write(contents) }
+)
+
 func (s *receiptStore) save() error {
 	contents, err := json.MarshalIndent(s.data, "", "  ")
 	if err != nil {
@@ -216,8 +227,8 @@ func (s *receiptStore) save() error {
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err == nil {
-		_, err = temporary.Write(contents)
+	if err = receiptStoreChmod(temporary, 0o600); err == nil {
+		_, err = receiptStoreWrite(temporary, contents)
 	}
 	if err == nil {
 		err = temporary.Sync()
