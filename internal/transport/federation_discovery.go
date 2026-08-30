@@ -17,14 +17,14 @@ import (
 // (internal/rooms/federation_access.go). Round 1 added an operator bypass
 // only to that first gate, so a four-scope [observe, write, admin, pair]
 // operator token -- the exact shape `--bearer` init used to mint, per
-// isOperatorClaims's doc comment in federation_access.go -- passed the first
+// authn.Claims.Operator's doc comment (internal/auth) -- passed the first
 // gate untouched only to be nulled out here: this function keyed on
 // claims.Allows(ScopePair) with no operator bypass at all, and an operator
 // credential carries no real pairing (nothing named "operator" in
 // pairings[]), so remoteNetworkID resolves empty and the whole page comes
-// back nil. The isOperatorClaims check below mirrors that first gate (and
-// access_policy.go's canWriteRoom) exactly, so "operator" means the same
-// thing in every gate that inspects the pair scope.
+// back nil. The authn.Claims.Operator check below is literally the same
+// predicate that first gate uses (and access_policy.go's canWriteRoom), so
+// "operator" cannot mean two things in two gates.
 //
 // P1-1 (final-gate review, confirmed live): this function used to resolve
 // the caller's pairing itself, by claims.Network() alone -- a second,
@@ -41,7 +41,7 @@ import (
 // two can no longer diverge: there is exactly one strategy, defined once.
 func filterPairScopedRoomDiscovery(ctx context.Context, service Service, page protocol.RoomPage) (protocol.RoomPage, error) {
 	claims, ok := authn.ClaimsFromContext(ctx)
-	if !ok || !claims.Allows(authn.ScopePair) || isOperatorClaims(claims) {
+	if !ok || !claims.Allows(authn.ScopePair) || claims.Operator() {
 		return page, nil
 	}
 
@@ -59,19 +59,4 @@ func filterPairScopedRoomDiscovery(ctx context.Context, service Service, page pr
 	}
 	page.Rooms = rooms
 	return page, nil
-}
-
-// isOperatorClaims reports whether claims describes an operator credential
-// rather than a peer/pairing credential, regardless of whether it also
-// carries the pair scope. This deliberately duplicates
-// internal/rooms/federation_access.go's function of the same name (and
-// access_policy.go's inline admin+write check) instead of importing rooms
-// from transport: transport maps requests to the Service interface and does
-// not otherwise depend on room package internals (see
-// internal/transport/CLAUDE.md), and the two-line check is cheap enough to
-// keep in sync deliberately rather than worth a cross-package dependency.
-// If this definition of "operator" ever changes, update all three call
-// sites together.
-func isOperatorClaims(claims authn.Claims) bool {
-	return claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite)
 }

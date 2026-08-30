@@ -260,7 +260,7 @@ func roomInfosForRequest(
 		claims, hasClaims = authn.ClaimsFromContext(request.Context())
 	}
 	registrationOpen := registration == authn.AgentRegistrationOpen
-	canAdminWrite := hasClaims && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite)
+	canAdminWrite := hasClaims && claims.Operator()
 	canStaticWrite := hasClaims && claims.StaticToken() && claims.Allows(authn.ScopeWrite)
 
 	infos := make([]roomAccessInfo, 0, len(rooms))

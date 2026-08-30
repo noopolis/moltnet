@@ -128,7 +128,7 @@ func TestPairScopedListingWithUnboundNetworkIsFiltered(t *testing.T) {
 // already short-circuited to true for a claim with no `pair` scope, before
 // and after this fix. The canonical four-scope shape below is the one that
 // found no pairing named "operator" and denied every write and every room
-// listing; isOperatorClaims (federation_access.go) is what makes this pass.
+// listing; authn.Claims.Operator (internal/auth) is what makes this pass.
 func TestOperatorNotLockedOutByPairScopedFix(t *testing.T) {
 	t.Parallel()
 
@@ -160,6 +160,63 @@ func TestOperatorNotLockedOutByPairScopedFix(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("ListRoomsContext() hid operator's own room %q", "private")
+	}
+}
+
+// TestPairScopedAgentListingIsFilteredByFederation pins the guarantee that
+// used to be spelled out a second time by filterPairScopedAgentSummaries
+// (deleted from federation_access.go): a peer must not learn which agents
+// exist in rooms its pairing is not federated with, and must not see a
+// federated agent's membership in rooms it cannot see.
+//
+// That filter was unreachable -- it sat behind an `agentRegistry == nil &&
+// contextAgents != nil` branch in ListAgentsContext that no store in this
+// repo can satisfy, so `panic("REACHED")` at its top left the whole suite
+// green. The behavior it described is real and is enforced on the live
+// path, by ListAgentsContext deriving the whole roster from rooms that
+// already passed roomVisibleToPairScopedContext. This test is what makes
+// that enforcement non-optional: drop the federation filter from
+// ListAgentsContext's room loop and "local:secret" reappears.
+func TestPairScopedAgentListingIsFilteredByFederation(t *testing.T) {
+	t.Parallel()
+
+	service := newFederationAccessTestService()
+	for _, request := range []protocol.CreateRoomRequest{{
+		ID:         "shared",
+		Visibility: protocol.RoomVisibilityPublic,
+		Members:    []string{"remote:writer", "local:helper"},
+		Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationList, Pairings: []string{"pair_remote"}},
+	}, {
+		ID:         "private",
+		Visibility: protocol.RoomVisibilityPublic,
+		Members:    []string{"local:secret", "local:helper"},
+		Federation: protocol.DefaultRoomFederation(),
+	}} {
+		if _, err := service.CreateRoom(request); err != nil {
+			t.Fatalf("CreateRoom(%q): %v", request.ID, err)
+		}
+	}
+
+	page, err := service.ListAgentsContext(pairScopedRemoteContext(), protocol.PageRequest{})
+	if err != nil {
+		t.Fatalf("ListAgentsContext(): %v", err)
+	}
+
+	seen := make(map[string][]string, len(page.Agents))
+	for _, agent := range page.Agents {
+		seen[agent.ID] = agent.Rooms
+	}
+	if _, leaked := seen["local:secret"]; leaked {
+		t.Fatalf("ListAgentsContext() leaked agent %q, only reachable through a non-federated room; agents = %#v", "local:secret", seen)
+	}
+	rooms, ok := seen["local:helper"]
+	if !ok {
+		t.Fatalf("ListAgentsContext() hid agent %q, a member of the federated room; agents = %#v", "local:helper", seen)
+	}
+	for _, roomID := range rooms {
+		if roomID == "private" {
+			t.Fatalf("ListAgentsContext() leaked non-federated room %q in agent %q's memberships", roomID, "local:helper")
+		}
 	}
 }
 

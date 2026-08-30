@@ -52,7 +52,9 @@ func (s *Service) canWriteRoom(ctx context.Context, room protocol.Room, actor pr
 	if mode == authn.ModeNone && !hasClaims {
 		return true
 	}
-	if hasClaims && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite) {
+	// An operator writes anywhere on their own network. authn.Claims.Operator
+	// is the single definition of that shape; see its doc comment.
+	if hasClaims && claims.Operator() {
 		return true
 	}
 

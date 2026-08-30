@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -166,4 +167,66 @@ func roomIDs(rooms []protocol.Room) []string {
 		ids = append(ids, room.ID)
 	}
 	return ids
+}
+
+// TestFilterPairScopedRoomDiscoveryOperatorBoundary drives
+// filterPairScopedRoomDiscovery directly, against a stand-in Service, so it
+// isolates *this* gate from internal/rooms' own federation filter. The two
+// HTTP-level tests above go through a real rooms.Service, which applies its
+// own gate first -- so if only this transport-side operator check diverged,
+// those tests would still pass on the rooms-side filtering alone and this
+// second gate could rot unnoticed. That is precisely how the two gates
+// diverged before (P1-1), and why this one is here at all: it exists to hold
+// when the Service in front of it does not.
+//
+// "Operator" is authn.Claims.Operator -- admin AND write -- shared with
+// internal/rooms rather than copied into this package as it once was. Both
+// rows below fail if a divergent copy is re-inlined here: an operator must
+// keep the whole page, and a `[write, pair]` peer must not be mistaken for
+// one.
+func TestFilterPairScopedRoomDiscoveryOperatorBoundary(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeService{pairings: []protocol.Pairing{{ID: "pair_remote", RemoteNetworkID: "remote"}}}
+	unfiltered := protocol.RoomPage{Rooms: []protocol.Room{
+		{ID: "none", Federation: protocol.DefaultRoomFederation()},
+		{ID: "listed", Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationList, Pairings: []string{"pair_remote"}}},
+	}}
+
+	for _, testCase := range []struct {
+		name    string
+		tokenID string
+		scopes  []authn.Scope
+		want    []string
+	}{{
+		name:    "legacy four-scope operator keeps every room",
+		tokenID: "operator",
+		scopes:  []authn.Scope{authn.ScopeObserve, authn.ScopeWrite, authn.ScopeAdmin, authn.ScopePair},
+		want:    []string{"none", "listed"},
+	}, {
+		name:    "write-scoped peer credential is still a peer",
+		tokenID: "pair_remote",
+		scopes:  []authn.Scope{authn.ScopeWrite, authn.ScopePair},
+		want:    []string{"listed"},
+	}, {
+		name:    "plain peer credential is filtered",
+		tokenID: "pair_remote",
+		scopes:  []authn.Scope{authn.ScopePair},
+		want:    []string{"listed"},
+	}} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := authn.WithClaims(context.Background(), authn.NewStaticClaims(authn.TokenConfig{
+				ID: testCase.tokenID, Network: "remote", Scopes: testCase.scopes,
+			}))
+			page, err := filterPairScopedRoomDiscovery(ctx, service, unfiltered)
+			if err != nil {
+				t.Fatalf("filterPairScopedRoomDiscovery(): %v", err)
+			}
+			if got := roomIDs(page.Rooms); !slices.Equal(got, testCase.want) {
+				t.Fatalf("filterPairScopedRoomDiscovery() = %#v, want %#v", got, testCase.want)
+			}
+		})
+	}
 }
