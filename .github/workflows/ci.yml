@@ -166,6 +166,17 @@ jobs:
         working-directory: relay
         run: npm test
 
+      # Content-based, and authoritative. The Go suite used to infer staleness
+      # from mtimes, which a git checkout does not preserve — the committed
+      # bundle could look older than its source purely by checkout write order.
+      # This job already has Node, so it can just rebuild and compare bytes.
+      - name: Verify the committed relay bundle matches its source
+        working-directory: relay
+        run: |
+          npm run bundle
+          git diff --exit-code -- dist \
+            || { echo "::error::relay/dist is stale — run 'npm run bundle' in relay/ and commit the result"; exit 1; }
+
   docs-build:
     name: docs site build
     timeout-minutes: 15
