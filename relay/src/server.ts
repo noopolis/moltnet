@@ -18,11 +18,19 @@ const ROOM_FULL = 1013;
 /**
  * An intentionally opaque, two-party transport relay. The only decoded fields
  * are the envelope discriminator and correlation id.
+ *
+ * Hibernation is enabled: an idle relay room must not accrue Durable Object
+ * duration charges, which are billed for the whole life of an `accept()`ed
+ * socket at the 128 MiB minimum regardless of traffic. Admission state
+ * therefore lives in each connection's serialized attachment, never in an
+ * instance field: instance fields do not survive eviction, and a room that
+ * forgets its admitted peers silently drops every frame. Protocol-level
+ * ping/pong is answered by the runtime and does not wake the object.
+ *
+ * Invariant for future edits: no admission-relevant state in instance fields.
  */
 export class RelayRoom extends Server<RelayEnv> {
-  static options = { hibernate: false };
-
-  private readonly admittedPeers = new Set<Connection>();
+  static options = { hibernate: true };
 
   onConnect(connection: Connection, context: ConnectionContext) {
     if (!hasBearerToken(context.request, this.env.RELAY_TOKEN)) {
@@ -30,17 +38,19 @@ export class RelayRoom extends Server<RelayEnv> {
       return;
     }
 
-    if (this.admittedPeers.size >= 2) {
+    // Under hibernation this connection is already accepted and enumerable, so
+    // capacity is measured over the other admitted peers only.
+    if (this.admittedPeerCount(connection) >= 2) {
       // Defer until upgrade completes; safe because refused connections are never admitted peers.
       setTimeout(() => connection.close(ROOM_FULL, "relay room already has two peers"), 0);
       return;
     }
 
-    this.admittedPeers.add(connection);
+    connection.setState({ admitted: true });
   }
 
   onMessage(connection: Connection, message: WSMessage) {
-    if (!this.admittedPeers.has(connection)) {
+    if (!isAdmitted(connection)) {
       return;
     }
 
@@ -59,33 +69,35 @@ export class RelayRoom extends Server<RelayEnv> {
     }
 
     const peer = this.peerFor(connection);
-    if (peer !== undefined && this.admittedPeers.has(peer)) {
+    if (peer !== undefined) {
       peer.send(message);
     }
   }
 
-  onClose(connection: Connection) {
-    this.releasePeer(connection);
-  }
-
-  onError(connection: Connection, _error: unknown) {
-    this.releasePeer(connection);
-  }
-
-  private releasePeer(connection: Connection) {
-    this.admittedPeers.delete(connection);
+  private admittedPeerCount(self: Connection) {
+    let count = 0;
+    for (const candidate of this.getConnections()) {
+      // Object identity, never `id`: ids are client-supplied via `?_pk=` and
+      // two admitted peers may collide on one.
+      if (candidate !== self && isAdmitted(candidate)) {
+        count += 1;
+      }
+    }
+    return count;
   }
 
   private peerFor(connection: Connection) {
-    for (const candidate of this.admittedPeers) {
-      if (candidate === connection) {
-        continue;
-      }
-      if (this.admittedPeers.has(candidate)) {
+    for (const candidate of this.getConnections()) {
+      if (candidate !== connection && isAdmitted(candidate)) {
         return candidate;
       }
     }
   }
+}
+
+function isAdmitted(connection: Connection) {
+  const state: unknown = connection.state;
+  return isRecord(state) && (state as { admitted?: unknown }).admitted === true;
 }
 
 export default {
