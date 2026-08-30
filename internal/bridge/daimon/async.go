@@ -14,7 +14,7 @@ import (
 
 func (c *Codec) StartControlAsync(ctx context.Context, client *loop.MoltnetClient, config bridgeconfig.Config) error {
 	if c.receipts != nil {
-		return fmt.Errorf("Daimon receipt follower is already running")
+		return fmt.Errorf("daimon receipt follower is already running")
 	}
 	store, err := openReceiptStore(strings.TrimSpace(c.receiptStorePath))
 	if err != nil {
@@ -30,10 +30,10 @@ func (c *Codec) StartControlAsync(ctx context.Context, client *loop.MoltnetClien
 
 func (c *Codec) ControlAccepted(config bridgeconfig.Config, event protocol.Event, acceptance loop.ControlAcceptance) error {
 	if c.receipts == nil {
-		return fmt.Errorf("Daimon receipt follower is not running")
+		return fmt.Errorf("daimon receipt follower is not running")
 	}
 	if event.Message == nil {
-		return fmt.Errorf("Daimon receipt source event has no message")
+		return fmt.Errorf("daimon receipt source event has no message")
 	}
 	acceptedAt := acceptance.AcceptedAt.UTC()
 	if acceptedAt.IsZero() {

@@ -54,7 +54,7 @@ type receiptStore struct {
 
 func openReceiptStore(path string) (*receiptStore, error) {
 	if !filepath.IsAbs(path) {
-		return nil, fmt.Errorf("Daimon receipt store path must be absolute")
+		return nil, fmt.Errorf("daimon receipt store path must be absolute")
 	}
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -62,7 +62,7 @@ func openReceiptStore(path string) (*receiptStore, error) {
 	}
 	info, err := os.Lstat(directory)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("Daimon receipt store directory must be a private directory")
+		return nil, fmt.Errorf("daimon receipt store directory must be a private directory")
 	}
 
 	store := &receiptStore{path: path, data: receiptStoreFile{Version: receiptStoreVersion, Jobs: map[string]receiptJob{}}}
@@ -74,7 +74,7 @@ func openReceiptStore(path string) (*receiptStore, error) {
 		return nil, fmt.Errorf("inspect Daimon receipt store: %w", err)
 	}
 	if !fileInfo.Mode().IsRegular() || fileInfo.Mode().Perm()&0o077 != 0 || fileInfo.Size() > maxReceiptStoreSize {
-		return nil, fmt.Errorf("Daimon receipt store must be a private regular file")
+		return nil, fmt.Errorf("daimon receipt store must be a private regular file")
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -83,7 +83,7 @@ func openReceiptStore(path string) (*receiptStore, error) {
 	openedInfo, statErr := file.Stat()
 	if statErr != nil || !os.SameFile(fileInfo, openedInfo) {
 		file.Close()
-		return nil, fmt.Errorf("Daimon receipt store changed during validation")
+		return nil, fmt.Errorf("daimon receipt store changed during validation")
 	}
 	contents, err := io.ReadAll(io.LimitReader(file, maxReceiptStoreSize+1))
 	closeErr := file.Close()
@@ -107,7 +107,7 @@ func openReceiptStore(path string) (*receiptStore, error) {
 	}
 	for key, job := range store.data.Jobs {
 		if key != job.AcceptanceID || validateReceiptJob(job) != nil {
-			return nil, fmt.Errorf("Daimon receipt store contains an invalid job")
+			return nil, fmt.Errorf("daimon receipt store contains an invalid job")
 		}
 	}
 	return store, nil
@@ -121,7 +121,7 @@ func (s *receiptStore) Put(job receiptJob) error {
 	}
 	if prior, ok := s.data.Jobs[job.AcceptanceID]; ok {
 		if !sameReceiptJob(prior, job) {
-			return fmt.Errorf("Daimon receipt acceptance conflicts with durable state")
+			return fmt.Errorf("daimon receipt acceptance conflicts with durable state")
 		}
 		return nil
 	}
@@ -130,7 +130,7 @@ func (s *receiptStore) Put(job receiptJob) error {
 		s.pruneTerminal()
 	}
 	if len(s.data.Jobs) >= maxReceiptJobs {
-		return fmt.Errorf("Daimon receipt store has too many pending jobs")
+		return fmt.Errorf("daimon receipt store has too many pending jobs")
 	}
 	s.data.Jobs[job.AcceptanceID] = job
 	if err := s.save(); err != nil {
@@ -160,7 +160,7 @@ func (s *receiptStore) ValidateAuthority(moltnetAgentID, runtimeAgentID string) 
 	defer s.mu.Unlock()
 	for _, job := range s.data.Jobs {
 		if job.MoltnetAgent.ID != moltnetAgentID || job.RuntimeAgentID != runtimeAgentID {
-			return fmt.Errorf("Daimon receipt store belongs to a different attachment")
+			return fmt.Errorf("daimon receipt store belongs to a different attachment")
 		}
 	}
 	return nil
@@ -171,7 +171,7 @@ func (s *receiptStore) MarkTerminal(acceptanceID, state, code string, now time.T
 	defer s.mu.Unlock()
 	job, ok := s.data.Jobs[acceptanceID]
 	if !ok {
-		return fmt.Errorf("Daimon receipt job is unavailable")
+		return fmt.Errorf("daimon receipt job is unavailable")
 	}
 	if job.State != receiptJobPending {
 		return nil
@@ -260,21 +260,21 @@ func (s *receiptStore) save() error {
 
 func validateReceiptJob(job receiptJob) error {
 	if !acceptanceIDPattern.MatchString(job.AcceptanceID) || protocol.ValidateMessageID(job.RuntimeAgentID) != nil || !digestPattern.MatchString(job.RequestDigest) {
-		return fmt.Errorf("Daimon receipt job identity is invalid")
+		return fmt.Errorf("daimon receipt job identity is invalid")
 	}
 	if job.MoltnetAgent.Type != "agent" || protocol.ValidateMessageID(job.MoltnetAgent.ID) != nil || job.Event.Type != protocol.EventTypeMessageCreated || job.Event.Message == nil || protocol.ValidateMessageID(job.Event.Message.ID) != nil || protocol.MessageEventID(job.Event.Message.ID) != job.DeliveryID {
-		return fmt.Errorf("Daimon receipt job source event is invalid")
+		return fmt.Errorf("daimon receipt job source event is invalid")
 	}
 	if err := protocol.ValidateTarget(job.Event.Message.Target); err != nil {
-		return fmt.Errorf("Daimon receipt job target is invalid")
+		return fmt.Errorf("daimon receipt job target is invalid")
 	}
 	switch job.State {
 	case receiptJobPending, receiptJobPublished, receiptJobNoReply, receiptJobRuntimeFailed, receiptJobRuntimeStopped:
 	default:
-		return fmt.Errorf("Daimon receipt job state is invalid")
+		return fmt.Errorf("daimon receipt job state is invalid")
 	}
 	if job.AcceptedAt.IsZero() || job.UpdatedAt.Before(job.AcceptedAt) || len(job.Code) > 128 {
-		return fmt.Errorf("Daimon receipt job lifecycle is invalid")
+		return fmt.Errorf("daimon receipt job lifecycle is invalid")
 	}
 	return nil
 }

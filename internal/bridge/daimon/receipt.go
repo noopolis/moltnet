@@ -26,7 +26,7 @@ type wakeReceipt struct {
 
 func decodeWakeReceipt(response *http.Response, acceptance loop.ControlAcceptance) (wakeReceipt, error) {
 	if response.StatusCode != http.StatusOK {
-		return wakeReceipt{}, fmt.Errorf("Daimon wake receipt returned %s", response.Status)
+		return wakeReceipt{}, fmt.Errorf("daimon wake receipt returned %s", response.Status)
 	}
 	fields, err := decodeExactObject(response.Body)
 	if err != nil {
