@@ -20,6 +20,8 @@ concurrency:
 
 jobs:
   deploy:
+    name: deploy moltnet.dev
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     environment:
       name: github-pages
