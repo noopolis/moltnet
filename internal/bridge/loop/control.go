@@ -32,6 +32,13 @@ func RunControlLoopWithCodec(ctx context.Context, config bridgeconfig.Config, co
 		if err := asyncCodec.StartControlAsync(loopCtx, client, config); err != nil {
 			return err
 		}
+		// Cancel BEFORE waiting, and register this after `defer cancelLoop()`
+		// so LIFO ordering runs it first: waiting on a follower whose context
+		// is still live would hang instead of shutting down.
+		defer func() {
+			cancelLoop()
+			asyncCodec.WaitControlAsync()
+		}()
 	}
 	controlClient := &http.Client{Timeout: controlRequestTimeout}
 	backoff := bridgeutil.NewBackoff(bridgeutil.DefaultReconnectBaseDelay, bridgeutil.DefaultReconnectMaxDelay)

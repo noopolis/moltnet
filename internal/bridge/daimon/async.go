@@ -24,8 +24,25 @@ func (c *Codec) StartControlAsync(ctx context.Context, client *loop.MoltnetClien
 		return err
 	}
 	c.receipts = newReceiptTracker(store, c.token, client, config)
-	go c.receipts.Run(ctx)
+	done := make(chan struct{})
+	c.asyncDone = done
+	go func() {
+		defer close(done)
+		c.receipts.Run(ctx)
+	}()
 	return nil
+}
+
+// WaitControlAsync blocks until the follower has returned. Every blocking call
+// it makes is bound to the context StartControlAsync was given
+// (`http.NewRequestWithContext` in fetch, and the same context through publish),
+// so once the loop cancels it this returns promptly rather than waiting out a
+// poll interval or an in-flight request.
+func (c *Codec) WaitControlAsync() {
+	if c.asyncDone == nil {
+		return
+	}
+	<-c.asyncDone
 }
 
 func (c *Codec) ControlAccepted(config bridgeconfig.Config, event protocol.Event, acceptance loop.ControlAcceptance) error {

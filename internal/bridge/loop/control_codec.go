@@ -68,6 +68,18 @@ type DurableAcceptanceCodec interface {
 type AsyncControlCodec interface {
 	StartControlAsync(context.Context, *MoltnetClient, bridgeconfig.Config) error
 	ControlAccepted(bridgeconfig.Config, protocol.Event, ControlAcceptance) error
+	// WaitControlAsync blocks until everything StartControlAsync spawned has
+	// returned. RunControlLoopWithCodec cancels the context it handed to
+	// StartControlAsync before calling this, so the wait is bounded by that
+	// cancellation rather than by the work itself.
+	//
+	// Without it the loop cancelled the follower and returned immediately, so
+	// RunControlLoopWithCodec returning did not mean the codec had stopped: a
+	// follower could still be publishing a reply and writing its durable
+	// receipt store after its caller believed shutdown was complete. A caller
+	// then has no safe point to tear down the receipt store's directory, and
+	// the goroutine outlives the loop that owns it.
+	WaitControlAsync()
 }
 
 // ControlPublicationObserver is an optional codec hook called only after a

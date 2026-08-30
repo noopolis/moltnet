@@ -36,6 +36,8 @@ type Codec struct {
 	token            protocol.SecretString
 	receiptStorePath string
 	receipts         *receiptTracker
+	// Closed when the follower goroutine StartControlAsync spawned returns.
+	asyncDone chan struct{}
 }
 
 type wakeRequest struct {
