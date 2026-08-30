@@ -36,11 +36,40 @@ func decodeResponses(t *testing.T, raw []byte) []protocol.MachineResponse {
 	return responses
 }
 
+// waitTimeout bounds a test's wait for a condition it expects to become true.
+//
+// These waits are COMPLETION waits, not rate assertions: nothing here asserts
+// that the session is fast, only that it finishes. A fixed short deadline
+// therefore does not test the product, it tests the hardware — and
+// TestSessionActiveCapacity gates protocol.MachineMaxActiveRequests (512)
+// goroutines, so under -race on a 2-core CI runner the legitimate drain
+// exceeded the old fixed 2s and failed there while taking 0.5s here.
+//
+// The deadline is derived from the test binary's own -timeout so it scales with
+// how long the run is already allowed to take, capped so a genuine deadlock
+// still reports in a minute instead of stalling until the binary is killed.
+func waitTimeout(t *testing.T) <-chan time.Time {
+	t.Helper()
+	const generous = 60 * time.Second
+	timeout := generous
+	if deadline, ok := t.Deadline(); ok {
+		// Leave headroom so this reports its own message rather than losing to
+		// the harness timeout, which would kill the binary instead.
+		if remaining := time.Until(deadline) - time.Second; remaining < timeout {
+			timeout = remaining
+		}
+	}
+	if timeout <= 0 {
+		timeout = time.Millisecond
+	}
+	return time.After(timeout)
+}
+
 func readLine(t *testing.T, ch <-chan string) {
 	t.Helper()
 	select {
 	case <-ch:
-	case <-time.After(2 * time.Second):
+	case <-waitTimeout(t):
 		t.Fatal("timed out waiting for executor")
 	}
 }
@@ -50,7 +79,7 @@ func readErr(t *testing.T, ch <-chan error) error {
 	select {
 	case value := <-ch:
 		return value
-	case <-time.After(2 * time.Second):
+	case <-waitTimeout(t):
 		t.Fatal("timed out")
 	}
 	return nil

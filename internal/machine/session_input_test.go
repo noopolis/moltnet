@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -62,7 +61,7 @@ func TestSessionParentCancelClosesInput(t *testing.T) {
 
 	select {
 	case <-reader.closed:
-	case <-time.After(time.Second):
+	case <-waitTimeout(t):
 		t.Fatal("expected blocking reader to be closed on parent cancel")
 	}
 }

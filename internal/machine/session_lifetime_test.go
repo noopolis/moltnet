@@ -6,7 +6,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
@@ -34,7 +33,7 @@ func TestSessionActiveCapacity(t *testing.T) {
 		if response.Error == nil || response.Error.Code != protocol.MachineErrorCapacity {
 			t.Fatalf("expected active-capacity rejection, got %#v", response)
 		}
-	case <-time.After(2 * time.Second):
+	case <-waitTimeout(t):
 		t.Fatal("timed out waiting for active-capacity rejection")
 	}
 	close(gate)
