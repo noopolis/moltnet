@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   build-assets:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -64,6 +65,7 @@ jobs:
             moltnet_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz.sha256
 
   publish-release:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     needs: build-assets
     steps:

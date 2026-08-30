@@ -8,6 +8,7 @@ on:
 
 jobs:
   go-test:
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -53,6 +54,7 @@ jobs:
           awk -v total="$total" 'BEGIN { if (total + 0 < 80.0) exit 1 }'
 
   go-test-postgres:
+    timeout-minutes: 25
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -86,6 +88,7 @@ jobs:
         run: go test -race ./internal/store
 
   go-race:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -108,6 +111,7 @@ jobs:
         run: go test -race ./...
 
   console-build:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -136,6 +140,7 @@ jobs:
         run: git diff --exit-code web/dist
 
   relay-test:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - name: Check out
@@ -157,6 +162,7 @@ jobs:
         run: npm test
 
   docs-build:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - name: Check out
