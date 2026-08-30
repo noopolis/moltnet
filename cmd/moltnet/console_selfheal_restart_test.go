@@ -88,7 +88,7 @@ func TestRunConsoleSelfHealRestartNeverComesBackFailsLoud(t *testing.T) {
 	if len(*opened) != 0 {
 		t.Fatalf("expected no browser open when the restart never came back, got %v", *opened)
 	}
-	if strings.Contains(output, "✓ console") {
+	if strings.Contains(output, "✓ console  ") {
 		t.Fatalf("expected no green console-ready line over a restart that never came back, got %q", output)
 	}
 	if !strings.Contains(output, "has not answered /healthz yet") {

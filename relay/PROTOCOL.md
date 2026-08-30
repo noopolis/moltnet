@@ -31,8 +31,12 @@ The relay reads `t` to distinguish `hello`, `req`, and `res`, and reads `id` to
 require a string correlation id for relayed requests and responses. It does not
 currently read `network`: once a room admits at most two peers, network-based
 target selection is unnecessary. The prior `to` field was therefore removed.
-With `admittedPeers.size >= 2` refusing a third connection, the only eligible
-destination is the other peer, whether a target network is supplied or not.
+With a third connection refused once two other peers are already admitted, the
+only eligible destination is the other peer, whether a target network is
+supplied or not. Admission is recorded in each socket's serialized attachment
+so it survives Durable Object hibernation, and the capacity check counts the
+admitted peers other than the connecting socket, which the runtime has already
+accepted by the time admission is decided.
 
 The relay must never interpret `auth`: it is the originator's opaque pairing
 credential and is forwarded without inspection or validation. It must likewise

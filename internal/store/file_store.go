@@ -162,6 +162,69 @@ func (s *FileStore) AppendMessageWithLifecycleContext(_ context.Context, message
 	return lifecycle, nil
 }
 
+func (s *FileStore) AppendMessageEventWithLifecycleContext(
+	_ context.Context,
+	message protocol.Message,
+	event protocol.Event,
+) (AppendLifecycle, error) {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+
+	working := memoryStoreFromSnapshot(s.snapshot())
+	lifecycle, err := working.AppendMessageEventWithLifecycleContext(context.Background(), message, event)
+	if err != nil {
+		return AppendLifecycle{}, err
+	}
+
+	next := snapshotFromMemoryStore(working)
+	if err := s.persistSnapshot(next); err != nil {
+		return AppendLifecycle{}, err
+	}
+
+	s.restore(next)
+	return lifecycle, nil
+}
+
+func (s *FileStore) PrepareAttachmentDeliveryContext(
+	_ context.Context,
+	agentID string,
+) ([]protocol.Event, error) {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+
+	working := memoryStoreFromSnapshot(s.snapshot())
+	events, err := working.PrepareAttachmentDeliveryContext(context.Background(), agentID)
+	if err != nil {
+		return nil, err
+	}
+	next := snapshotFromMemoryStore(working)
+	if err := s.persistSnapshot(next); err != nil {
+		return nil, err
+	}
+	s.restore(next)
+	return events, nil
+}
+
+func (s *FileStore) AcknowledgeAttachmentDeliveryContext(
+	_ context.Context,
+	agentID string,
+	eventID string,
+) error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+
+	working := memoryStoreFromSnapshot(s.snapshot())
+	if err := working.AcknowledgeAttachmentDeliveryContext(context.Background(), agentID, eventID); err != nil {
+		return err
+	}
+	next := snapshotFromMemoryStore(working)
+	if err := s.persistSnapshot(next); err != nil {
+		return err
+	}
+	s.restore(next)
+	return nil
+}
+
 func (s *FileStore) UpdateRoomMembers(roomID string, add []string, remove []string) (protocol.Room, error) {
 	return s.UpdateRoomMembersContext(context.Background(), roomID, add, remove)
 }
@@ -333,6 +396,8 @@ func (s *FileStore) load() error {
 		return fmt.Errorf("decode Moltnet store %q: %w", s.path, err)
 	}
 
+	s.MemoryStore.deliveryCursors = cloneDeliveryCursors(snapshot.DeliveryCursors)
+	s.MemoryStore.deliveryEvents = append([]protocol.Event(nil), snapshot.DeliveryEvents...)
 	s.MemoryStore.rooms = cloneRooms(snapshot.Rooms)
 	s.MemoryStore.removedRooms = cloneRemovedRooms(snapshot.RemovedRooms)
 	s.MemoryStore.roomMessages = cloneMessages(snapshot.RoomMessages)

@@ -3,10 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
+	bridgeutil "github.com/noopolis/moltnet/internal/bridge"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -105,6 +107,12 @@ func runSend(args []string) error {
 			ParticipantIDs: append([]string(nil), dm.ParticipantIDs...),
 		}
 	}
+	if !usingFallback {
+		if deliveryID, ok := daimonWakeDeliveryID(os.Getenv(bridgeutil.DaimonWakeIDEnv)); ok {
+			request.ID = bridgeutil.DeliveryReplyMessageID(fromActor.ID, deliveryID, request.Target)
+			request.CauseEventIDs = []string{deliveryID}
+		}
+	}
 
 	accepted, err := client.SendMessage(commandContext(), request)
 	if err != nil {
@@ -114,6 +122,15 @@ func runSend(args []string) error {
 		return err
 	}
 	return printJSON(accepted)
+}
+
+func daimonWakeDeliveryID(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	messageID, ok := strings.CutPrefix(trimmed, protocol.CausalSystemMoltnet+":")
+	if !ok || protocol.ValidateMessageID(messageID) != nil || protocol.MessageEventID(messageID) != trimmed {
+		return "", false
+	}
+	return trimmed, true
 }
 
 // resolveSendPositionalArgs merges send's positional arguments into the

@@ -60,6 +60,7 @@ type Service struct {
 	contextStore              store.ContextRoomStore
 	contextMessages           store.ContextMessageStore
 	lifecycleMessages         store.ContextLifecycleMessageStore
+	deliveryStore             store.AttachmentDeliveryStore
 	contextAgents             store.ContextAgentStore
 	agentRegistry             store.ContextAgentRegistryStore
 	broker                    EventBroker
@@ -69,6 +70,7 @@ type Service struct {
 	relaySlots                chan struct{}
 	pairingsMu                sync.RWMutex
 	pairingPublishMu          sync.Mutex
+	deliveryMu                sync.Mutex
 	pairingStatuses           map[string]pairingStatus
 	// learnedPairNetworks pins a pair credential to the origin network it
 	// first asserted, for credentials config never bound (the inviting side).
@@ -108,6 +110,10 @@ func NewService(config ServiceConfig) *Service {
 	lifecycleMessages, _ := config.Messages.(store.ContextLifecycleMessageStore)
 	contextAgents, _ := config.Store.(store.ContextAgentStore)
 	agentRegistry, _ := config.Store.(store.ContextAgentRegistryStore)
+	deliveryStore, _ := config.Messages.(store.AttachmentDeliveryStore)
+	if broker, ok := config.Broker.(attachmentDeliveryBroker); !ok || !broker.DurableDeliveryConfigured() {
+		deliveryStore = nil
+	}
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 
 	return &Service{
@@ -124,6 +130,7 @@ func NewService(config ServiceConfig) *Service {
 		contextStore:              contextStore,
 		contextMessages:           contextMessages,
 		lifecycleMessages:         lifecycleMessages,
+		deliveryStore:             deliveryStore,
 		contextAgents:             contextAgents,
 		agentRegistry:             agentRegistry,
 		broker:                    config.Broker,

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/noopolis/moltnet/internal/bridge/core"
+	bridgeloop "github.com/noopolis/moltnet/internal/bridge/loop"
 	"github.com/noopolis/moltnet/internal/observability"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/nodeconfig"
@@ -64,6 +65,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	errorCh := make(chan error, len(r.configs))
+	readyCh := make(chan string, len(r.configs))
 	var waitGroup sync.WaitGroup
 
 	for _, config := range r.configs {
@@ -83,7 +85,13 @@ func (r *Runner) Run(ctx context.Context) error {
 				"runtime", config.Runtime.Kind,
 				"network_id", config.Moltnet.NetworkID,
 			).Info("moltnet-node attachment starting")
-			if err := runner.Run(ctx); err != nil {
+			readyCtx := bridgeloop.WithAttachmentReady(ctx, func() {
+				select {
+				case readyCh <- config.Moltnet.NetworkID + "\x00" + config.Agent.ID:
+				default:
+				}
+			})
+			if err := runner.Run(readyCtx); err != nil {
 				select {
 				case errorCh <- fmt.Errorf("attachment %s: %w", config.Agent.ID, err):
 					cancel()
@@ -91,6 +99,25 @@ func (r *Runner) Run(ctx context.Context) error {
 				}
 			}
 		}(config, runner)
+	}
+	ready := make(map[string]struct{}, len(r.configs))
+	for len(ready) < len(r.configs) {
+		select {
+		case identity := <-readyCh:
+			ready[identity] = struct{}{}
+		case err := <-errorCh:
+			cancel()
+			waitGroup.Wait()
+			return err
+		case <-ctx.Done():
+			waitGroup.Wait()
+			return nil
+		}
+	}
+	if err := writeReadinessReceipt(r.configs); err != nil {
+		cancel()
+		waitGroup.Wait()
+		return err
 	}
 
 	doneCh := make(chan struct{})

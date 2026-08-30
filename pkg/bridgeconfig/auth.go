@@ -6,7 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
+
+const maxRuntimeEnvironmentNameLength = 4096
 
 const AgentTokenPrefix = "magt_v1_"
 
@@ -109,6 +113,49 @@ func (m MoltnetConfig) ResolveToken() (string, bool, error) {
 	}
 
 	return "", false, fmt.Errorf("bridge config moltnet.token, token_env, or token_path is required for %s auth", mode)
+}
+
+// ResolveRuntimeToken resolves a Daimon control token at process runtime.
+// The returned secret is never written back into RuntimeConfig.
+func (r RuntimeConfig) ResolveRuntimeToken() (protocol.SecretString, error) {
+	if r.Kind != RuntimeDaimon {
+		return "", fmt.Errorf("bridge config runtime token environment is unsupported for %s", r.Kind)
+	}
+	if r.Token.Reveal() != "" && r.TokenEnv != "" {
+		return "", fmt.Errorf("bridge config runtime token sources are ambiguous; daimon accepts only runtime.token_env")
+	}
+	if r.Token.Reveal() != "" {
+		return "", fmt.Errorf("bridge config runtime.token is unsupported for daimon; use runtime.token_env")
+	}
+	envName := strings.TrimSpace(r.TokenEnv)
+	if err := validateEnvironmentName("bridge config runtime.token_env", r.TokenEnv); err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(os.Getenv(envName))
+	if token == "" {
+		return "", fmt.Errorf("environment variable %q is required for daimon control auth", envName)
+	}
+	return protocol.NewSecretString(token), nil
+}
+
+func validateEnvironmentName(name string, value string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fmt.Errorf("%s is required", name)
+	}
+	if trimmed != value {
+		return fmt.Errorf("%s must not contain surrounding whitespace", name)
+	}
+	if len(trimmed) > maxRuntimeEnvironmentNameLength {
+		return fmt.Errorf("%s exceeds maximum size", name)
+	}
+	for index, char := range trimmed {
+		if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || char == '_' || (index > 0 && char >= '0' && char <= '9') {
+			continue
+		}
+		return fmt.Errorf("%s must be a safe environment variable name", name)
+	}
+	return nil
 }
 
 func IsAgentToken(value string) bool {

@@ -22,31 +22,35 @@ type RoomStore interface {
 }
 
 type MemoryStore struct {
-	mu             sync.RWMutex
-	messageIDs     map[string]struct{}
-	rooms          map[string]protocol.Room
-	removedRooms   map[string]struct{}
-	roomMessages   map[string][]protocol.Message
-	threads        map[string]protocol.Thread
-	roomThreads    map[string]map[string]struct{}
-	threadMessages map[string][]protocol.Message
-	directMessages map[string][]protocol.Message
-	directMembers  map[string]map[string]struct{}
-	agents         map[string]protocol.AgentRegistration
+	mu              sync.RWMutex
+	deliveryCursors map[string]int
+	deliveryEvents  []protocol.Event
+	messageIDs      map[string]struct{}
+	rooms           map[string]protocol.Room
+	removedRooms    map[string]struct{}
+	roomMessages    map[string][]protocol.Message
+	threads         map[string]protocol.Thread
+	roomThreads     map[string]map[string]struct{}
+	threadMessages  map[string][]protocol.Message
+	directMessages  map[string][]protocol.Message
+	directMembers   map[string]map[string]struct{}
+	agents          map[string]protocol.AgentRegistration
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		messageIDs:     make(map[string]struct{}),
-		rooms:          make(map[string]protocol.Room),
-		removedRooms:   make(map[string]struct{}),
-		roomMessages:   make(map[string][]protocol.Message),
-		threads:        make(map[string]protocol.Thread),
-		roomThreads:    make(map[string]map[string]struct{}),
-		threadMessages: make(map[string][]protocol.Message),
-		directMessages: make(map[string][]protocol.Message),
-		directMembers:  make(map[string]map[string]struct{}),
-		agents:         make(map[string]protocol.AgentRegistration),
+		deliveryCursors: make(map[string]int),
+		deliveryEvents:  make([]protocol.Event, 0),
+		messageIDs:      make(map[string]struct{}),
+		rooms:           make(map[string]protocol.Room),
+		removedRooms:    make(map[string]struct{}),
+		roomMessages:    make(map[string][]protocol.Message),
+		threads:         make(map[string]protocol.Thread),
+		roomThreads:     make(map[string]map[string]struct{}),
+		threadMessages:  make(map[string][]protocol.Message),
+		directMessages:  make(map[string][]protocol.Message),
+		directMembers:   make(map[string]map[string]struct{}),
+		agents:          make(map[string]protocol.AgentRegistration),
 	}
 }
 
@@ -200,7 +204,9 @@ func (s *MemoryStore) RemoveRegisteredAgentContext(_ context.Context, agentID st
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	delete(s.agents, strings.TrimSpace(agentID))
+	id := strings.TrimSpace(agentID)
+	delete(s.agents, id)
+	delete(s.deliveryCursors, id)
 	return nil
 }
 

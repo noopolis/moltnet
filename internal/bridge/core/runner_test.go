@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
@@ -37,6 +39,7 @@ func TestSelectAdapter(t *testing.T) {
 		bridgeconfig.RuntimeOpenClaw,
 		bridgeconfig.RuntimePicoClaw,
 		bridgeconfig.RuntimePi,
+		bridgeconfig.RuntimeDaimon,
 		bridgeconfig.RuntimeClaudeCode,
 		bridgeconfig.RuntimeCodex,
 	} {
@@ -56,6 +59,73 @@ func TestSelectAdapter(t *testing.T) {
 
 	if _, err := selectAdapter("weird"); err == nil {
 		t.Fatal("expected unsupported adapter error")
+	}
+}
+
+func TestMoltnetNodeExecutableLoadsTokenEnvAndSelectsDaimon(t *testing.T) {
+	attachReached := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/v1/network":
+			writeNetwork(t, response, compatibleNetwork("local"))
+		case "/v1/attach":
+			select {
+			case attachReached <- struct{}{}:
+			default:
+			}
+			response.WriteHeader(http.StatusServiceUnavailable)
+		default:
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	configPath := filepath.Join(t.TempDir(), "MoltnetNode")
+	receiptStorePath := filepath.Join(filepath.Dir(configPath), "private", "receipts.json")
+	configText := "version: moltnet.node.v1\n" +
+		"moltnet:\n  base_url: " + server.URL + "\n  network_id: local\n" +
+		"attachments:\n" +
+		"  - agent:\n      id: researcher\n" +
+		"    runtime:\n      kind: daimon\n      control_url: http://127.0.0.1:19690\n      token_env: CORE_EXEC_DAIMON_TOKEN\n      receipt_store_path: " + receiptStorePath + "\n" +
+		"    rooms:\n      - id: research\n        wake: mentions\n"
+	if err := os.WriteFile(configPath, []byte(configText), 0o600); err != nil {
+		t.Fatalf("write node config: %v", err)
+	}
+
+	repositoryRoot := filepath.Clean(filepath.Join("..", "..", ".."))
+	cacheDir := t.TempDir()
+	binaryPath := filepath.Join(t.TempDir(), "moltnet")
+	build := exec.Command("go", "build", "-o", binaryPath, "./cmd/moltnet")
+	build.Dir = repositoryRoot
+	build.Env = append(os.Environ(), "GOCACHE="+cacheDir)
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build moltnet executable: %v\n%s", err, output)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	command := exec.CommandContext(ctx, binaryPath, "node", configPath)
+	command.Dir = repositoryRoot
+	command.Env = append(os.Environ(), "CORE_EXEC_DAIMON_TOKEN=executable-test-token")
+	var output strings.Builder
+	command.Stdout = &output
+	command.Stderr = &output
+	if err := command.Start(); err != nil {
+		t.Fatalf("start moltnet node: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+
+	select {
+	case <-attachReached:
+		cancel()
+		<-done
+	case err := <-done:
+		t.Fatalf("moltnet node exited before Daimon attachment selection: %v\n%s", err, output.String())
+	case <-time.After(30 * time.Second):
+		cancel()
+		<-done
+		t.Fatalf("timed out waiting for Daimon attachment selection\n%s", output.String())
 	}
 }
 

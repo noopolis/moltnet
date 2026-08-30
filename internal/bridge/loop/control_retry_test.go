@@ -35,6 +35,12 @@ type controlRetryTestHarness struct {
 	controlServer *httptest.Server
 }
 
+type durableAcceptanceTestCodec struct {
+	*legacyControlCodec
+}
+
+func (*durableAcceptanceTestCodec) RequiresDurableAcceptance() bool { return true }
+
 // newControlRetryTestHarness starts both fake servers. onAttach is invoked
 // once per /v1/attach upgrade (test supplies the event-sending / ack-reading
 // script for that connection).
@@ -248,6 +254,31 @@ func TestRunControlLoopSkipsPermanentlyFailingWake(t *testing.T) {
 		report.Classification != protocol.WakeFailureClassificationPermanent ||
 		report.Attempts != 1 {
 		t.Fatalf("unexpected wake failed report %#v", report)
+	}
+}
+
+func TestDurableAcceptanceFailureRemainsUnacknowledged(t *testing.T) {
+	harness := newControlRetryTestHarness(t, http.StatusBadRequest, func(*testing.T, *websocket.Conn, int) {})
+	config := harness.config()
+	deliveries := newControlDeliveryTracker()
+	err := deliverControlMessage(
+		t.Context(),
+		&http.Client{Timeout: time.Second},
+		NewMoltnetClient(config),
+		config,
+		&durableAcceptanceTestCodec{legacyControlCodec: &legacyControlCodec{}},
+		*permanentlyFailingEvent("evt_durable"),
+		deliveries,
+	)
+	if err == nil {
+		t.Fatal("failed durable acceptance returned nil and would have advanced the attachment ACK")
+	}
+	_, controlRequests, wakeFailedReports := harness.counts()
+	if controlRequests != 1 || wakeFailedReports != 1 {
+		t.Fatalf("durable acceptance attempts=%d reports=%d; want 1/1", controlRequests, wakeFailedReports)
+	}
+	if deliveries.stateFor("evt_durable").permanent {
+		t.Fatal("durable acceptance failure was marked skippable instead of replayable")
 	}
 }
 

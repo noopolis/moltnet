@@ -135,6 +135,7 @@ func (c Config) Validate() error {
 	}
 
 	seenAgents := make(map[string]struct{}, len(c.Attachments))
+	seenReceiptStores := make(map[string]string)
 	for index, attachment := range c.Attachments {
 		agentID := strings.TrimSpace(attachment.Agent.ID)
 		if agentID == "" {
@@ -147,6 +148,13 @@ func (c Config) Validate() error {
 
 		if err := attachment.bridgeConfig(c.Moltnet).Validate(); err != nil {
 			return fmt.Errorf("attachments[%d]: %w", index, err)
+		}
+		if attachment.Runtime.Kind == bridgeconfig.RuntimeDaimon {
+			storePath := filepath.Clean(attachment.Runtime.ReceiptStorePath)
+			if priorAgent, duplicate := seenReceiptStores[storePath]; duplicate {
+				return fmt.Errorf("attachments[%d]: runtime.receipt_store_path is already used by agent %q", index, priorAgent)
+			}
+			seenReceiptStores[storePath] = agentID
 		}
 	}
 

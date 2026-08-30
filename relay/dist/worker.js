@@ -844,21 +844,20 @@ var MAX_PAYLOAD_BYTES = 1 << 20;
 var POLICY_VIOLATION = 1008;
 var ROOM_FULL = 1013;
 var RelayRoom = class extends Server {
-  static options = { hibernate: false };
-  admittedPeers = /* @__PURE__ */ new Set();
+  static options = { hibernate: true };
   onConnect(connection, context) {
     if (!hasBearerToken(context.request, this.env.RELAY_TOKEN)) {
       connection.close(POLICY_VIOLATION, "unauthorized");
       return;
     }
-    if (this.admittedPeers.size >= 2) {
+    if (this.admittedPeerCount(connection) >= 2) {
       setTimeout(() => connection.close(ROOM_FULL, "relay room already has two peers"), 0);
       return;
     }
-    this.admittedPeers.add(connection);
+    connection.setState({ admitted: true });
   }
   onMessage(connection, message) {
-    if (!this.admittedPeers.has(connection)) {
+    if (!isAdmitted(connection)) {
       return;
     }
     const decoded = decodeEnvelope(message);
@@ -873,30 +872,31 @@ var RelayRoom = class extends Server {
       return;
     }
     const peer = this.peerFor(connection);
-    if (peer !== void 0 && this.admittedPeers.has(peer)) {
+    if (peer !== void 0) {
       peer.send(message);
     }
   }
-  onClose(connection) {
-    this.releasePeer(connection);
-  }
-  onError(connection, _error) {
-    this.releasePeer(connection);
-  }
-  releasePeer(connection) {
-    this.admittedPeers.delete(connection);
+  admittedPeerCount(self) {
+    let count = 0;
+    for (const candidate of this.getConnections()) {
+      if (candidate !== self && isAdmitted(candidate)) {
+        count += 1;
+      }
+    }
+    return count;
   }
   peerFor(connection) {
-    for (const candidate of this.admittedPeers) {
-      if (candidate === connection) {
-        continue;
-      }
-      if (this.admittedPeers.has(candidate)) {
+    for (const candidate of this.getConnections()) {
+      if (candidate !== connection && isAdmitted(candidate)) {
         return candidate;
       }
     }
   }
 };
+function isAdmitted(connection) {
+  const state = connection.state;
+  return isRecord(state) && state.admitted === true;
+}
 var server_default = {
   async fetch(request, env2) {
     return await routePartykitRequest(request, env2, {

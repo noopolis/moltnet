@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	bridgeutil "github.com/noopolis/moltnet/internal/bridge"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 	"github.com/noopolis/moltnet/pkg/clientconfig"
 	"github.com/noopolis/moltnet/pkg/protocol"
@@ -64,6 +65,7 @@ func TestRunRegisterAgentWritesIdentity(t *testing.T) {
 }
 
 func TestRunSendPostsRoomMessage(t *testing.T) {
+	t.Setenv(bridgeutil.DaimonWakeIDEnv, "moltnet:msg_wake_1")
 	workspace := t.TempDir()
 	writeClientConfigFixture(t, workspace, clientconfig.Config{
 		Version: "moltnet.client.v1",
@@ -116,6 +118,10 @@ func TestRunSendPostsRoomMessage(t *testing.T) {
 
 	if received.Target.RoomID != "general" || received.From.ID != "alpha" || received.Parts[0].Text != "hello world" {
 		t.Fatalf("unexpected send request %#v", received)
+	}
+	wantID := bridgeutil.DeliveryReplyMessageID("alpha", "moltnet:msg_wake_1", received.Target)
+	if received.ID != wantID || len(received.CauseEventIDs) != 1 || received.CauseEventIDs[0] != "moltnet:msg_wake_1" {
+		t.Fatalf("send request did not claim the Daimon delivery publication slot: %#v", received)
 	}
 	if !strings.Contains(output, `"accepted": true`) {
 		t.Fatalf("unexpected send output %q", output)

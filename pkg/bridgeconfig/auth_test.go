@@ -1,10 +1,13 @@
 package bridgeconfig
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
 func TestMoltnetConfigResolveTokenPrecedence(t *testing.T) {
@@ -100,5 +103,85 @@ func TestResolveTokenPathRelativeToConfig(t *testing.T) {
 	want := filepath.Join(baseDir, ".moltnet", "alpha.token")
 	if config.Moltnet.TokenPath != want {
 		t.Fatalf("TokenPath = %q, want %q", config.Moltnet.TokenPath, want)
+	}
+}
+
+func TestRuntimeConfigResolveRuntimeToken(t *testing.T) {
+	const secret = "daimon-bearer-canary"
+	t.Setenv("DAIMON_CONTROL_TOKEN", secret)
+	runtime := RuntimeConfig{Kind: RuntimeDaimon, TokenEnv: "DAIMON_CONTROL_TOKEN"}
+
+	token, err := runtime.ResolveRuntimeToken()
+	if err != nil {
+		t.Fatalf("ResolveRuntimeToken() error = %v", err)
+	}
+	if token.Reveal() != secret {
+		t.Fatal("ResolveRuntimeToken() did not return the environment value")
+	}
+	encoded, err := json.Marshal(struct {
+		Token any `json:"token"`
+	}{Token: token})
+	if err != nil {
+		t.Fatalf("marshal resolved token: %v", err)
+	}
+	if strings.Contains(string(encoded), secret) {
+		t.Fatalf("serialized resolved token leaked bearer material: %s", encoded)
+	}
+}
+
+func TestDaimonRuntimeConfigValidation(t *testing.T) {
+	base := Config{
+		Version: VersionV1,
+		Agent:   AgentConfig{ID: "researcher"},
+		Moltnet: MoltnetConfig{BaseURL: "http://127.0.0.1:8787", NetworkID: "local"},
+		Runtime: RuntimeConfig{Kind: RuntimeDaimon, AgentID: "agent:researcher", ControlURL: "http://127.0.0.1:19690", TokenEnv: "DAIMON_TOKEN", ReceiptStorePath: "/tmp/daimon-receipts.json"},
+	}
+	tests := []struct {
+		name    string
+		runtime RuntimeConfig
+		ok      bool
+	}{
+		{name: "valid", runtime: base.Runtime, ok: true},
+		{name: "legacy member identity", runtime: RuntimeConfig{Kind: RuntimeDaimon, ControlURL: base.Runtime.ControlURL, TokenEnv: "DAIMON_TOKEN", ReceiptStorePath: base.Runtime.ReceiptStorePath}, ok: true},
+		{name: "untrimmed agent id", runtime: RuntimeConfig{Kind: RuntimeDaimon, AgentID: " agent:researcher ", ControlURL: base.Runtime.ControlURL, TokenEnv: "DAIMON_TOKEN"}},
+		{name: "invalid agent id", runtime: RuntimeConfig{Kind: RuntimeDaimon, AgentID: "agent/researcher", ControlURL: base.Runtime.ControlURL, TokenEnv: "DAIMON_TOKEN"}},
+		{name: "unsupported agent id", runtime: RuntimeConfig{Kind: RuntimePi, AgentID: "agent:researcher", ControlURL: "http://127.0.0.1:9000"}},
+		{name: "missing control url", runtime: RuntimeConfig{Kind: RuntimeDaimon, TokenEnv: "DAIMON_TOKEN"}},
+		{name: "missing token env", runtime: RuntimeConfig{Kind: RuntimeDaimon, ControlURL: base.Runtime.ControlURL}},
+		{name: "inline token", runtime: RuntimeConfig{Kind: RuntimeDaimon, ControlURL: base.Runtime.ControlURL, Token: "secret"}},
+		{name: "ambiguous", runtime: RuntimeConfig{Kind: RuntimeDaimon, ControlURL: base.Runtime.ControlURL, Token: "secret", TokenEnv: "DAIMON_TOKEN"}},
+		{name: "unsafe env", runtime: RuntimeConfig{Kind: RuntimeDaimon, ControlURL: base.Runtime.ControlURL, TokenEnv: "not-safe"}},
+		{name: "relative receipt store", runtime: RuntimeConfig{Kind: RuntimeDaimon, ControlURL: base.Runtime.ControlURL, TokenEnv: "DAIMON_TOKEN", ReceiptStorePath: "receipts.json"}},
+		{name: "unsupported receipt store", runtime: RuntimeConfig{Kind: RuntimePi, ControlURL: "http://127.0.0.1:9000", ReceiptStorePath: "/tmp/receipts.json"}},
+		{name: "unsupported env source", runtime: RuntimeConfig{Kind: RuntimePi, ControlURL: "http://127.0.0.1:9000", TokenEnv: "PI_TOKEN"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := base
+			config.Runtime = test.runtime
+			err := config.Validate()
+			if (err == nil) != test.ok {
+				t.Fatalf("Validate() error = %v, want success %v", err, test.ok)
+			}
+		})
+	}
+}
+
+func TestRuntimeConfigResolveRuntimeTokenFailuresAreRedacted(t *testing.T) {
+	const secret = "never-print-this-bearer"
+	t.Setenv("DAIMON_AMBIGUOUS_TOKEN", secret)
+	tests := []RuntimeConfig{
+		{Kind: RuntimeDaimon, TokenEnv: "DAIMON_MISSING_TOKEN"},
+		{Kind: RuntimeDaimon, Token: protocol.NewSecretString(secret), TokenEnv: "DAIMON_AMBIGUOUS_TOKEN"},
+		{Kind: RuntimePi, TokenEnv: "DAIMON_AMBIGUOUS_TOKEN"},
+	}
+	for _, runtime := range tests {
+		_, err := runtime.ResolveRuntimeToken()
+		if err == nil {
+			t.Fatal("expected runtime token resolution error")
+		}
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("runtime token error leaked bearer material: %v", err)
+		}
 	}
 }

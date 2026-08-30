@@ -43,6 +43,8 @@ type AgentEvent struct {
 const (
 	WakeFailureClassificationPermanent      = "permanent"
 	WakeFailureClassificationRetryExhausted = "retry_exhausted"
+	WakeFailureClassificationRuntimeFailed  = "runtime_failed"
+	WakeFailureClassificationRuntimeStopped = "runtime_stopped"
 )
 
 // WakeFailureDetails carries the retry evidence a bridge control-delivery

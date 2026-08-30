@@ -7,14 +7,16 @@ import (
 )
 
 type snapshot struct {
-	Rooms          map[string]protocol.Room                 `json:"rooms"`
-	RemovedRooms   map[string]time.Time                     `json:"removed_rooms,omitempty"`
-	RoomMessages   map[string][]protocol.Message            `json:"room_messages"`
-	Threads        map[string]protocol.Thread               `json:"threads"`
-	ThreadMessages map[string][]protocol.Message            `json:"thread_messages"`
-	DirectMessages map[string][]protocol.Message            `json:"direct_messages"`
-	DirectMembers  map[string]map[string]struct{}           `json:"direct_members"`
-	Agents         map[string]fileSnapshotAgentRegistration `json:"agents,omitempty"`
+	DeliveryCursors map[string]int                           `json:"attachment_delivery_cursors,omitempty"`
+	DeliveryEvents  []protocol.Event                         `json:"attachment_delivery_events,omitempty"`
+	Rooms           map[string]protocol.Room                 `json:"rooms"`
+	RemovedRooms    map[string]time.Time                     `json:"removed_rooms,omitempty"`
+	RoomMessages    map[string][]protocol.Message            `json:"room_messages"`
+	Threads         map[string]protocol.Thread               `json:"threads"`
+	ThreadMessages  map[string][]protocol.Message            `json:"thread_messages"`
+	DirectMessages  map[string][]protocol.Message            `json:"direct_messages"`
+	DirectMembers   map[string]map[string]struct{}           `json:"direct_members"`
+	Agents          map[string]fileSnapshotAgentRegistration `json:"agents,omitempty"`
 }
 
 type fileSnapshotAgentRegistration struct {
@@ -75,6 +77,14 @@ func cloneMessages(values map[string][]protocol.Message) map[string][]protocol.M
 	cloned := make(map[string][]protocol.Message, len(values))
 	for key, value := range values {
 		cloned[key] = append([]protocol.Message(nil), value...)
+	}
+	return cloned
+}
+
+func cloneDeliveryCursors(values map[string]int) map[string]int {
+	cloned := make(map[string]int, len(values))
+	for key, value := range values {
+		cloned[key] = value
 	}
 	return cloned
 }
@@ -144,14 +154,16 @@ func (s *FileStore) snapshot() snapshot {
 	defer s.MemoryStore.mu.RUnlock()
 
 	return snapshot{
-		Rooms:          cloneRooms(s.MemoryStore.rooms),
-		RemovedRooms:   snapshotRemovedRooms(s.MemoryStore.removedRooms),
-		RoomMessages:   cloneMessages(s.MemoryStore.roomMessages),
-		Threads:        cloneThreads(s.MemoryStore.threads),
-		ThreadMessages: cloneMessages(s.MemoryStore.threadMessages),
-		DirectMessages: cloneMessages(s.MemoryStore.directMessages),
-		DirectMembers:  cloneMembers(s.MemoryStore.directMembers),
-		Agents:         snapshotAgents(s.MemoryStore.agents),
+		DeliveryCursors: cloneDeliveryCursors(s.MemoryStore.deliveryCursors),
+		DeliveryEvents:  append([]protocol.Event(nil), s.MemoryStore.deliveryEvents...),
+		Rooms:           cloneRooms(s.MemoryStore.rooms),
+		RemovedRooms:    snapshotRemovedRooms(s.MemoryStore.removedRooms),
+		RoomMessages:    cloneMessages(s.MemoryStore.roomMessages),
+		Threads:         cloneThreads(s.MemoryStore.threads),
+		ThreadMessages:  cloneMessages(s.MemoryStore.threadMessages),
+		DirectMessages:  cloneMessages(s.MemoryStore.directMessages),
+		DirectMembers:   cloneMembers(s.MemoryStore.directMembers),
+		Agents:          snapshotAgents(s.MemoryStore.agents),
 	}
 }
 
@@ -160,6 +172,8 @@ func (s *FileStore) restore(state snapshot) {
 	defer s.MemoryStore.mu.Unlock()
 
 	s.MemoryStore.rooms = cloneRooms(state.Rooms)
+	s.MemoryStore.deliveryCursors = cloneDeliveryCursors(state.DeliveryCursors)
+	s.MemoryStore.deliveryEvents = append([]protocol.Event(nil), state.DeliveryEvents...)
 	s.MemoryStore.removedRooms = cloneRemovedRooms(state.RemovedRooms)
 	s.MemoryStore.roomMessages = cloneMessages(state.RoomMessages)
 	s.MemoryStore.threads = cloneThreads(state.Threads)
@@ -180,19 +194,23 @@ func snapshotFromMemoryStore(memory *MemoryStore) snapshot {
 	defer memory.mu.RUnlock()
 
 	return snapshot{
-		Rooms:          cloneRooms(memory.rooms),
-		RemovedRooms:   snapshotRemovedRooms(memory.removedRooms),
-		RoomMessages:   cloneMessages(memory.roomMessages),
-		Threads:        cloneThreads(memory.threads),
-		ThreadMessages: cloneMessages(memory.threadMessages),
-		DirectMessages: cloneMessages(memory.directMessages),
-		DirectMembers:  cloneMembers(memory.directMembers),
-		Agents:         snapshotAgents(memory.agents),
+		DeliveryCursors: cloneDeliveryCursors(memory.deliveryCursors),
+		DeliveryEvents:  append([]protocol.Event(nil), memory.deliveryEvents...),
+		Rooms:           cloneRooms(memory.rooms),
+		RemovedRooms:    snapshotRemovedRooms(memory.removedRooms),
+		RoomMessages:    cloneMessages(memory.roomMessages),
+		Threads:         cloneThreads(memory.threads),
+		ThreadMessages:  cloneMessages(memory.threadMessages),
+		DirectMessages:  cloneMessages(memory.directMessages),
+		DirectMembers:   cloneMembers(memory.directMembers),
+		Agents:          snapshotAgents(memory.agents),
 	}
 }
 
 func memoryStoreFromSnapshot(state snapshot) *MemoryStore {
 	memory := NewMemoryStore()
+	memory.deliveryCursors = cloneDeliveryCursors(state.DeliveryCursors)
+	memory.deliveryEvents = append([]protocol.Event(nil), state.DeliveryEvents...)
 	memory.rooms = cloneRooms(state.Rooms)
 	memory.removedRooms = cloneRemovedRooms(state.RemovedRooms)
 	memory.roomMessages = cloneMessages(state.RoomMessages)

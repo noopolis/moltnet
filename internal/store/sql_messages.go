@@ -18,6 +18,22 @@ func (s *SQLStore) AppendMessageContext(ctx context.Context, message protocol.Me
 }
 
 func (s *SQLStore) AppendMessageWithLifecycleContext(ctx context.Context, message protocol.Message) (AppendLifecycle, error) {
+	return s.appendMessageWithLifecycleContext(ctx, message, nil)
+}
+
+func (s *SQLStore) AppendMessageEventWithLifecycleContext(
+	ctx context.Context,
+	message protocol.Message,
+	event protocol.Event,
+) (AppendLifecycle, error) {
+	return s.appendMessageWithLifecycleContext(ctx, message, &event)
+}
+
+func (s *SQLStore) appendMessageWithLifecycleContext(
+	ctx context.Context,
+	message protocol.Message,
+	event *protocol.Event,
+) (AppendLifecycle, error) {
 	topology := dmTopology{}
 	if message.Target.Kind == protocol.TargetKindDM {
 		var err error
@@ -64,6 +80,11 @@ func (s *SQLStore) AppendMessageWithLifecycleContext(ctx context.Context, messag
 	}
 	if err := s.insertArtifacts(ctx, tx, message); err != nil {
 		return AppendLifecycle{}, err
+	}
+	if event != nil {
+		if err := insertAttachmentDeliveryEvent(ctx, tx, s.dialect, *event); err != nil {
+			return AppendLifecycle{}, err
+		}
 	}
 
 	lifecycle, err := s.appendLifecycleUsingQuerier(ctx, tx, message)

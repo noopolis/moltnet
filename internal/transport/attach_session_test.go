@@ -209,6 +209,49 @@ func TestConsumeAttachmentFramesHandlesAckPingAndUnexpectedOp(t *testing.T) {
 	}
 }
 
+func TestConsumeAttachmentFramesFailsClosedWhenDurableACKCannotPersist(t *testing.T) {
+	t.Parallel()
+
+	clientConn, serverConn := newAttachmentFrameTestPair(t)
+	session := newAttachmentSession("")
+	session.NoteSent("evt_1")
+	writer := &attachmentWriter{connection: serverConn}
+	persistErr := errors.New("cursor store unavailable")
+	ackedCursor := make(chan string, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- consumeAttachmentFrames(
+			context.Background(), serverConn, writer, session, time.Second,
+			func(cursor string, _ protocol.Event, _ bool) error {
+				ackedCursor <- cursor
+				return persistErr
+			},
+		)
+	}()
+
+	if err := clientConn.WriteJSON(protocol.AttachmentFrame{
+		Op: protocol.AttachmentOpAck, Version: protocol.AttachmentProtocolV1, Cursor: "evt_1",
+	}); err != nil {
+		t.Fatalf("write ack: %v", err)
+	}
+	select {
+	case cursor := <-ackedCursor:
+		if cursor != "evt_1" {
+			t.Fatalf("persisted cursor = %q", cursor)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("durable ACK callback was not called")
+	}
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, persistErr) {
+			t.Fatalf("frame loop error = %v, want persistence error", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("frame loop did not fail closed")
+	}
+}
+
 func TestConsumeAttachmentFramesAcceptsClientErrorFrame(t *testing.T) {
 	t.Parallel()
 

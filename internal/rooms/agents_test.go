@@ -67,7 +67,7 @@ func TestRegisteredSenderCredentialIsEnforced(t *testing.T) {
 	secondCtx := authn.WithClaims(context.Background(), authn.Claims{TokenID: "two"})
 
 	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
-		ID: "research", Members: []string{"director"},
+		ID: "research", Members: []string{"director", "remote:director"},
 		Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll},
 	}); err != nil {
 		t.Fatal(err)

@@ -32,9 +32,9 @@ func rejectAuthTokenIDConflict(doc map[string]any, tokenID string) error {
 // tokenEntryIsPairScopedOnly reports whether a decoded auth.tokens[] entry's
 // scopes are exactly ["pair"] and nothing else -- an operator credential
 // (any of observe/write/admin/attach) never matches, regardless of whether
-// it also happens to carry "pair" (see internal/rooms/federation_access.go's
-// isOperatorClaims for the same operator-shaped-credential concept used at
-// enforcement time).
+// it also happens to carry "pair" (see internal/auth's
+// authn.Claims.Operator for the same operator-shaped-credential concept
+// used at enforcement time).
 func tokenEntryIsPairScopedOnly(entry map[string]any) bool {
 	scopes, _ := entry["scopes"].([]any)
 	if len(scopes) == 0 {

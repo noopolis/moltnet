@@ -116,7 +116,7 @@ func (s *Service) validateSenderIdentity(ctx context.Context, actor protocol.Act
 		}
 		return nil
 	}
-	if hasClaims && claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite) {
+	if hasClaims && claims.Operator() {
 		return nil
 	}
 	if hasClaims && claims.AgentToken() {

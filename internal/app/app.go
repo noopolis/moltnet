@@ -39,17 +39,18 @@ type App struct {
 type serviceStore interface {
 	store.RoomStore
 	store.MessageStore
+	store.AttachmentDeliveryStore
 }
 
 func New(config Config) (*App, error) {
 	if err := validateRoomCredentials(config.Rooms, config.Auth.Mode); err != nil {
 		return nil, err
 	}
-	broker := events.NewBroker()
 	roomStore, err := buildStore(config)
 	if err != nil {
 		return nil, err
 	}
+	broker := events.NewBroker(roomStore)
 
 	var causalWriter *observability.CausalWriter
 	var transcriptWriter *observability.TranscriptWriter

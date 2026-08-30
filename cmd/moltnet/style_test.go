@@ -36,6 +36,7 @@ func TestStyleColorsWhenTerminalAndNoColorUnset(t *testing.T) {
 			os.Unsetenv("NO_COLOR")
 		}
 	})
+	t.Setenv("TERM", "xterm-256color")
 
 	output := captureStdout(t, func() {
 		printBanner()

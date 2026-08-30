@@ -21,6 +21,7 @@ const (
 	RuntimeOpenClaw   = "openclaw"
 	RuntimePicoClaw   = "picoclaw"
 	RuntimePi         = "pi"
+	RuntimeDaimon     = "daimon"
 	RuntimeClaudeCode = "claude-code"
 	RuntimeCodex      = "codex"
 )
@@ -57,8 +58,12 @@ type MoltnetTokenConfig struct {
 }
 
 type RuntimeConfig struct {
-	Kind             string                `json:"kind" yaml:"kind"`
+	Kind string `json:"kind" yaml:"kind"`
+	// AgentID names the runtime-side target when it differs from Agent.ID.
+	// It is currently supported only by Daimon; omission preserves legacy identity behavior.
+	AgentID          string                `json:"agent_id,omitempty" yaml:"agent_id,omitempty"`
 	Token            protocol.SecretString `json:"token,omitempty" yaml:"token,omitempty"`
+	TokenEnv         string                `json:"token_env,omitempty" yaml:"token_env,omitempty"`
 	Channel          string                `json:"channel,omitempty" yaml:"channel,omitempty"`
 	Command          string                `json:"command,omitempty" yaml:"command,omitempty"`
 	ConfigPath       string                `json:"config_path,omitempty" yaml:"config_path,omitempty"`
@@ -71,6 +76,7 @@ type RuntimeConfig struct {
 	ControlURL       string                `json:"control_url,omitempty" yaml:"control_url,omitempty"`
 	WorkspacePath    string                `json:"workspace_path,omitempty" yaml:"workspace_path,omitempty"`
 	SessionStorePath string                `json:"session_store_path,omitempty" yaml:"session_store_path,omitempty"`
+	ReceiptStorePath string                `json:"receipt_store_path,omitempty" yaml:"receipt_store_path,omitempty"`
 	SessionPrefix    string                `json:"session_prefix,omitempty" yaml:"session_prefix,omitempty"`
 	Driver           string                `json:"driver,omitempty" yaml:"driver,omitempty"`
 }
@@ -153,7 +159,7 @@ func (c Config) Validate() error {
 	}
 
 	switch c.Runtime.Kind {
-	case RuntimeTinyClaw, RuntimeOpenClaw, RuntimePicoClaw, RuntimePi, RuntimeClaudeCode, RuntimeCodex:
+	case RuntimeTinyClaw, RuntimeOpenClaw, RuntimePicoClaw, RuntimePi, RuntimeDaimon, RuntimeClaudeCode, RuntimeCodex:
 	default:
 		return fmt.Errorf("bridge config runtime.kind %q is unsupported", c.Runtime.Kind)
 	}
@@ -173,6 +179,17 @@ func (c Config) Validate() error {
 }
 
 func validateRuntimeFieldCompatibility(runtime RuntimeConfig) error {
+	if runtime.AgentID != "" {
+		if runtime.Kind != RuntimeDaimon {
+			return fmt.Errorf("bridge config runtime.agent_id is only supported for daimon")
+		}
+		if runtime.AgentID != strings.TrimSpace(runtime.AgentID) {
+			return fmt.Errorf("bridge config runtime.agent_id must be trimmed")
+		}
+		if err := protocol.ValidateMessageID(runtime.AgentID); err != nil {
+			return fmt.Errorf("bridge config runtime.agent_id is invalid: %w", err)
+		}
+	}
 	if strings.TrimSpace(runtime.GatewayURL) != "" {
 		if runtime.Kind != RuntimeOpenClaw {
 			return fmt.Errorf("bridge config runtime.gateway_url is only supported for openclaw")
@@ -186,8 +203,8 @@ func validateRuntimeFieldCompatibility(runtime RuntimeConfig) error {
 		if runtime.Kind == RuntimeOpenClaw {
 			return fmt.Errorf("bridge config runtime.control_url is unsupported for openclaw; use runtime.gateway_url")
 		}
-		if runtime.Kind != RuntimePicoClaw && runtime.Kind != RuntimeTinyClaw && runtime.Kind != RuntimePi {
-			return fmt.Errorf("bridge config runtime.control_url is only supported for picoclaw, tinyclaw, or pi")
+		if runtime.Kind != RuntimePicoClaw && runtime.Kind != RuntimeTinyClaw && runtime.Kind != RuntimePi && runtime.Kind != RuntimeDaimon {
+			return fmt.Errorf("bridge config runtime.control_url is only supported for picoclaw, tinyclaw, pi, or daimon")
 		}
 		if err := validateURL("bridge config runtime.control_url", runtime.ControlURL); err != nil {
 			return err
@@ -239,6 +256,31 @@ func validateRuntimeFieldCompatibility(runtime RuntimeConfig) error {
 	if strings.TrimSpace(runtime.ConfigPath) != "" && runtime.Kind != RuntimePicoClaw {
 		return fmt.Errorf("bridge config runtime.config_path is only supported for picoclaw")
 	}
+	if runtime.TokenEnv != "" && runtime.Kind != RuntimeDaimon {
+		return fmt.Errorf("bridge config runtime.token_env is only supported for daimon")
+	}
+	if runtime.ReceiptStorePath != "" && runtime.Kind != RuntimeDaimon {
+		return fmt.Errorf("bridge config runtime.receipt_store_path is only supported for daimon")
+	}
+	if runtime.Kind == RuntimeDaimon {
+		if runtime.Token.Reveal() != "" && runtime.TokenEnv != "" {
+			return fmt.Errorf("bridge config runtime token sources are ambiguous; daimon accepts only runtime.token_env")
+		}
+		if runtime.Token.Reveal() != "" {
+			return fmt.Errorf("bridge config runtime.token is unsupported for daimon; use runtime.token_env")
+		}
+		if err := validateEnvironmentName("bridge config runtime.token_env", runtime.TokenEnv); err != nil {
+			return err
+		}
+		if runtime.ReceiptStorePath != "" {
+			if runtime.ReceiptStorePath != strings.TrimSpace(runtime.ReceiptStorePath) {
+				return fmt.Errorf("bridge config runtime.receipt_store_path must be trimmed")
+			}
+			if !filepath.IsAbs(runtime.ReceiptStorePath) {
+				return fmt.Errorf("bridge config runtime.receipt_store_path must be absolute")
+			}
+		}
+	}
 
 	return nil
 }
@@ -282,6 +324,17 @@ func validateRuntimeSeam(runtime RuntimeConfig) error {
 	case RuntimePi:
 		if strings.TrimSpace(runtime.ControlURL) == "" {
 			return fmt.Errorf("bridge config runtime.control_url is required for pi")
+		}
+		return nil
+	case RuntimeDaimon:
+		if strings.TrimSpace(runtime.ControlURL) == "" {
+			return fmt.Errorf("bridge config runtime.control_url is required for daimon")
+		}
+		if strings.TrimSpace(runtime.TokenEnv) == "" {
+			return fmt.Errorf("bridge config runtime.token_env is required for daimon")
+		}
+		if strings.TrimSpace(runtime.ReceiptStorePath) == "" {
+			return fmt.Errorf("bridge config runtime.receipt_store_path is required for daimon")
 		}
 		return nil
 	}

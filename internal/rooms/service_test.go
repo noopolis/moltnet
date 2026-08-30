@@ -761,7 +761,9 @@ func TestServiceAcceptsDuplicateMessageIDIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first SendMessage() error = %v", err)
 	}
-	second, err := service.SendMessage(request)
+	conflictingRetry := request
+	conflictingRetry.Parts = []protocol.Part{{Kind: "text", Text: "different retry payload"}}
+	second, err := service.SendMessage(conflictingRetry)
 	if err != nil {
 		t.Fatalf("second SendMessage() error = %v", err)
 	}
@@ -779,6 +781,9 @@ func TestServiceAcceptsDuplicateMessageIDIdempotently(t *testing.T) {
 	}
 	if len(page.Messages) != 1 {
 		t.Fatalf("expected one stored message after duplicate send, got %#v", page)
+	}
+	if page.Messages[0].Parts[0].Text != "hello" {
+		t.Fatalf("duplicate message id replaced the first durable payload: %#v", page.Messages[0])
 	}
 }
 

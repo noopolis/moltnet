@@ -249,19 +249,20 @@ func (s *Service) ListAgents() ([]protocol.AgentSummary, error) {
 	return page.Agents, nil
 }
 
+// ListAgentsContext derives the whole roster from rooms this caller may see:
+// readableRoom drops rooms they cannot read, roomVisibleToPairScopedContext
+// drops rooms their pairing is not federated with, and an agent is named here
+// only by surviving-room membership or by canReadPrivateRoster (which a pure
+// [pair] peer credential fails). That is the entire pair-scoped agent filter.
+//
+// A second, redundant filter used to sit in front of this, behind an
+// `agentRegistry == nil && contextAgents != nil` fast path. Both fields are
+// type assertions on the same config.Store and every store here (MemoryStore,
+// FileStore, SQLStore) satisfies both interfaces, so the branch was
+// unreachable -- `panic("REACHED")` in it left the suite green. Deleted
+// rather than kept-and-unreached; TestPairScopedAgentListingIsFilteredByFederation
+// (federation_access_test.go) now pins the guarantee on the one live path.
 func (s *Service) ListAgentsContext(ctx context.Context, page protocol.PageRequest) (protocol.AgentPage, error) {
-	if s.agentRegistry == nil && s.contextAgents != nil {
-		agents, err := s.contextAgents.ListAgentsContext(ctx)
-		if err != nil {
-			return protocol.AgentPage{}, err
-		}
-		agents = s.filterPairScopedAgentSummaries(ctx, agents)
-		for index := range agents {
-			agents[index].Connected = s.agentConnected(agents[index].ID)
-		}
-		return paginateAgents(agents, page)
-	}
-
 	rooms, err := s.listRooms(ctx)
 	if err != nil {
 		return protocol.AgentPage{}, err

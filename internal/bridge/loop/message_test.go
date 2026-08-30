@@ -42,8 +42,13 @@ func TestShouldHandle(t *testing.T) {
 	if ShouldHandle(config, event) {
 		t.Fatal("expected self-authored message to be ignored")
 	}
+	event.Message.From.NetworkID = "remote"
+	event.Message.From.FQID = protocol.AgentFQID("remote", "researcher")
+	if !ShouldHandle(config, event) {
+		t.Fatal("expected same bare id from a remote network not to be treated as self-authored")
+	}
 
-	event.Message.From.ID = "writer"
+	event.Message.From = protocol.Actor{Type: "agent", ID: "writer", Name: "Writer"}
 	event.Message.Mentions = nil
 	if ShouldHandle(config, event) {
 		t.Fatal("expected mention-gated room message to be ignored")

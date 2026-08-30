@@ -58,6 +58,32 @@ func (c Claims) AllowsAny(scopes []Scope) bool {
 	return false
 }
 
+// Operator reports whether these claims describe an operator credential --
+// this network's own owner -- rather than a peer/pairing credential or a
+// per-agent one. An operator is defined, everywhere in this codebase, as a
+// credential carrying both `admin` and `write`, regardless of which other
+// scopes it also carries.
+//
+// The "regardless" matters: `--bearer` init used to mint (and configs in the
+// wild still hold) an operator token scoped [observe, write, admin, pair].
+// Every gate that inspects the `pair` scope must treat that token as an
+// operator and not as a peer, or it looks for a pairing named "operator",
+// finds none, and denies the owner every write and hides every room from
+// them (F1). Defining "operator" by scope-counting, or by the mere absence
+// of `pair`, is what broke.
+//
+// This predicate lives here, on Claims, because it was previously copied
+// verbatim into internal/rooms/federation_access.go and
+// internal/transport/federation_discovery.go and open-coded inline in three
+// more gates (rooms/access_policy.go canWriteRoom, rooms/sender_identity.go,
+// transport/skill_markdown.go). Five independent spellings of one
+// trust-boundary rule meant loosening any single one of them still passed
+// every test. There is now exactly one definition, in the package that owns
+// caller-identity policy, and every gate calls it.
+func (c Claims) Operator() bool {
+	return c.Allows(ScopeAdmin) && c.Allows(ScopeWrite)
+}
+
 // AllowsAgent reports whether these claims may act as agentID. An
 // unrestricted credential (HasAgentRestriction false) allows every agent
 // id; an agent-restricted one (e.g. NewAgentTokenClaims) allows only the

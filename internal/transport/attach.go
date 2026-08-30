@@ -74,28 +74,35 @@ func handleAttachment(
 		_ = writeAttachmentError(writer, fmt.Sprintf("attachment agent.id %q is not allowed for this token", agent.ID))
 		return
 	}
-	// Establish the broker subscription BEFORE RegisterAgentContext makes this
-	// agent observable (it then appears, with its rooms, in /v1/agents, and
-	// shortly after as connected). A room message published in the window
-	// between registration and a later SubscribeFrom would otherwise be
-	// delivered to no subscriber, and — on a first attach, whose resume cursor
-	// is empty and thus replays nothing ("from now") — lost with no recovery.
-	// Subscribing here guarantees the subscription is already live by the time
-	// the agent is visible/connected, so no post-visibility message slips
-	// through. Placed after the claims check so an unauthorized caller never
-	// gets even a transient subscription; the brief subscription before
-	// attachments.acquire on a rejected duplicate is harmless (defer cancel
-	// tears it down). Empty-cursor "from now" semantics are unchanged — we do
-	// not replay history on first attach.
+	// Durable services authenticate/register and establish the stored baseline
+	// under the same delivery lock used by message commit + live publication.
+	// Legacy services retain subscribe-before-register behavior so their empty
+	// client cursor still means "from now" without a post-registration gap.
 	ctx, cancel := context.WithCancel(request.Context())
 	defer cancel()
 	session := newAttachmentSession(strings.TrimSpace(frame.Cursor))
-	stream := service.SubscribeFrom(ctx, session.ResumeCursor())
-
-	registration, err := service.RegisterAgentContext(request.Context(), protocol.RegisterAgentRequest{
+	registerRequest := protocol.RegisterAgentRequest{
 		RequestedAgentID: agent.ID,
 		Name:             agent.Name,
-	})
+	}
+	var (
+		registration protocol.AgentRegistration
+		stream       <-chan protocol.Event
+		durable      durableAttachmentService
+	)
+	if candidate, ok := service.(durableAttachmentService); ok {
+		var supported bool
+		registration, stream, supported, err = candidate.RegisterDurableAttachmentContext(ctx, registerRequest)
+		if supported {
+			durable = candidate
+		} else {
+			stream = service.SubscribeFrom(ctx, session.ResumeCursor())
+			registration, err = service.RegisterAgentContext(request.Context(), registerRequest)
+		}
+	} else {
+		stream = service.SubscribeFrom(ctx, session.ResumeCursor())
+		registration, err = service.RegisterAgentContext(request.Context(), registerRequest)
+	}
 	if err != nil {
 		message := err.Error()
 		if policy != nil && policy.AgentRegistration() == authn.AgentRegistrationOpen {
@@ -142,8 +149,16 @@ func handleAttachment(
 
 	readErrCh := make(chan error, 1)
 	go func() {
-		readErrCh <- consumeAttachmentFrames(ctx, connection, writer, session, attachmentReadTimeout(), func(event protocol.Event) {
-			service.AgentWakeDelivered(context.Background(), agent, event)
+		readErrCh <- consumeAttachmentFrames(ctx, connection, writer, session, attachmentReadTimeout(), func(cursor string, event protocol.Event, wake bool) error {
+			if durable != nil {
+				if err := durable.AcknowledgeAttachmentContext(ctx, agent.ID, cursor); err != nil {
+					return err
+				}
+			}
+			if wake {
+				service.AgentWakeDelivered(context.Background(), agent, event)
+			}
+			return nil
 		})
 	}()
 
@@ -288,7 +303,7 @@ func consumeAttachmentFrames(
 	writer *attachmentWriter,
 	session *attachmentSession,
 	readTimeout time.Duration,
-	onWakeAck func(protocol.Event),
+	onAck func(string, protocol.Event, bool) error,
 ) error {
 	for {
 		select {
@@ -320,8 +335,10 @@ func consumeAttachmentFrames(
 				}
 				return fmt.Errorf("unexpected ACK cursor %q", frame.Cursor)
 			}
-			if wake && onWakeAck != nil {
-				onWakeAck(event)
+			if onAck != nil {
+				if err := onAck(frame.Cursor, event, wake); err != nil {
+					return fmt.Errorf("persist attachment ACK: %w", err)
+				}
 			}
 		case protocol.AttachmentOpPong:
 			continue
@@ -341,4 +358,12 @@ func consumeAttachmentFrames(
 			return fmt.Errorf("unexpected attachment frame op %q", frame.Op)
 		}
 	}
+}
+
+type durableAttachmentService interface {
+	RegisterDurableAttachmentContext(
+		context.Context,
+		protocol.RegisterAgentRequest,
+	) (protocol.AgentRegistration, <-chan protocol.Event, bool, error)
+	AcknowledgeAttachmentContext(context.Context, string, string) error
 }

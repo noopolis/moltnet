@@ -60,6 +60,17 @@ func TestScopedAgentHelpers(t *testing.T) {
 	if ActorMatches("net_a", "alpha", "net_b:alpha") {
 		t.Fatal("expected other network actor mismatch")
 	}
+	if !ActorMatchesIdentity("net_a", Actor{ID: "alpha"}, "alpha") {
+		t.Fatal("expected bare local actor identity match")
+	}
+	remoteAlpha := Actor{ID: "alpha", NetworkID: "net_b", FQID: AgentFQID("net_b", "alpha")}
+	if ActorMatchesIdentity("net_a", remoteAlpha, "alpha") {
+		t.Fatal("expected remote actor not to match a bare local identity")
+	}
+	if !ActorMatchesIdentity("net_a", remoteAlpha, "net_b:alpha") ||
+		!ActorMatchesIdentity("net_a", remoteAlpha, AgentFQID("net_b", "alpha")) {
+		t.Fatal("expected remote actor to match its scoped identities")
+	}
 
 	if got := RemoteParticipantID("net_b", Actor{ID: "alpha", NetworkID: "net_a"}); got != "net_a:alpha" {
 		t.Fatalf("unexpected remote participant id %q", got)

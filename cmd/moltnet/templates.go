@@ -164,7 +164,7 @@ func renderStarterRooms(roomIDs []string) string {
 // bearerMoltnetConfig is defaultMoltnetConfig plus `--init --bearer`'s two
 // generated tokens: auth.mode: bearer with an "operator" auth.tokens[]
 // entry scoped [observe, write, admin] -- deliberately without "pair" (see
-// internal/rooms/federation_access.go's isOperatorClaims: a claim carrying
+// internal/auth's authn.Claims.Operator: a claim carrying
 // both admin and write is treated as an operator credential regardless of
 // whether it also carries pair, but minting without pair here keeps freshly
 // generated operator tokens out of that ambiguity altogether; F1 found that

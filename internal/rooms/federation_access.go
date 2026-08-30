@@ -52,7 +52,7 @@ func (s *Service) pairingForPairScopedContext(ctx context.Context) (protocol.Pai
 	// resolves to that pairing -- which would stamp the operator's own
 	// locally-submitted messages with remote pairing provenance and filter
 	// their agent list as though they were a peer.
-	if isOperatorClaims(claims) {
+	if claims.Operator() {
 		return protocol.Pairing{}, false
 	}
 	if pairing, err := s.findPairingByID(claims.TokenID); err == nil {
@@ -107,17 +107,18 @@ func (s *Service) PairingForPairScopedContext(ctx context.Context) (protocol.Pai
 // `admin`/`write` was meant to let the same token double as a pairing
 // credential, but it meant this gate treated that operator as a peer,
 // looked for a pairing literally named "operator", found none, and denied
-// every write and hid every room from its own owner. isOperatorClaims below
-// names that shape explicitly (mirroring canWriteRoom's own admin+write
-// check in access_policy.go, so "operator" means the same thing in every
-// gate) and both functions bypass the pairing lookup for it, exactly like
-// they already do for a claim with no `pair` scope at all. Fresh `--bearer`
-// tokens are minted without `pair` now (cmd/moltnet/templates.go,
-// cmd/moltnet/init_server_config.go), but this bypass is what makes the fix
-// safe for every four-scope token already deployed, not just new ones.
+// every write and hid every room from its own owner. authn.Claims.Operator
+// names that shape explicitly -- one definition, in the package that owns
+// caller-identity policy, shared by every gate in this codebase that has to
+// tell an operator from a peer -- and both functions bypass the pairing
+// lookup for it, exactly like they already do for a claim with no `pair`
+// scope at all. Fresh `--bearer` tokens are minted without `pair` now
+// (cmd/moltnet/templates.go, cmd/moltnet/init_server_config.go), but this
+// bypass is what makes the fix safe for every four-scope token already
+// deployed, not just new ones.
 func (s *Service) pairScopedWriteAllowed(ctx context.Context, room protocol.Room) bool {
 	claims, ok := authn.ClaimsFromContext(ctx)
-	if !ok || !claims.Allows(authn.ScopePair) || isOperatorClaims(claims) {
+	if !ok || !claims.Allows(authn.ScopePair) || claims.Operator() {
 		return true
 	}
 	pairing, ok := s.pairingForPairScopedContext(ctx)
@@ -126,41 +127,9 @@ func (s *Service) pairScopedWriteAllowed(ctx context.Context, room protocol.Room
 
 func (s *Service) roomVisibleToPairScopedContext(ctx context.Context, room protocol.Room) bool {
 	claims, ok := authn.ClaimsFromContext(ctx)
-	if !ok || !claims.Allows(authn.ScopePair) || isOperatorClaims(claims) {
+	if !ok || !claims.Allows(authn.ScopePair) || claims.Operator() {
 		return true
 	}
 	pairing, ok := s.pairingForPairScopedContext(ctx)
 	return ok && protocol.RoomFederationAllows(room.Federation, pairing.ID)
-}
-
-// isOperatorClaims reports whether claims describes an operator credential
-// rather than a peer/pairing credential, regardless of whether it also
-// carries the `pair` scope. This mirrors canWriteRoom's existing admin+write
-// check (access_policy.go) so "operator" is defined the same way in every
-// gate, instead of by scope-counting or by the mere absence of `pair` (which
-// broke, per F1, the moment an operator token also carried `pair`).
-func isOperatorClaims(claims authn.Claims) bool {
-	return claims.Allows(authn.ScopeAdmin) && claims.Allows(authn.ScopeWrite)
-}
-
-func (s *Service) filterPairScopedAgentSummaries(ctx context.Context, agents []protocol.AgentSummary) []protocol.AgentSummary {
-	if _, scoped := s.pairingForPairScopedContext(ctx); !scoped {
-		return agents
-	}
-	filtered := make([]protocol.AgentSummary, 0, len(agents))
-	for _, agent := range agents {
-		rooms := make([]string, 0, len(agent.Rooms))
-		for _, roomID := range agent.Rooms {
-			room, ok, err := s.getRoom(ctx, roomID)
-			if err == nil && ok && s.roomVisibleToPairScopedContext(ctx, room) {
-				rooms = append(rooms, roomID)
-			}
-		}
-		if len(rooms) == 0 {
-			continue
-		}
-		agent.Rooms = rooms
-		filtered = append(filtered, agent)
-	}
-	return filtered
 }

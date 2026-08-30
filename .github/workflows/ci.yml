@@ -135,6 +135,27 @@ jobs:
       - name: Check embedded console assets
         run: git diff --exit-code web/dist
 
+  relay-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: relay/package-lock.json
+
+      - name: Install relay deps
+        working-directory: relay
+        run: npm ci
+
+      - name: Test relay
+        working-directory: relay
+        run: npm test
+
   docs-build:
     runs-on: ubuntu-latest
     steps:

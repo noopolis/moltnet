@@ -24,5 +24,5 @@ func (a *Adapter) Run(ctx context.Context, config bridgeconfig.Config) error {
 		return fmt.Errorf("pi adapter requires runtime.control_url")
 	}
 
-	return loop.RunControlLoop(ctx, config)
+	return loop.RunControlLoopWithCodec(ctx, config, NewCodec())
 }

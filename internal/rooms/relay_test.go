@@ -129,8 +129,14 @@ func TestServiceRelaysRoomMessagesWithPairingToken(t *testing.T) {
 	}}
 	serviceB.pairingsMu.Unlock()
 
-	for _, service := range []*Service{serviceA, serviceB} {
-		if _, err := service.CreateRoom(protocol.CreateRoomRequest{ID: "research", Members: []string{"alpha", "beta"}, Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll}}); err != nil {
+	for _, target := range []struct {
+		service *Service
+		members []string
+	}{
+		{service: serviceA, members: []string{"alpha", "beta"}},
+		{service: serviceB, members: []string{"alpha", "beta", "net_a:alpha"}},
+	} {
+		if _, err := target.service.CreateRoom(protocol.CreateRoomRequest{ID: "research", Members: target.members, Federation: &protocol.RoomFederation{Mode: protocol.RoomFederationAll}}); err != nil {
 			t.Fatalf("CreateRoom() error = %v", err)
 		}
 	}
