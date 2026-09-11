@@ -16,6 +16,9 @@ This package defines Moltnet's public wire protocol.
 - Do not bake HTTP handler assumptions into the data model.
 - Preserve multimodality from day one.
 - Prefer additive evolution and explicit versioning.
+- Plain short/scoped text mentions exclude trailing sentence periods; internal
+  periods remain part of the identity. Explicit mention metadata and bracketed
+  canonical mentions preserve exact identities, including trailing periods.
 
 ## Compatibility Goal
 

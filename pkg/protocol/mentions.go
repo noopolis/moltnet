@@ -1,6 +1,9 @@
 package protocol
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 var mentionPattern = regexp.MustCompile(`@molt://[^\s>]+|<@(molt://[^>\s]+)>|@([A-Za-z0-9._-]+(?::[A-Za-z0-9._-]+)?)`)
 
@@ -68,6 +71,9 @@ func parseMentionMatches(matches [][]string) []string {
 		mentions = append(mentions, mention)
 	}
 
+	if len(mentions) == 0 {
+		return nil
+	}
 	return mentions
 }
 
@@ -77,6 +83,13 @@ func mentionFromMatch(match []string) string {
 	}
 	for _, candidate := range match[1:] {
 		if candidate != "" {
+			if !strings.HasPrefix(candidate, "molt://") {
+				trimmed := strings.TrimRight(candidate, ".")
+				if strings.HasSuffix(trimmed, ":") {
+					return ""
+				}
+				return trimmed
+			}
 			return candidate
 		}
 	}

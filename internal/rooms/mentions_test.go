@@ -43,6 +43,16 @@ func TestSendMessageCanonicalizesRoomMentions(t *testing.T) {
 			want: []string{protocol.AgentFQID("local", "penny")},
 		},
 		{
+			id:   "msg_sentence_final_mention",
+			text: "The filing is ready for @penny.",
+			want: []string{protocol.AgentFQID("local", "penny")},
+		},
+		{
+			id:   "msg_scoped_sentence_final_mention",
+			text: "The filing is ready for @remote:director...",
+			want: []string{protocol.AgentFQID("remote_net", "director")},
+		},
+		{
 			id:   "msg_scoped_mention",
 			text: "@remote:director, can you review this?",
 			want: []string{protocol.AgentFQID("remote_net", "director")},
