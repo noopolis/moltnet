@@ -12,9 +12,15 @@ import (
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
-type deferredTestCodec struct{ *legacyControlCodec }
+type deferredTestCodec struct {
+	*legacyControlCodec
+	onDeferred func()
+}
 
-func (*deferredTestCodec) DecodeResponse(bridgeconfig.Config, ControlDelivery, *http.Response) (ControlResult, error) {
+func (c *deferredTestCodec) DecodeResponse(bridgeconfig.Config, ControlDelivery, *http.Response) (ControlResult, error) {
+	if c.onDeferred != nil {
+		c.onDeferred()
+	}
 	return ControlResult{}, &ControlDeferredError{Reason: "operator_stop", RetryAfter: time.Minute}
 }
 
@@ -83,6 +89,28 @@ func TestDeferredReconnectWaitCanBeCancelled(t *testing.T) {
 	}
 	if time.Since(started) > time.Second {
 		t.Fatal("shutdown waited out the deferred retry delay")
+	}
+	_, requests, reports := harness.counts()
+	if requests != 1 || reports != 0 {
+		t.Fatalf("requests=%d reports=%d, want 1/0", requests, reports)
+	}
+}
+
+func TestDeferralCancelledBeforeStreamUnwindsReturnsCleanly(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	harness := newControlRetryTestHarness(t, http.StatusConflict, func(t *testing.T, conn *websocket.Conn, _ int) {
+		attachHandshake(t, conn)
+		event := permanentlyFailingEvent("evt_deferred")
+		_ = conn.WriteJSON(protocol.AttachmentFrame{Op: protocol.AttachmentOpEvent, Version: protocol.AttachmentProtocolV1, Cursor: event.ID, Event: event})
+		var frame protocol.AttachmentFrame
+		if err := conn.ReadJSON(&frame); err == nil {
+			t.Errorf("cancelled deferral emitted frame %#v", frame)
+		}
+	})
+	codec := &deferredTestCodec{legacyControlCodec: &legacyControlCodec{}, onDeferred: cancel}
+	if err := RunControlLoopWithCodec(ctx, harness.config(), codec); err != nil {
+		t.Fatalf("cancelled loop returned prior delivery error: %v", err)
 	}
 	_, requests, reports := harness.counts()
 	if requests != 1 || reports != 0 {

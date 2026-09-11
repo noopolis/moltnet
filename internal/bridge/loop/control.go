@@ -102,7 +102,13 @@ func RunControlLoopWithCodec(ctx context.Context, config bridgeconfig.Config, co
 			}
 		}
 
-		if err == nil || ctx.Err() != nil {
+		// Cancellation can race with a deferred delivery unwinding the
+		// stream. Shutdown has the same clean result as the wait branch
+		// below; the last retryable delivery error is no longer actionable.
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err == nil {
 			return err
 		}
 		attempt++
