@@ -1,6 +1,41 @@
 package protocol
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
+
+func TestSentencePunctuationDoesNotBecomeMentionIdentity(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		text string
+		want []string
+	}{
+		{"Filed for @reviewer.", []string{"reviewer"}},
+		{"Ask @reviewer... Then @reviewer!", []string{"reviewer"}},
+		{"Ask @desk.editor, @remote:desk.editor.", []string{"desk.editor", "remote:desk.editor"}},
+		{"Ask (@reviewer); then @writer?", []string{"reviewer", "writer"}},
+		{"Explicitly <@molt://remote/agents/editor.>.", []string{"molt://remote/agents/editor."}},
+		{"No mention @... here", nil},
+		{"No scoped agent @remote:... here", nil},
+	} {
+		t.Run(test.text, func(t *testing.T) {
+			if got := ParseMentions(test.text); !slices.Equal(got, test.want) {
+				t.Fatalf("ParseMentions = %#v, want %#v", got, test.want)
+			}
+			if got := NormalizeMentions([]Part{{Kind: PartKindText, Text: test.text}}, nil); !slices.Equal(got, test.want) {
+				t.Fatalf("NormalizeMentions = %#v, want %#v", got, test.want)
+			}
+			if test.want == nil && ParseMentions(test.text) != nil {
+				t.Fatal("ignored mentions must return nil")
+			}
+		})
+	}
+	if got := NormalizeMentions(nil, []string{"editor."}); !slices.Equal(got, []string{"editor."}) {
+		t.Fatalf("explicit identity changed: %#v", got)
+	}
+}
 
 func TestNormalizeMentions(t *testing.T) {
 	t.Parallel()
