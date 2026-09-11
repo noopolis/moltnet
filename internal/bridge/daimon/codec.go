@@ -98,6 +98,9 @@ func (*Codec) DecodeResponse(
 	delivery loop.ControlDelivery,
 	response *http.Response,
 ) (loop.ControlResult, error) {
+	if response.StatusCode == http.StatusConflict {
+		return loop.ControlResult{}, decodeBlockedResponse(response)
+	}
 	if response.StatusCode != http.StatusAccepted {
 		return loop.ControlResult{}, fmt.Errorf("control url returned %s", response.Status)
 	}
