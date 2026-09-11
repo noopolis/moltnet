@@ -110,7 +110,7 @@ func RunControlLoopWithCodec(ctx context.Context, config bridgeconfig.Config, co
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(backoff.Delay(attempt)):
+		case <-time.After(controlReconnectDelay(err, backoff.Delay(attempt))):
 		}
 	}
 }

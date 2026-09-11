@@ -169,6 +169,11 @@ func reportAttachmentHandlerError(write func(protocol.AttachmentFrame) error, er
 	if err == nil {
 		return nil
 	}
+	if _, deferred := controlDeferral(err); deferred {
+		// A deferred delivery remains unACKed for replay. It is an expected
+		// runtime availability state, not an attachment handler failure.
+		return err
+	}
 	message := strings.TrimSpace(err.Error())
 	if message == "" {
 		message = "bridge handler failed"

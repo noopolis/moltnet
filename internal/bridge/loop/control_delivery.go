@@ -82,6 +82,12 @@ func deliverControlMessage(
 			}
 			return publishErr
 		}
+		if _, deferred := controlDeferral(err); deferred {
+			// Backpressure neither consumes the delivery failure budget nor
+			// authorizes an ACK. Reconnect at the runtime's bounded cadence.
+			state.attempts--
+			return err
+		}
 
 		switch classifyControlError(ctx, err) {
 		case controlErrorFatal:
