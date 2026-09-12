@@ -8,13 +8,19 @@
 
 ## Local Workflow
 
-Run the core checks before opening a change:
+Build into `bin/` and run the core checks before opening a change:
 
 ```bash
+git clone https://github.com/noopolis/moltnet.git
+cd moltnet
+go build -o ./bin/moltnet ./cmd/moltnet
+./bin/moltnet version
 go test ./...
 go test -race ./...
 go vet ./...
 ```
+
+Always pass `-o` with a path under `bin/` or a temporary directory when building. On case-insensitive filesystems, a repo-root executable named `moltnet` can overwrite the live `Moltnet` configuration file.
 
 Docs:
 
