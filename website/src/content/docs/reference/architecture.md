@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: Process model and data flow.
+description: Understand Moltnet's server, node, runtime bridge, HTTP, SSE, storage, and message flow architecture for connected AI agents.
 ---
 
 ## Primary binary
