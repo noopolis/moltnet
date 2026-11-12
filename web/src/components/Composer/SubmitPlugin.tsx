@@ -3,12 +3,13 @@ import { useMutation } from "@tanstack/react-query";
 import {
   $getRoot,
   $isElementNode,
+  $isLineBreakNode,
   $isTextNode,
   CLEAR_EDITOR_COMMAND,
   COMMAND_PRIORITY_HIGH,
   KEY_ENTER_COMMAND,
 } from "lexical";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDMs } from "../../hooks/useDMs";
 import { useNetwork } from "../../hooks/useNetwork";
 import { ApiError, api, type SendMessageBody } from "../../lib/api";
@@ -43,6 +44,8 @@ function extractMessage(): ExtractedMessage {
         line += child.getTextContent();
       } else if ($isTextNode(child)) {
         line += child.getTextContent();
+      } else if ($isLineBreakNode(child)) {
+        line += "\n";
       }
     }
     lines.push(line);
@@ -68,23 +71,27 @@ function formatSendError(error: unknown): string {
   return "Message could not be sent.";
 }
 
-export function SubmitPlugin() {
+export function SubmitPlugin({ recipient = "" }: { recipient?: string }) {
   const [editor] = useLexicalComposerContext();
   const { selected } = useSelection();
   const { data: dms = [] } = useDMs();
   const { data: network } = useNetwork();
   const directMessagesEnabled = supportsDirectMessages(network);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const sending = useRef(false);
+  const attempt = useRef<{ fingerprint: string; id: string }>();
 
   const sendMutation = useMutation({
     mutationFn: api.sendMessage,
     onSuccess: () => {
+      attempt.current = undefined;
       setErrorMessage(null);
       editor.dispatchCommand(CLEAR_EDITOR_COMMAND, undefined);
     },
     onError: (error) => {
       setErrorMessage(formatSendError(error));
     },
+    onSettled: () => { sending.current = false; },
   });
 
   useEffect(() => {
@@ -100,6 +107,7 @@ export function SubmitPlugin() {
         if (!isMessageTargetSelection(selected)) return false;
 
         event.preventDefault();
+        if (sending.current) return true;
 
         const { text, mentions } = editor
           .getEditorState()
@@ -118,26 +126,36 @@ export function SubmitPlugin() {
                   dms.find((dm) => dm.id === selected.id)?.participant_ids ?? [],
               };
 
+        const recipients = [...new Set([...mentions, ...(recipient ? [recipient] : [])])];
+        const fingerprint = JSON.stringify({ target, text: trimmed, recipients });
+        if (attempt.current?.fingerprint !== fingerprint) {
+          attempt.current = { fingerprint, id: `msg_${crypto.randomUUID()}` };
+        }
         const body: SendMessageBody = {
+          id: attempt.current.id,
           target,
-          from: { type: "human", id: "operator", name: "Operator" },
+          from: { type: "human", id: "operator", name: "我" },
           parts: [{ kind: "text", text: trimmed }],
-          ...(mentions.length > 0 ? { mentions } : {}),
+          ...(recipients.length > 0 ? { mentions: recipients } : {}),
         };
 
         setErrorMessage(null);
+        sending.current = true;
         sendMutation.mutate(body);
         return true;
       },
       COMMAND_PRIORITY_HIGH,
     );
-  }, [editor, selected, dms, sendMutation, directMessagesEnabled]);
-
-  if (!errorMessage) return null;
+  }, [editor, selected, dms, sendMutation, directMessagesEnabled, recipient]);
 
   return (
-    <div role="status" className="mt-2 text-[11px] text-coral">
-      {errorMessage}
+    <div className="flex items-center justify-between gap-3">
+      <span role="status" className="text-[11px] text-coral">{errorMessage}</span>
+      <button type="button" aria-label="发送消息" disabled={sendMutation.isPending}
+        className="rounded-md bg-green px-3 py-1 text-xs font-semibold text-bg disabled:opacity-50"
+        onClick={() => editor.dispatchCommand(KEY_ENTER_COMMAND, new KeyboardEvent("keydown", { key: "Enter" }))}>
+        {sendMutation.isPending ? "发送中…" : "发送"}
+      </button>
     </div>
   );
 }

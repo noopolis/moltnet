@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNetwork } from "../../hooks/useNetwork";
 import type { NetworkWarning } from "../../lib/types";
 import { StreamStatus } from "./StreamStatus";
+import { ConsoleSession } from "./ConsoleSession";
 
 const joinAgentCtaStorageKey = "moltnet.console.connectAgentCtaSeen";
 
@@ -82,6 +83,7 @@ export function TopBar() {
       <OperatorWarnings warnings={network?.warnings ?? []} />
       <span className="flex-1" />
       <StreamStatus />
+      <ConsoleSession />
       {(canConnect || canFollow) && (
         <a
           href="/install.md"

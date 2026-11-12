@@ -24,6 +24,7 @@ const apiDelayMs =
   Number.isFinite(configuredDelay) && configuredDelay > 0 ? configuredDelay : 0;
 
 export interface SendMessageBody {
+  id?: string;
   target: MessageTarget;
   from: MessageFrom;
   parts: MessagePart[];

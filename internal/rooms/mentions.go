@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	authn "github.com/noopolis/moltnet/internal/auth"
 	"github.com/noopolis/moltnet/pkg/protocol"
 )
 
@@ -57,7 +58,7 @@ func (s *Service) mentionContextMembers(ctx context.Context, target protocol.Tar
 		if !ok {
 			return nil, unknownRoomError(target.RoomID)
 		}
-		return room.Members, nil
+		return s.mentionRoomMembers(ctx, room)
 	case protocol.TargetKindThread:
 		room, ok, err := s.getRoom(ctx, target.RoomID)
 		if err != nil {
@@ -66,12 +67,35 @@ func (s *Service) mentionContextMembers(ctx context.Context, target protocol.Tar
 		if !ok {
 			return nil, unknownRoomError(target.RoomID)
 		}
-		return room.Members, nil
+		return s.mentionRoomMembers(ctx, room)
 	case protocol.TargetKindDM:
 		return target.ParticipantIDs, nil
 	default:
 		return nil, nil
 	}
+}
+
+// An operator can address a registered, disconnected agent in a public room
+// that permits registered writers, even before it has a room attachment.
+// Private rooms and non-operator callers retain member-only lookup.
+func (s *Service) mentionRoomMembers(ctx context.Context, room protocol.Room) ([]string, error) {
+	members := append([]string(nil), room.Members...)
+	claims, _ := authn.ClaimsFromContext(ctx)
+	operator := authn.ModeFromContext(ctx) == authn.ModeNone || claims.Operator()
+	if room.Visibility != protocol.RoomVisibilityPublic || room.WritePolicy != protocol.RoomWritePolicyRegisteredAgents ||
+		s.agentRegistry == nil || !operator {
+		return members, nil
+	}
+	registered, err := s.agentRegistry.ListRegisteredAgentsContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, registration := range registered {
+		if registration.NetworkID == s.networkID {
+			members = append(members, protocol.AgentFQID(s.networkID, registration.AgentID))
+		}
+	}
+	return members, nil
 }
 
 func (s *Service) resolveMentionCandidate(members []string, candidate string) (string, error) {
