@@ -15,6 +15,7 @@ func attachUIRoutes(
 	verifier agentTokenVerifier,
 	config ConsoleConfig,
 ) {
+	registerConsoleSessionRoutes(mux, policy, verifier, config)
 	staticFiles, err := fs.Sub(web.Files, "dist")
 	if err != nil {
 		assetUnavailable := func(response http.ResponseWriter, request *http.Request) {

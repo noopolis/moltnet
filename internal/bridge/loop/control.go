@@ -42,6 +42,15 @@ func RunControlLoopWithCodec(ctx context.Context, config bridgeconfig.Config, co
 		}()
 	}
 	controlClient := &http.Client{Timeout: controlRequestTimeout}
+	if policy, ok := codec.(ControlHTTPPolicy); ok {
+		if timeout := policy.ControlHTTPTimeout(); timeout > 0 {
+			controlClient.Timeout = timeout
+		}
+		// A redirect could forward the credential and POST body to another host.
+		if policy.RejectControlRedirects() {
+			controlClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		}
+	}
 	backoff := bridgeutil.NewBackoff(bridgeutil.DefaultReconnectBaseDelay, bridgeutil.DefaultReconnectMaxDelay)
 	attempt := 0
 	bootstrapped := false

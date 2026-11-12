@@ -154,7 +154,7 @@ func ShouldWakeForNetwork(
 
 func ShouldWakeDirect(mode bridgeconfig.WakeConfig) bool {
 	switch mode {
-	case "", bridgeconfig.WakeAll, bridgeconfig.WakeMentions:
+	case "", bridgeconfig.WakeAll, bridgeconfig.WakeMentions, bridgeconfig.WakeOwner:
 		return true
 	default:
 		return false
@@ -174,6 +174,9 @@ func ShouldWakeDirectMessage(
 ) bool {
 	if config == nil || !config.Enabled || !ShouldWakeDirect(config.Wake) || message == nil ||
 		message.Target.Kind != protocol.TargetKindDM || strings.TrimSpace(message.NetworkID) != strings.TrimSpace(networkID) {
+		return false
+	}
+	if config.Wake == bridgeconfig.WakeOwner && !localOwnerMessage(message, networkID) {
 		return false
 	}
 	if len(config.AllowedWakeSenders) == 0 {

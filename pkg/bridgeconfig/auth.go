@@ -118,6 +118,16 @@ func (m MoltnetConfig) ResolveToken() (string, bool, error) {
 // ResolveRuntimeToken resolves a Daimon control token at process runtime.
 // The returned secret is never written back into RuntimeConfig.
 func (r RuntimeConfig) ResolveRuntimeToken() (protocol.SecretString, error) {
+	if r.Kind == RuntimeWebhook {
+		if err := validateEnvironmentName("runtime.token_env", r.TokenEnv); err != nil {
+			return "", err
+		}
+		token := strings.TrimSpace(os.Getenv(r.TokenEnv))
+		if token == "" {
+			return "", fmt.Errorf("environment variable %q is required for webhook auth", r.TokenEnv)
+		}
+		return protocol.NewSecretString(token), nil
+	}
 	if r.Kind != RuntimeDaimon {
 		return "", fmt.Errorf("bridge config runtime token environment is unsupported for %s", r.Kind)
 	}

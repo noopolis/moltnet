@@ -48,6 +48,10 @@ func New(config Config) (*App, error) {
 }
 
 func newWithRealClock(config Config, realNow func() time.Time) (*App, error) {
+	localOwnerToken, err := consoleLocalOwnerToken(config)
+	if err != nil {
+		return nil, err
+	}
 	if err := protocol.ValidateNetworkNamespace(config.NetworkID); err != nil {
 		return nil, err
 	}
@@ -120,6 +124,7 @@ func newWithRealClock(config Config, realNow func() time.Time) (*App, error) {
 		ClockIdentity: clockIdentity,
 		PublicBaseURL: config.PublicBaseURL,
 		Console: transport.ConsoleConfig{
+			LocalOwnerToken: localOwnerToken,
 			Analytics: transport.ConsoleAnalyticsConfig{
 				Provider:      config.Console.Analytics.Provider,
 				MeasurementID: config.Console.Analytics.MeasurementID,

@@ -108,7 +108,7 @@ func shouldDeliverRoom(config bridgeconfig.Config, message *protocol.Message) bo
 			continue
 		}
 
-		return bridgeutil.ShouldWakeForNetwork(binding.Wake, message.Target, message.Mentions, config.Moltnet.NetworkID, config.Agent)
+		return bridgeutil.ShouldWakeMessage(binding.Wake, message, config.Moltnet.NetworkID, config.Agent)
 	}
 
 	return false

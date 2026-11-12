@@ -53,7 +53,8 @@ type Config struct {
 }
 
 type ConsoleConfig struct {
-	Analytics ConsoleAnalyticsConfig
+	LocalOwnerLogin bool
+	Analytics       ConsoleAnalyticsConfig
 }
 
 type ConsoleAnalyticsConfig struct {

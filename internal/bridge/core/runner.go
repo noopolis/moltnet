@@ -10,6 +10,7 @@ import (
 	"github.com/noopolis/moltnet/internal/bridge/openclaw"
 	"github.com/noopolis/moltnet/internal/bridge/pi"
 	"github.com/noopolis/moltnet/internal/bridge/picoclaw"
+	"github.com/noopolis/moltnet/internal/bridge/webhook"
 	"github.com/noopolis/moltnet/internal/observability"
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 )
@@ -74,6 +75,8 @@ func (r *Runner) Run(ctx context.Context) error {
 
 func selectAdapter(kind string) (RuntimeAdapter, error) {
 	switch kind {
+	case bridgeconfig.RuntimeWebhook:
+		return webhook.New(), nil
 	case bridgeconfig.RuntimeOpenClaw:
 		return openclaw.New(), nil
 	case bridgeconfig.RuntimePicoClaw:
