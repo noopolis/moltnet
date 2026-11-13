@@ -320,4 +320,7 @@ var sqlMigrations = []migration{
 	hubRoomsMigration(),
 	hubSyncMigration(),
 	hubReceiptOnlyMigration(),
+	{Version: 19, Name: "message_automation", Statements: []string{
+		`ALTER TABLE messages ADD COLUMN automation_json TEXT NOT NULL DEFAULT '{}'`,
+	}},
 }

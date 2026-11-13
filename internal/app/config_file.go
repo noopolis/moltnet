@@ -43,7 +43,8 @@ type rawServerConfig struct {
 }
 
 type rawConsoleConfig struct {
-	Analytics rawConsoleAnalyticsConfig `json:"analytics,omitempty" yaml:"analytics,omitempty"`
+	LocalOwnerLogin bool                      `json:"local_owner_login,omitempty" yaml:"local_owner_login,omitempty"`
+	Analytics       rawConsoleAnalyticsConfig `json:"analytics,omitempty" yaml:"analytics,omitempty"`
 }
 
 type rawConsoleAnalyticsConfig struct {

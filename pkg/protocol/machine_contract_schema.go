@@ -149,10 +149,17 @@ func machineContractShapes() []MachineContractShape {
 			{Kind: "absent_when_false", Fields: []string{"next_before", "next_after", "has_more"}},
 		}},
 		{Name: "read_message", Fields: []MachineContractField{
+			f("wake", "message_wake", false, ""), f("reply_to", "identifier", false, "max_target_bytes"),
+			f("discussion_id", "identifier", false, "max_target_bytes"),
 			f("id", "identifier", true, "max_target_bytes"), f("network_id", "identifier", true, "max_target_bytes"),
 			f("origin", "message_origin", true, ""), f("target", "message_target", true, ""),
 			f("from", "message_actor", true, ""), f("parts", "message_part_array", true, "1..max_read_message_parts"),
 			f("mentions", "member_id_array", false, "max_read_mentions"), f("created_at", "rfc3339_timestamp", true, ""),
+		}},
+		{Name: "message_wake", Fields: []MachineContractField{
+			n("recipients", "member_id_array", true, "max_read_mentions"),
+			f("discussion_id", "identifier", false, "max_target_bytes"),
+			f("turn", "integer", false, ""), f("max_turns", "integer", false, ""),
 		}},
 		{Name: "message_origin", Fields: []MachineContractField{
 			f("claimed_author", "message_actor", false, ""),

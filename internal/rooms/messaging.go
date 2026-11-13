@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/noopolis/moltnet/internal/automation"
 	"github.com/noopolis/moltnet/internal/observability"
 	"github.com/noopolis/moltnet/internal/store"
 	"github.com/noopolis/moltnet/pkg/protocol"
@@ -96,14 +97,16 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 	target := s.normalizeTarget(request.Target, from)
 	origin := s.normalizeOrigin(ctx, request.Origin, messageID)
 	message := protocol.Message{
-		ID:        messageID,
-		NetworkID: s.networkID,
-		Origin:    origin,
-		Target:    target,
-		From:      from,
-		Parts:     append([]protocol.Part(nil), request.Parts...),
-		Mentions:  mentions,
-		CreatedAt: now,
+		ReplyTo:      request.ReplyTo,
+		DiscussionID: request.DiscussionID,
+		ID:           messageID,
+		NetworkID:    s.networkID,
+		Origin:       origin,
+		Target:       target,
+		From:         from,
+		Parts:        append([]protocol.Part(nil), request.Parts...),
+		Mentions:     mentions,
+		CreatedAt:    now,
 	}
 
 	event := protocol.Event{
@@ -114,7 +117,21 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		CreatedAt: now,
 	}
 
-	lifecycle, err := s.appendAndPublishMessage(ctx, request, message, event)
+	var lifecycle store.AppendLifecycle
+	appendMessage := func() (bool, error) {
+		event.Message = &message
+		lifecycle, err = s.appendAndPublishMessage(ctx, request, message, event)
+		return err == nil, err
+	}
+	if s.automation != nil && message.Target.Kind == protocol.TargetKindRoom {
+		room, roomErr := s.GetRoomContext(ctx, message.Target.RoomID)
+		if roomErr != nil {
+			return protocol.MessageAccepted{}, roomErr
+		}
+		err = s.automation.Apply(&message, room.Members, appendMessage)
+	} else {
+		_, err = appendMessage()
+	}
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicateMessage) {
 			var duplicate *store.DuplicateMessageError
@@ -127,6 +144,9 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 				EventID:   event.ID,
 				Accepted:  true,
 			}, nil
+		}
+		if errors.Is(err, automation.ErrDiscussionConflict) {
+			return protocol.MessageAccepted{}, &Error{status: http.StatusConflict, msg: err.Error(), cause: err}
 		}
 		if errors.Is(err, store.ErrEnvelopeConflict) {
 			observability.Logger(ctx, "rooms.signing", "origin_network_id", message.Origin.NetworkID, "origin_message_id", message.Origin.MessageID).
@@ -142,6 +162,9 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		return protocol.MessageAccepted{}, err
 	}
 	s.relayMessage(message)
+	if s.automation != nil {
+		s.automation.Dispatch(s.lifecycleCtx, message)
+	}
 
 	return protocol.MessageAccepted{
 		MessageID:     message.ID,

@@ -55,6 +55,13 @@ type ControlCodec interface {
 	DecodeResponse(bridgeconfig.Config, ControlDelivery, *http.Response) (ControlResult, error)
 }
 
+// ControlHTTPPolicy lets a runtime constrain HTTP delivery without teaching
+// the generic event loop about that runtime's protocol.
+type ControlHTTPPolicy interface {
+	ControlHTTPTimeout() time.Duration
+	RejectControlRedirects() bool
+}
+
 // DurableAcceptanceCodec marks codecs whose successful response is the sole
 // attachment ACK boundary. Failed acceptance must remain unacknowledged and
 // replayable; it cannot be converted into a skipped delivery.

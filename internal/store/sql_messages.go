@@ -200,8 +200,8 @@ func (s *SQLStore) insertMessage(ctx context.Context, tx *sql.Tx, message protoc
 	query := bindQuery(s.dialect, `
 		INSERT INTO messages (
 			id, network_id, target_kind, room_id, thread_id, parent_message_id, dm_id,
-			origin_json, target_json, from_json, parts_json, mentions_json, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			origin_json, target_json, from_json, parts_json, mentions_json, created_at, automation_json
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO NOTHING
 	`)
 
@@ -221,6 +221,7 @@ func (s *SQLStore) insertMessage(ctx context.Context, tx *sql.Tx, message protoc
 		marshalJSON(message.Parts),
 		marshalJSON(message.Mentions),
 		formatTime(message.CreatedAt),
+		marshalJSON(automationForMessage(message)),
 	)
 	if err != nil {
 		return false, fmt.Errorf("insert message: %w", err)

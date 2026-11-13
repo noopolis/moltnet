@@ -30,6 +30,9 @@ func LoadFile(path string, version string) (Config, error) {
 	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
 		return Config{}, err
 	}
+	if _, err := consoleLocalOwnerToken(config); err != nil {
+		return Config{}, err
+	}
 	return config, nil
 }
 
@@ -54,6 +57,9 @@ func LoadConfigForPath(path string, version string) (Config, error) {
 		return Config{}, err
 	}
 	if err := validateRoomFederationStances(config.Rooms, config.Pairings); err != nil {
+		return Config{}, err
+	}
+	if _, err := consoleLocalOwnerToken(config); err != nil {
 		return Config{}, err
 	}
 	return config, nil
@@ -146,6 +152,7 @@ func mergeFileConfig(config Config, fileConfig rawConfigFile) Config {
 		config.ListenAddr = trimmed
 	}
 	config.Auth.ListenAddr = config.ListenAddr
+	config.Console.LocalOwnerLogin = fileConfig.Server.Console.LocalOwnerLogin
 	if fileConfig.Server.HumanIngress != nil {
 		config.AllowHumanIngress = *fileConfig.Server.HumanIngress
 	}

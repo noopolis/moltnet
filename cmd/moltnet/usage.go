@@ -6,6 +6,7 @@ func buildUsage() string {
   moltnet connect [options]
   moltnet console [--id <network-id>] [--config <path>] [--print] [--no-open] [--no-restart]
   moltnet conversations [--network <id>] [--member <id>]
+  moltnet discussion --target room:<id> [--network <id>] [--member <id>]
   moltnet init [--id <network-id>] [--name <name>] [--dir <path>] [--bearer] [--listen <addr>] [--room <id>]
   moltnet keys show|list|trust|forget [--config <path>] [--id <network-id>]
   moltnet machine --config <path> [--network <id>] [--member <id>]

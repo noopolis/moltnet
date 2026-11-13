@@ -27,7 +27,7 @@ func TestScanMessageAndArtifactRows(t *testing.T) {
 			'{"type":"agent","id":"alpha"}',
 			'[{"kind":"text","text":"hello"}]',
 			'["beta"]',
-			'2026-04-01T09:00:00Z'
+			'2026-04-01T09:00:00Z', '{}'
 	`)
 	if err != nil {
 		t.Fatalf("message query: %v", err)

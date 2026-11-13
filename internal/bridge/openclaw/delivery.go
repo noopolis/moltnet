@@ -108,7 +108,7 @@ func shouldDeliverRoom(config bridgeconfig.Config, message *protocol.Message) bo
 			continue
 		}
 
-		return bridgeutil.ShouldWakeForNetwork(binding.Wake, message.Target, message.Mentions, config.Moltnet.NetworkID, config.Agent)
+		return bridgeutil.ShouldWakeMessage(binding.Wake, message, config.Moltnet.NetworkID, config.Agent)
 	}
 
 	return false
@@ -169,14 +169,14 @@ func sendEventDispatch(ctx context.Context, config bridgeconfig.Config, client m
 		return err
 	}
 
-	return publishGatewayReply(ctx, config, client, event.Message.Target, result.FinalText)
+	return publishGatewayReply(ctx, config, client, *event.Message, result.FinalText)
 }
 
 func publishGatewayReply(
 	ctx context.Context,
 	config bridgeconfig.Config,
 	client moltnetClient,
-	target protocol.Target,
+	inbound protocol.Message,
 	text string,
 ) error {
 	message := strings.TrimSpace(text)
@@ -185,7 +185,7 @@ func publishGatewayReply(
 	}
 
 	_, err := client.SendMessage(ctx, protocol.SendMessageRequest{
-		Target: target,
+		Target: inbound.Target, ReplyTo: inbound.ID, DiscussionID: inbound.DiscussionID,
 		From: protocol.Actor{
 			Type: "agent",
 			ID:   config.Agent.ID,

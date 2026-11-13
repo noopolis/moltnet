@@ -26,6 +26,7 @@ export interface NetworkCapabilities {
 }
 
 export interface NetworkConsole {
+  can_manage_automation?: boolean;
   can_follow?: boolean;
   can_send_human?: boolean;
   viewer?: { kind: "anonymous" | "token" | "agent"; id?: string };

@@ -158,7 +158,7 @@ func (c Config) Validate() error {
 		if err := attachment.bridgeConfig(c.Moltnet, c.Clock).Validate(); err != nil {
 			return fmt.Errorf("attachments[%d]: %w", index, err)
 		}
-		if attachment.Runtime.Kind == bridgeconfig.RuntimeDaimon {
+		if attachment.Runtime.Kind == bridgeconfig.RuntimeDaimon || attachment.Runtime.Kind == bridgeconfig.RuntimeWebhook {
 			storePath := filepath.Clean(attachment.Runtime.ReceiptStorePath)
 			if priorAgent, duplicate := seenReceiptStores[storePath]; duplicate {
 				return fmt.Errorf("attachments[%d]: runtime.receipt_store_path is already used by agent %q", index, priorAgent)

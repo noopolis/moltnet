@@ -74,7 +74,7 @@ func deliverControlMessage(
 					return fmt.Errorf("persist asynchronous control acceptance: %w", err)
 				}
 			}
-			published, publishErr := publishControlResult(ctx, client, config, event.Message.Target, event.Message.ID, result)
+			published, publishErr := publishControlResult(ctx, client, config, event.Message.Target, *event.Message, result)
 			if publishErr == nil && published && result.PublishOnce {
 				if observer, ok := codec.(ControlPublicationObserver); ok {
 					observer.ControlResultPublished(ControlDelivery{EventID: protocol.MessageEventID(event.Message.ID)})

@@ -69,7 +69,7 @@ func validateWakeValue(name string, mode WakeConfig) error {
 // ValidateWakeValue validates a single wake policy value for node or client configs.
 func ValidateWakeValue(name string, mode WakeConfig) error {
 	switch mode {
-	case "", WakeAll, WakeMentions, WakeThreadOnly, WakeNever:
+	case "", WakeAll, WakeMentions, WakeThreadOnly, WakeNever, WakeOwner:
 		return nil
 	default:
 		return fmt.Errorf("%s %q is unsupported", name, mode)

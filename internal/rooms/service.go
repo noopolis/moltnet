@@ -3,6 +3,7 @@ package rooms
 import (
 	"context"
 	"fmt"
+	"github.com/noopolis/moltnet/internal/automation"
 	"sync"
 	"time"
 
@@ -27,6 +28,7 @@ type PairingClient interface {
 }
 
 type ServiceConfig struct {
+	Automation *automation.Manager
 	// Now stamps domain data only; operational deadlines always use real time.
 	Now                       func() (time.Time, error)
 	AllowHumanIngress         bool
@@ -68,6 +70,7 @@ type ServiceConfig struct {
 }
 
 type Service struct {
+	automation                *automation.Manager
 	follows                   *follow.Manager
 	followApplyMu             sync.Mutex
 	allowHumanIngress         bool
@@ -176,6 +179,7 @@ func NewService(config ServiceConfig) *Service {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 
 	service := &Service{
+		automation:                config.Automation,
 		allowHumanIngress:         config.AllowHumanIngress,
 		debugEvents:               config.DebugEvents,
 		disableDirectMessages:     config.DisableDirectMessages,
@@ -252,6 +256,7 @@ func (s *Service) Network() protocol.Network {
 			Pair:   []string{protocol.PairProtocolV1},
 		},
 		Capabilities: protocol.NetworkCapabilities{
+			LocalAutomation:    s.automation != nil,
 			EventStream:        "sse",
 			AttachmentProtocol: "websocket",
 			DebugEvents:        s.debugEvents,

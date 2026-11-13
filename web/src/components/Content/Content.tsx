@@ -1,6 +1,7 @@
 import { useComposerVisible } from "../../hooks/useComposerVisible";
 import { useSelection } from "../../providers";
 import { Composer } from "../Composer";
+import { AutomationPanel } from "../Automation/AutomationPanel";
 import { AgentView } from "./AgentView";
 import { EventsView } from "./EventsView";
 import { PairingView } from "./PairingView";
@@ -23,14 +24,9 @@ export function Content() {
   }
 
   return (
-    <section
-      className={
-        showComposer
-          ? "grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]"
-          : "grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)]"
-      }
-    >
-      <Timeline />
+    <section className="flex min-h-0 min-w-0 flex-col">
+      <AutomationPanel />
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)]"><Timeline /></div>
       {showComposer ? <Composer /> : null}
     </section>
   );

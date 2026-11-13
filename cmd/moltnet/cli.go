@@ -69,6 +69,8 @@ func run(ctx context.Context, args []string, buildVersion string) error {
 		return runServiceCommand(ctx, rest)
 	case "participants":
 		return runParticipants(rest)
+	case "discussion":
+		return runDiscussion(rest)
 	case "read":
 		return runRead(rest)
 	case "register-agent":

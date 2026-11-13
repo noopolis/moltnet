@@ -1,5 +1,7 @@
 package transport
 
+import "github.com/noopolis/moltnet/pkg/protocol"
+
 type HTTPConfig struct {
 	PublicBaseURL string
 	ClockIdentity string
@@ -7,7 +9,8 @@ type HTTPConfig struct {
 }
 
 type ConsoleConfig struct {
-	Analytics ConsoleAnalyticsConfig
+	LocalOwnerToken protocol.SecretString
+	Analytics       ConsoleAnalyticsConfig
 }
 
 type ConsoleAnalyticsConfig struct {

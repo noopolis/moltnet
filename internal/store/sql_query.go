@@ -61,7 +61,7 @@ func (s *SQLStore) listMessagesContext(
 
 	args := make([]any, 0, 3)
 	query := `
-		SELECT m.id, m.network_id, m.room_id, m.thread_id, m.parent_message_id, m.dm_id, m.origin_json, m.target_json, m.from_json, m.parts_json, m.mentions_json, m.created_at
+		SELECT m.id, m.network_id, m.room_id, m.thread_id, m.parent_message_id, m.dm_id, m.origin_json, m.target_json, m.from_json, m.parts_json, m.mentions_json, m.created_at, m.automation_json
 		FROM messages m`
 	if page.Before != "" {
 		query += ` LEFT JOIN messages before_cursor ON before_cursor.id = ?`

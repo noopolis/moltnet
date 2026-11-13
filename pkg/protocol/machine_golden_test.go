@@ -219,6 +219,7 @@ func TestMachineContractShapesTrackEveryWireField(t *testing.T) {
 		"send_nudge_result": reflect.TypeOf(MachineSendNudgeResult{}), "read_request": reflect.TypeOf(MachineReadRequest{}),
 		"read_result": reflect.TypeOf(MachineReadResult{}), "read_page": reflect.TypeOf(MachineReadPage{}),
 		"read_page_info": reflect.TypeOf(MachineReadPageInfo{}), "read_message": reflect.TypeOf(MachineReadMessage{}),
+		"message_wake":   reflect.TypeOf(MessageWake{}),
 		"message_origin": reflect.TypeOf(MessageOrigin{}), "message_target": reflect.TypeOf(Target{}),
 		"message_actor": reflect.TypeOf(Actor{}), "message_part": reflect.TypeOf(Part{}),
 		"subscribe_request": reflect.TypeOf(MachineSubscribeRequest{}), "subscribe_result": reflect.TypeOf(MachineSubscribeResult{}),

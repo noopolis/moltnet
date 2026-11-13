@@ -9,7 +9,7 @@ export function AgentsList() {
   return (
     <>
         {agents.length === 0 ? (
-          <p className="text-faint text-[13px] px-2 py-1">no agents connected.</p>
+          <p className="text-faint text-[13px] px-2 py-1">尚未注册 AI。</p>
         ) : (
           <div className="flex flex-col">
             {agents.map((agent) => {
@@ -21,7 +21,8 @@ export function AgentsList() {
                   key={agent.id}
                   active={active}
                   onClick={() => select({ kind: "agent", id: agent.id })}
-                  title={agent.id}
+                  title={agent.name || agent.id}
+                  subtitle={agent.id}
                   marker={
                     <span
                       className={`inline-block h-[7px] w-[7px] rounded-full ${
@@ -30,11 +31,7 @@ export function AgentsList() {
                     />
                   }
                   markerClassName={connected ? "text-green" : "text-coral"}
-                  trailing={
-                    (agent.rooms ?? []).length > 0
-                      ? `${agent.rooms!.length} rooms`
-                      : undefined
-                  }
+                  trailing={connected ? "自动接收" : "按需读取"}
                 />
               );
             })}

@@ -35,7 +35,7 @@ func shouldHandleRoom(config bridgeconfig.Config, message *protocol.Message) boo
 
 	for _, binding := range config.Rooms {
 		if binding.ID == message.Target.RoomID {
-			return bridgeutil.ShouldWakeForNetwork(binding.Wake, message.Target, message.Mentions, config.Moltnet.NetworkID, config.Agent)
+			return bridgeutil.ShouldWakeMessage(binding.Wake, message, config.Moltnet.NetworkID, config.Agent)
 		}
 	}
 

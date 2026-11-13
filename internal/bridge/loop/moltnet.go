@@ -145,8 +145,14 @@ func (c *MoltnetClient) StreamEventsReady(
 				if result.frame.Event == nil {
 					return fmt.Errorf("attachment event frame is missing event payload")
 				}
-				if err := handle(*result.frame.Event); err != nil {
+				allowed, err := c.automationAllowed(ctx, result.frame.Event.Message, config.Agent.ID)
+				if err != nil {
 					return reportAttachmentHandlerError(write, err)
+				}
+				if allowed {
+					if err := handle(*result.frame.Event); err != nil {
+						return reportAttachmentHandlerError(write, err)
+					}
 				}
 				if err := write(protocol.AttachmentFrame{
 					Op:      protocol.AttachmentOpAck,

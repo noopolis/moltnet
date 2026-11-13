@@ -23,6 +23,7 @@ const (
 	RuntimeDaimon     = "daimon"
 	RuntimeClaudeCode = "claude-code"
 	RuntimeCodex      = "codex"
+	RuntimeWebhook    = "webhook"
 )
 
 type Config struct {
@@ -75,6 +76,7 @@ type RuntimeConfig struct {
 	ReceiptStorePath string                `json:"receipt_store_path,omitempty" yaml:"receipt_store_path,omitempty"`
 	SessionPrefix    string                `json:"session_prefix,omitempty" yaml:"session_prefix,omitempty"`
 	Driver           string                `json:"driver,omitempty" yaml:"driver,omitempty"`
+	MaxRunsPerDay    int                   `json:"max_runs_per_day,omitempty" yaml:"max_runs_per_day,omitempty"`
 	// Mode selects managed (Moltnet runs the CLI per wake, the default) or
 	// attached (Moltnet nudges an already-open session named by Session).
 	Mode    string `json:"mode,omitempty" yaml:"mode,omitempty"`
@@ -109,6 +111,8 @@ const (
 	WakeMentions   WakeConfig = "mentions"
 	WakeThreadOnly WakeConfig = "thread_only"
 	WakeNever      WakeConfig = "never"
+	// WakeOwner answers local human messages, with mentions selecting recipients.
+	WakeOwner WakeConfig = "owner"
 )
 
 func LoadFile(path string) (Config, error) {
@@ -167,7 +171,7 @@ func (c Config) Validate() error {
 	}
 
 	switch c.Runtime.Kind {
-	case RuntimeOpenClaw, RuntimePicoClaw, RuntimePi, RuntimeDaimon, RuntimeClaudeCode, RuntimeCodex:
+	case RuntimeOpenClaw, RuntimePicoClaw, RuntimePi, RuntimeDaimon, RuntimeClaudeCode, RuntimeCodex, RuntimeWebhook:
 	default:
 		return fmt.Errorf("bridge config runtime.kind %q is unsupported", c.Runtime.Kind)
 	}
@@ -214,7 +218,7 @@ func validateRuntimeFieldCompatibility(runtime RuntimeConfig) error {
 		if runtime.Kind == RuntimeOpenClaw {
 			return fmt.Errorf("bridge config runtime.control_url is unsupported for openclaw; use runtime.gateway_url")
 		}
-		if runtime.Kind != RuntimePicoClaw && runtime.Kind != RuntimePi && runtime.Kind != RuntimeDaimon {
+		if runtime.Kind != RuntimePicoClaw && runtime.Kind != RuntimePi && runtime.Kind != RuntimeDaimon && runtime.Kind != RuntimeWebhook {
 			return fmt.Errorf("bridge config runtime.control_url is only supported for picoclaw, pi, or daimon")
 		}
 		if err := validateURL("bridge config runtime.control_url", runtime.ControlURL); err != nil {
@@ -243,11 +247,17 @@ func validateRuntimeFieldCompatibility(runtime RuntimeConfig) error {
 	if strings.TrimSpace(runtime.ConfigPath) != "" && runtime.Kind != RuntimePicoClaw {
 		return fmt.Errorf("bridge config runtime.config_path is only supported for picoclaw")
 	}
-	if runtime.TokenEnv != "" && runtime.Kind != RuntimeDaimon {
+	if runtime.TokenEnv != "" && runtime.Kind != RuntimeDaimon && runtime.Kind != RuntimeWebhook {
 		return fmt.Errorf("bridge config runtime.token_env is only supported for daimon")
 	}
-	if runtime.ReceiptStorePath != "" && runtime.Kind != RuntimeDaimon {
+	if runtime.ReceiptStorePath != "" && runtime.Kind != RuntimeDaimon && runtime.Kind != RuntimeWebhook {
 		return fmt.Errorf("bridge config runtime.receipt_store_path is only supported for daimon")
+	}
+	if runtime.MaxRunsPerDay != 0 && runtime.Kind != RuntimeWebhook {
+		return fmt.Errorf("runtime.max_runs_per_day is only supported for webhook")
+	}
+	if runtime.Kind == RuntimeWebhook {
+		return validateWebhookRuntime(runtime)
 	}
 	if runtime.Kind == RuntimeDaimon {
 		if runtime.Token.Reveal() != "" && runtime.TokenEnv != "" {
@@ -274,6 +284,8 @@ func validateRuntimeFieldCompatibility(runtime RuntimeConfig) error {
 
 func validateRuntimeSeam(runtime RuntimeConfig) error {
 	switch runtime.Kind {
+	case RuntimeWebhook:
+		return validateWebhookRuntime(runtime)
 	case RuntimeClaudeCode, RuntimeCodex:
 		if runtime.IsAttached() {
 			return nil

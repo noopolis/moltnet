@@ -42,6 +42,15 @@ func RunControlLoopWithCodec(ctx context.Context, config bridgeconfig.Config, co
 		}()
 	}
 	controlClient := &http.Client{Timeout: controlRequestTimeout}
+	if policy, ok := codec.(ControlHTTPPolicy); ok {
+		if timeout := policy.ControlHTTPTimeout(); timeout > 0 {
+			controlClient.Timeout = timeout
+		}
+		// A redirect could forward the credential and POST body to another host.
+		if policy.RejectControlRedirects() {
+			controlClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		}
+	}
 	backoff := bridgeutil.NewBackoff(bridgeutil.DefaultReconnectBaseDelay, bridgeutil.DefaultReconnectMaxDelay)
 	attempt := 0
 	bootstrapped := false
@@ -271,7 +280,7 @@ func publishControlResult(
 	client *MoltnetClient,
 	config bridgeconfig.Config,
 	target protocol.Target,
-	inboundMessageID string,
+	inbound protocol.Message,
 	result ControlResult,
 ) (bool, error) {
 	if !result.Publish {
@@ -282,6 +291,7 @@ func publishControlResult(
 		return false, nil
 	}
 	_, err := client.SendMessage(ctx, protocol.SendMessageRequest{
+		ReplyTo: inbound.ID, DiscussionID: inbound.DiscussionID,
 		Target: target,
 		From: protocol.Actor{
 			Type: "agent",
@@ -289,7 +299,7 @@ func publishControlResult(
 			Name: bridgeutil.DisplayName(config.Agent),
 		},
 		Parts:         []protocol.Part{{Kind: protocol.PartKindText, Text: message}},
-		CauseEventIDs: []string{protocol.MessageEventID(inboundMessageID)},
+		CauseEventIDs: []string{protocol.MessageEventID(inbound.ID)},
 	})
 	return err == nil, err
 }

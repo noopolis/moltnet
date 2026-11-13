@@ -21,6 +21,7 @@ type messageRow struct {
 	PartsJSON       string
 	MentionsJSON    string
 	CreatedAt       any
+	AutomationJSON  string
 }
 
 type artifactRow struct {
@@ -52,6 +53,7 @@ func scanMessage(rows *sql.Rows) (protocol.Message, error) {
 		&row.PartsJSON,
 		&row.MentionsJSON,
 		&row.CreatedAt,
+		&row.AutomationJSON,
 	); err != nil {
 		return protocol.Message{}, fmt.Errorf("scan message row: %w", err)
 	}
@@ -76,16 +78,23 @@ func scanMessage(rows *sql.Rows) (protocol.Message, error) {
 	if err := json.Unmarshal([]byte(row.MentionsJSON), &mentions); err != nil {
 		return protocol.Message{}, fmt.Errorf("decode message mentions: %w", err)
 	}
+	var automation messageAutomation
+	if err := json.Unmarshal([]byte(row.AutomationJSON), &automation); err != nil {
+		return protocol.Message{}, fmt.Errorf("decode message automation: %w", err)
+	}
 
 	return protocol.Message{
-		ID:        row.ID,
-		NetworkID: row.NetworkID,
-		Origin:    origin,
-		Target:    target,
-		From:      from,
-		Parts:     parts,
-		Mentions:  mentions,
-		CreatedAt: parseTime(row.CreatedAt),
+		Wake:         automation.Wake,
+		ReplyTo:      automation.ReplyTo,
+		DiscussionID: automation.DiscussionID,
+		ID:           row.ID,
+		NetworkID:    row.NetworkID,
+		Origin:       origin,
+		Target:       target,
+		From:         from,
+		Parts:        parts,
+		Mentions:     mentions,
+		CreatedAt:    parseTime(row.CreatedAt),
 	}, nil
 }
 

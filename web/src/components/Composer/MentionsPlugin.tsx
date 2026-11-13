@@ -17,6 +17,7 @@ import { createPortal } from "react-dom";
 import { useAgents } from "../../hooks/useAgents";
 import { useRooms } from "../../hooks/useRooms";
 import type { Agent } from "../../lib/types";
+import { roomRecipients } from "../../lib/recipients";
 import { useSelection } from "../../providers";
 import { $createMentionNode } from "./MentionNode";
 
@@ -227,11 +228,7 @@ export function MentionsPlugin() {
     if (!selected) return agents;
     if (selected.kind !== "room") return agents;
     const room = rooms.find((r) => r.id === selected.id);
-    if (!room) return [];
-    const memberIds = new Set(room.members ?? []);
-    return agents.filter(
-      (a) => memberIds.has(a.id) || (a.rooms ?? []).includes(selected.id),
-    );
+    return roomRecipients(agents, room);
   }, [agents, rooms, selected]);
 
   const options = useMemo<MentionMenuOption[]>(() => {
