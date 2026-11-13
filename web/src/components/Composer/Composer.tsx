@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useSelection } from "../../providers";
 import { useAgents } from "../../hooks/useAgents";
 import { useRooms } from "../../hooks/useRooms";
+import { useRoomAutomation } from "../../hooks/useRoomAutomation";
 import { roomRecipients } from "../../lib/recipients";
 import { useComposerVisible } from "../../hooks/useComposerVisible";
 import { ComposerEditor } from "./ComposerEditor";
@@ -33,8 +34,10 @@ function ComposerPanel() {
   const { data: rooms = [] } = useRooms();
   const [recipient, setRecipient] = useState("");
   const roomId = selected?.kind === "room" ? selected.id : undefined;
+  const { data: automation } = useRoomAutomation(roomId);
   const available = roomId ? roomRecipients(agents, rooms.find((room) => room.id === roomId)) : agents;
-  const offline = available.filter((agent) => (!recipient || agent.id === recipient) && !agent.connected);
+  const offline = available.filter((agent) => (!recipient || agent.id === recipient) && !agent.connected &&
+    !automation?.connectors.some((hook) => hook.agent_id === agent.id && hook.enabled && hook.verified));
 
   return (
     <section className="px-5 pb-4 pt-1" aria-label="Human ingress">
