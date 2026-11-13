@@ -35,11 +35,11 @@ function RoomControls({ roomID }: { roomID: string }) {
     finally { setBusy(false); }
   }
   return (
-    <details className="border-b border-border bg-panel px-4 py-2 text-ink">
+    <details className="shrink-0 border-b border-border bg-panel px-4 py-2 text-ink">
       <summary className="cursor-pointer text-sm font-medium">AI 设置与讨论
-        <span className="ml-3 text-xs font-normal text-mute">{discussion?.active ? `讨论中 · 已发言 ${discussion.completed_turns}/${discussion.max_rounds * discussion.participants.length} 次` : "按需回应 · 可开启有限轮次讨论"}</span>
+        <span className="ml-3 text-xs font-normal text-mute">{discussion ? `${discussion.active ? "讨论中" : "讨论已结束"} · 已发言 ${discussion.completed_turns}/${discussion.max_rounds * discussion.participants.length} 次` : "按需回应 · 可开启有限轮次讨论"}</span>
       </summary>
-      <div className="max-h-[55vh] overflow-auto py-3">
+      <div className="max-h-[30vh] overflow-auto py-3">
         {query.isLoading ? <p role="status">正在读取 AI 设置…</p> : null}
         {query.error ? <p role="alert">{query.error.message}<button onClick={() => void query.refetch()} className="ml-2 underline">重试</button></p> : null}
         {query.data ? <>
