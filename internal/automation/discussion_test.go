@@ -69,7 +69,7 @@ func TestDiscussionFiniteRoundsAndStaleReplies(t *testing.T) {
 }
 
 func TestDiscussionRejectsSpoofWrongTurnAndRollback(t *testing.T) {
-	for _, kind := range []string{"wrong sender", "unbound", "wrong parent", "wrong discussion", "foreign origin", "append failure", "duplicate"} {
+	for _, kind := range []string{"wrong sender", "unbound", "wrong parent", "wrong discussion", "missing discussion", "missing parent", "missing both", "foreign origin", "append failure", "duplicate"} {
 		t.Run(kind, func(t *testing.T) {
 			m := newDiscussion(t, 1)
 			message := testMessage("reply", "codex", "prompt")
@@ -82,6 +82,12 @@ func TestDiscussionRejectsSpoofWrongTurnAndRollback(t *testing.T) {
 				message.ReplyTo = "other"
 			case "wrong discussion":
 				message.DiscussionID = "other"
+			case "missing discussion":
+				message.DiscussionID = ""
+			case "missing parent":
+				message.ReplyTo = ""
+			case "missing both":
+				message.DiscussionID, message.ReplyTo = "", ""
 			case "foreign origin":
 				message.Origin.ReceivedVia = "pair-1"
 			}
@@ -204,5 +210,18 @@ func TestDiscussionValidationBoundaries(t *testing.T) {
 		if (err == nil) != (rounds >= 1 && rounds <= 20) {
 			t.Fatalf("rounds=%d err=%v", rounds, err)
 		}
+	}
+}
+
+func TestExpiredDiscussionDoesNotBlockOrdinaryAgentMessage(t *testing.T) {
+	m := newDiscussion(t, 1)
+	m.room("general").Discussion.UpdatedAt = time.Now().Add(-11 * time.Minute)
+	message := testMessage("ordinary", "codex", "")
+	message.DiscussionID = ""
+	if err := m.Apply(&message, testMembers, func() (bool, error) { return true, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if m.View("general", testMembers).Discussion.Active || len(message.Wake.Recipients) != 0 {
+		t.Fatal("expired discussion blocked ordinary traffic or woke another agent")
 	}
 }

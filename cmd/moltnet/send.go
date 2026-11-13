@@ -3,9 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	authn "github.com/noopolis/moltnet/internal/auth"
 	bridgeutil "github.com/noopolis/moltnet/internal/bridge"
@@ -26,6 +28,7 @@ func runSend(args []string) error {
 	override := bindOperatorOverrideFlags(flags)
 	replyTo := flags.String("reply-to", "", "message id being answered")
 	discussionID := flags.String("discussion", "", "owner-started bounded discussion id")
+	textFile := flags.String("text-file", "", "read UTF-8 message from a file (avoids shell quoting)")
 
 	// A bare "send help" never reaches Go's flag package as a help request
 	// (it is a plain positional argument, not "-h"/"--help", both of which
@@ -47,13 +50,22 @@ func runSend(args []string) error {
 	if err != nil {
 		return err
 	}
+	if *textFile != "" {
+		if textValue != "" {
+			return fmt.Errorf("--text-file cannot be combined with --text or positional text")
+		}
+		textValue, err = readSendTextFile(*textFile)
+		if err != nil {
+			return err
+		}
+	}
 
 	target, err := parseTarget(targetValue)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(textValue) == "" {
-		return fmt.Errorf("send requires --text, or a trailing message argument")
+		return fmt.Errorf("send requires --text, --text-file, or a trailing message argument")
 	}
 
 	attachment, client, usingFallback, err := resolveClientOrOperator(*configPath, *networkID, *memberID, *override, authn.ScopeWrite)
@@ -126,6 +138,27 @@ func runSend(args []string) error {
 		return err
 	}
 	return printJSON(accepted)
+}
+
+func readSendTextFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	const limit = 1 << 20
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > limit {
+		return "", fmt.Errorf("message file exceeds 1 MiB")
+	}
+	if !utf8.Valid(data) {
+		return "", fmt.Errorf("message file must be UTF-8")
+	}
+	data = []byte(strings.TrimPrefix(string(data), "\ufeff"))
+	return string(data), nil
 }
 
 func daimonWakeDeliveryID(value string) (string, bool) {

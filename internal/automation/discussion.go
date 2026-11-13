@@ -58,6 +58,9 @@ func (m *Manager) Apply(message *protocol.Message, members []string, appendMessa
 	}
 	message.Wake = &protocol.MessageWake{Recipients: []string{}}
 	d := room.Discussion
+	if expired(d) {
+		d.Active, d.Reason = false, "超过 10 分钟未收到回复，讨论已停止"
+	}
 	if message.DiscussionID != "" {
 		if d == nil || !d.Active || d.ID != message.DiscussionID || expired(d) {
 			return fmt.Errorf("%w: 讨论已停止或已失效", ErrDiscussionConflict)
@@ -82,6 +85,9 @@ func (m *Manager) Apply(message *protocol.Message, members []string, appendMessa
 			message.Wake.Recipients = []string{d.ExpectedAgent}
 		}
 	} else {
+		if d != nil && d.Active && message.From.Type == "agent" && message.From.ID == d.ExpectedAgent {
+			return fmt.Errorf("%w: 当前轮次必须携带 reply_to 和 discussion_id", ErrDiscussionConflict)
+		}
 		owner := message.From.Type == "human" && message.From.ID == "operator" && message.NetworkID == m.networkID && message.Origin.ReceivedVia == ""
 		if owner && d != nil && d.Active {
 			d.Active, d.Reason = false, "主人发送了新消息，讨论已停止"
