@@ -280,7 +280,7 @@ func publishControlResult(
 	client *MoltnetClient,
 	config bridgeconfig.Config,
 	target protocol.Target,
-	inboundMessageID string,
+	inbound protocol.Message,
 	result ControlResult,
 ) (bool, error) {
 	if !result.Publish {
@@ -291,6 +291,7 @@ func publishControlResult(
 		return false, nil
 	}
 	_, err := client.SendMessage(ctx, protocol.SendMessageRequest{
+		ReplyTo: inbound.ID, DiscussionID: inbound.DiscussionID,
 		Target: target,
 		From: protocol.Actor{
 			Type: "agent",
@@ -298,7 +299,7 @@ func publishControlResult(
 			Name: bridgeutil.DisplayName(config.Agent),
 		},
 		Parts:         []protocol.Part{{Kind: protocol.PartKindText, Text: message}},
-		CauseEventIDs: []string{protocol.MessageEventID(inboundMessageID)},
+		CauseEventIDs: []string{protocol.MessageEventID(inbound.ID)},
 	})
 	return err == nil, err
 }

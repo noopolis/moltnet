@@ -12,6 +12,14 @@ func ShouldWakeMessage(mode bridgeconfig.WakeConfig, message *protocol.Message, 
 	if message == nil {
 		return false
 	}
+	if message.Wake != nil {
+		for _, id := range message.Wake.Recipients {
+			if id == agent.ID {
+				return true
+			}
+		}
+		return false
+	}
 	if mode == bridgeconfig.WakeOwner {
 		if !localOwnerMessage(message, networkID) {
 			return false

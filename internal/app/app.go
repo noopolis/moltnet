@@ -92,8 +92,13 @@ func newWithRealClock(config Config, realNow func() time.Time) (*App, error) {
 	}
 
 	pairingClient := pairings.NewClient()
+	automation, err := localAutomation(config)
+	if err != nil {
+		return nil, fmt.Errorf("load local automation: %w", err)
+	}
 	relayClients := newRelayClients(config, pairingClient)
 	service := rooms.NewService(rooms.ServiceConfig{
+		Automation:                automation,
 		Now:                       now,
 		AllowHumanIngress:         config.AllowHumanIngress,
 		CausalWriter:              causalWriter,

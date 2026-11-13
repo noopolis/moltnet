@@ -42,7 +42,7 @@ func (s *SQLStore) HubMessagesContext(ctx context.Context, messageIDs []string) 
 	result := map[string]protocol.Message{}
 	for _, id := range messageIDs {
 		rows, err := s.db.QueryContext(ctx, bindQuery(s.dialect, `SELECT m.id, m.network_id, m.room_id, m.thread_id, m.parent_message_id, m.dm_id,
-			m.origin_json, m.target_json, m.from_json, m.parts_json, m.mentions_json, m.created_at FROM messages m WHERE m.id = ?`), id)
+			m.origin_json, m.target_json, m.from_json, m.parts_json, m.mentions_json, m.created_at, m.automation_json FROM messages m WHERE m.id = ?`), id)
 		if err != nil {
 			return nil, err
 		}

@@ -24,6 +24,8 @@ func runSend(args []string) error {
 		text       = flags.String("text", "", "plain text message content (or the trailing positional argument)")
 	)
 	override := bindOperatorOverrideFlags(flags)
+	replyTo := flags.String("reply-to", "", "message id being answered")
+	discussionID := flags.String("discussion", "", "owner-started bounded discussion id")
 
 	// A bare "send help" never reaches Go's flag package as a help request
 	// (it is a plain positional argument, not "-h"/"--help", both of which
@@ -87,8 +89,10 @@ func runSend(args []string) error {
 	}
 
 	request := protocol.SendMessageRequest{
-		From:  fromActor,
-		Parts: []protocol.Part{{Kind: "text", Text: strings.TrimSpace(textValue)}},
+		ReplyTo:      *replyTo,
+		DiscussionID: *discussionID,
+		From:         fromActor,
+		Parts:        []protocol.Part{{Kind: "text", Text: strings.TrimSpace(textValue)}},
 	}
 
 	switch target.kind {

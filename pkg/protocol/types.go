@@ -36,12 +36,13 @@ type Network struct {
 }
 
 type NetworkConsole struct {
-	CanFollow       bool          `json:"can_follow"`
-	CanSendHuman    bool          `json:"can_send_human"`
-	Viewer          ConsoleViewer `json:"viewer"`
-	CanReadPairings bool          `json:"can_read_pairings"`
-	CanReadDMs      bool          `json:"can_read_dms"`
-	CanConnectAgent bool          `json:"can_connect_agent"`
+	CanManageAutomation bool          `json:"can_manage_automation"`
+	CanFollow           bool          `json:"can_follow"`
+	CanSendHuman        bool          `json:"can_send_human"`
+	Viewer              ConsoleViewer `json:"viewer"`
+	CanReadPairings     bool          `json:"can_read_pairings"`
+	CanReadDMs          bool          `json:"can_read_dms"`
+	CanConnectAgent     bool          `json:"can_connect_agent"`
 }
 
 // ConsoleViewer identifies the caller without exposing credentials.
@@ -51,6 +52,7 @@ type ConsoleViewer struct {
 }
 
 type NetworkCapabilities struct {
+	LocalAutomation    bool   `json:"local_automation,omitempty"`
 	EventStream        string `json:"event_stream,omitempty"`
 	AttachmentProtocol string `json:"attachment_protocol,omitempty"`
 	PublicRead         bool   `json:"public_read"`
@@ -112,14 +114,17 @@ type Part struct {
 }
 
 type Message struct {
-	ID        string        `json:"id"`
-	NetworkID string        `json:"network_id"`
-	Origin    MessageOrigin `json:"origin,omitempty"`
-	Target    Target        `json:"target"`
-	From      Actor         `json:"from"`
-	Parts     []Part        `json:"parts"`
-	Mentions  []string      `json:"mentions,omitempty"`
-	CreatedAt time.Time     `json:"created_at"`
+	Wake         *MessageWake  `json:"wake,omitempty"`
+	ReplyTo      string        `json:"reply_to,omitempty"`
+	DiscussionID string        `json:"discussion_id,omitempty"`
+	ID           string        `json:"id"`
+	NetworkID    string        `json:"network_id"`
+	Origin       MessageOrigin `json:"origin,omitempty"`
+	Target       Target        `json:"target"`
+	From         Actor         `json:"from"`
+	Parts        []Part        `json:"parts"`
+	Mentions     []string      `json:"mentions,omitempty"`
+	CreatedAt    time.Time     `json:"created_at"`
 }
 
 type Event struct {
@@ -246,12 +251,14 @@ type RemoveResult struct {
 }
 
 type SendMessageRequest struct {
-	ID       string        `json:"id,omitempty"`
-	Origin   MessageOrigin `json:"origin,omitempty"`
-	Target   Target        `json:"target"`
-	From     Actor         `json:"from"`
-	Parts    []Part        `json:"parts"`
-	Mentions []string      `json:"mentions,omitempty"`
+	ReplyTo      string        `json:"reply_to,omitempty"`
+	DiscussionID string        `json:"discussion_id,omitempty"`
+	ID           string        `json:"id,omitempty"`
+	Origin       MessageOrigin `json:"origin,omitempty"`
+	Target       Target        `json:"target"`
+	From         Actor         `json:"from"`
+	Parts        []Part        `json:"parts"`
+	Mentions     []string      `json:"mentions,omitempty"`
 	// CauseEventIDs additively threads causal-event parentage (see
 	// pkg/protocol/causal.go) through to the message.accepted event stamped
 	// once this request durably lands. It is caller-supplied context, never

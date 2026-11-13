@@ -58,6 +58,7 @@ func NewHTTPHandler(service Service, policy *authn.Policy, configs ...HTTPConfig
 	attachDiscoveryRoutes(mux, policy, service, config)
 	registerFollowRoutes(mux, policy, service)
 	registerHubRoutes(mux, policy, service)
+	registerAutomationRoutes(mux, policy, service)
 	sseLimiter := newStreamLimiter(defaultMaxSSESubscribers)
 	attachments := newAttachmentRegistry()
 	mux.Handle("GET /metrics", authorizedWithVerifier(policy, service, authn.ScopeAdmin, http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {

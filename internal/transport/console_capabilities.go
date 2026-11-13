@@ -13,14 +13,20 @@ func networkForRequest(policy *authn.Policy, request *http.Request, network prot
 		network.Capabilities.AgentRegistration = policy.AgentRegistration()
 	}
 	network.Console = &protocol.NetworkConsole{
-		CanFollow:       !canConnectAgent(policy, request) && network.Capabilities.PublicRead,
-		CanSendHuman:    canConsoleSendHuman(policy, request, network.Capabilities),
-		Viewer:          consoleViewer(request),
-		CanReadPairings: canReadPairings(policy, request),
-		CanReadDMs:      requestAllowsScopes(policy, request, readScopes),
-		CanConnectAgent: canConnectAgent(policy, request),
+		CanManageAutomation: canManageAutomation(request) && network.Capabilities.LocalAutomation,
+		CanFollow:           !canConnectAgent(policy, request) && network.Capabilities.PublicRead,
+		CanSendHuman:        canConsoleSendHuman(policy, request, network.Capabilities),
+		Viewer:              consoleViewer(request),
+		CanReadPairings:     canReadPairings(policy, request),
+		CanReadDMs:          requestAllowsScopes(policy, request, readScopes),
+		CanConnectAgent:     canConnectAgent(policy, request),
 	}
 	return network
+}
+
+func canManageAutomation(request *http.Request) bool {
+	claims, ok := authn.ClaimsFromContext(request.Context())
+	return ok && claims.Operator() && !claims.AgentToken() && !claims.HasAgentRestriction() && claims.Network() == ""
 }
 
 func canConsoleSendHuman(

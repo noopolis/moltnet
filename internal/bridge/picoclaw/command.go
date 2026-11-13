@@ -71,8 +71,12 @@ func sendEventCommand(ctx context.Context, config bridgeconfig.Config, client mo
 		return err
 	}
 
-	for _, message := range toolMessages {
+	for index, message := range toolMessages {
+		if event.Message.DiscussionID != "" && index > 0 {
+			break // A discussion authorizes one reply per turn.
+		}
 		_, err := client.SendMessage(ctx, protocol.SendMessageRequest{
+			ReplyTo: event.Message.ID, DiscussionID: event.Message.DiscussionID,
 			Target: message.Target,
 			From: protocol.Actor{
 				Type: "agent",
