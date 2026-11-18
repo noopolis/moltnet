@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/noopolis/moltnet/internal/bridge/acp"
 	"github.com/noopolis/moltnet/internal/bridge/claudecode"
 	"github.com/noopolis/moltnet/internal/bridge/codex"
 	"github.com/noopolis/moltnet/internal/bridge/daimon"
@@ -86,6 +87,8 @@ func selectAdapter(kind string) (RuntimeAdapter, error) {
 		return claudecode.New(), nil
 	case bridgeconfig.RuntimeCodex:
 		return codex.New(), nil
+	case bridgeconfig.RuntimeACP:
+		return acp.New(), nil
 	default:
 		return nil, fmt.Errorf("unsupported runtime adapter %q", kind)
 	}

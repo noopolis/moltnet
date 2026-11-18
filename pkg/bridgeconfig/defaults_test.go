@@ -1,6 +1,9 @@
 package bridgeconfig
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestRuntimeConfigNormalized(t *testing.T) {
 	t.Parallel()
@@ -56,7 +59,7 @@ func TestRuntimeConfigNormalized(t *testing.T) {
 			t.Parallel()
 
 			got := test.in.Normalized()
-			if got != test.want {
+			if !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("Normalized() = %#v, want %#v", got, test.want)
 			}
 		})

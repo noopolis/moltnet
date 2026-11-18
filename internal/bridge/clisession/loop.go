@@ -252,13 +252,7 @@ func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
 	}
 
 	sessionID := record.RuntimeSessionID
-	if r.turn != nil {
-		delivery.ContextKey = contextKey
-		delivery.ExistingSession = exists
-		delivery.RuntimeSessionID = sessionID
-		return r.dispatchTurn(ctx, delivery)
-	}
-	if !exists && r.driver.UsesSessionIDForFirstDelivery() {
+	if !exists && r.turn == nil && r.driver.UsesSessionIDForFirstDelivery() {
 		sessionID, err = GenerateUUID()
 		if err != nil {
 			return r.failDelivery(delivery, err)
@@ -268,6 +262,9 @@ func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
 	delivery.ContextKey = contextKey
 	delivery.ExistingSession = exists
 	delivery.RuntimeSessionID = sessionID
+	if r.turn != nil {
+		return r.dispatchTurn(ctx, delivery)
+	}
 
 	spec, err := r.commandSpec(delivery)
 	if err != nil {
