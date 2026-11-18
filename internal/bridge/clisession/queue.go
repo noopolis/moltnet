@@ -98,7 +98,7 @@ func (r *Runner) drainQueue(ctx context.Context, queue *wakeQueue) {
 
 		delivery := queuedBatchDelivery(r.config.Moltnet.NetworkID, batch)
 		if err := r.dispatch(ctx, delivery); err != nil {
-			observability.Logger(ctx, "bridge."+r.driver.Name(), "agent_id", r.config.Agent.ID, "error", err, "context_key", queue.contextKey).
+			observability.Logger(ctx, "bridge."+r.name(), "agent_id", r.config.Agent.ID, "error", err, "context_key", queue.contextKey).
 				Warn("CLI runtime queued delivery failed")
 		}
 	}

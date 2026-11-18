@@ -50,6 +50,7 @@ type backoffPolicy interface {
 type Runner struct {
 	config   bridgeconfig.Config
 	driver   Driver
+	turn     TurnExecutor
 	streamer eventStreamer
 	backoff  backoffPolicy
 	store    *SessionStore
@@ -251,6 +252,12 @@ func (r *Runner) dispatch(ctx context.Context, delivery Delivery) error {
 	}
 
 	sessionID := record.RuntimeSessionID
+	if r.turn != nil {
+		delivery.ContextKey = contextKey
+		delivery.ExistingSession = exists
+		delivery.RuntimeSessionID = sessionID
+		return r.dispatchTurn(ctx, delivery)
+	}
 	if !exists && r.driver.UsesSessionIDForFirstDelivery() {
 		sessionID, err = GenerateUUID()
 		if err != nil {

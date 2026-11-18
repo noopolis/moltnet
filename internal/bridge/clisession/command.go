@@ -15,7 +15,7 @@ import (
 	"github.com/noopolis/moltnet/pkg/bridgeconfig"
 )
 
-const defaultCommandTimeout = 5 * time.Minute
+const DefaultCommandTimeout = 5 * time.Minute
 const textFileBusyRetries = 5
 
 type CommandSpec struct {
@@ -55,13 +55,13 @@ func RunCommand(ctx context.Context, spec CommandSpec) (CommandResult, error) {
 
 	timeout := spec.Timeout
 	if timeout <= 0 {
-		timeout = defaultCommandTimeout
+		timeout = DefaultCommandTimeout
 	}
 
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	resolvedCommand, err := resolveCommandPath(commandPath)
+	resolvedCommand, err := ResolveCommandPath(commandPath)
 	if err != nil {
 		return CommandResult{}, err
 	}
@@ -131,7 +131,7 @@ func BaseEnv(config bridgeconfig.Config) []string {
 	return env
 }
 
-func resolveCommandPath(commandPath string) (string, error) {
+func ResolveCommandPath(commandPath string) (string, error) {
 	if filepath.IsAbs(commandPath) || !strings.ContainsRune(commandPath, os.PathSeparator) {
 		return commandPath, nil
 	}
