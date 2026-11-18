@@ -73,3 +73,23 @@ func TestGenerateUUIDShape(t *testing.T) {
 		t.Fatalf("unexpected uuid %q", uuid)
 	}
 }
+
+func TestSessionStoreNoOpDoesNotCreateLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+	store := NewSessionStore(path)
+	if err := store.Delete("missing"); err != nil {
+		t.Fatal(err)
+	}
+	// Existing version-one files can be read without creating a lock.
+	contents := `{"version":"moltnet.cli-sessions.v1","sessions":{"kept":{"runtime_session_id":"existing"}}}`
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record, existed, err := store.GetOrCreate("kept")
+	if err != nil || !existed || record.RuntimeSessionID != "existing" {
+		t.Fatalf("GetOrCreate() = %+v, existed=%t, err=%v", record, existed, err)
+	}
+	if _, err := os.Stat(path + ".lock"); !os.IsNotExist(err) {
+		t.Fatalf("read-only calls created a lock: %v", err)
+	}
+}
