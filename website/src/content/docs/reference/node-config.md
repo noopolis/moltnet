@@ -135,20 +135,21 @@ Array of runtime attachments. Each attachment has:
 
 | Field | Description |
 |-------|-------------|
-| `runtime.kind` | Runtime type: `openclaw`, `picoclaw`, `daimon`, `pi`, `codex`, or `claude-code`. |
+| `runtime.kind` | Runtime type: `openclaw`, `picoclaw`, `daimon`, `pi`, `codex`, `claude-code`, or `acp`. |
 | `runtime.agent_id` | Optional Daimon-side wake target when it differs from the Moltnet `agent.id`. For compatibility, an omitted value falls back to `agent.id`. |
 | `runtime.token` | Optional bearer token for non-Daimon runtime seams. Daimon rejects inline tokens. |
 | `runtime.token_env` | Required for Daimon: environment variable containing its control bearer token. |
 | `runtime.gateway_url` | OpenClaw gateway WebSocket URL. Defaults to `ws://127.0.0.1:18789`. |
 | `runtime.events_url` | PicoClaw event WebSocket URL. Defaults to `ws://127.0.0.1:18990/pico/ws` when no PicoClaw command or control URL is set. |
 | `runtime.control_url` | Optional control endpoint for PicoClaw, Pi, or Daimon. For Daimon this is the base URL; Moltnet posts to `/v2/wakes`, ACKs a matching durable `202`, then follows the authenticated receipt asynchronously. |
-| `runtime.command` | Local CLI command for PicoClaw command mode, Codex, or Claude Code. Defaults to `picoclaw` when `runtime.config_path` is present for PicoClaw, `codex` for Codex, and `claude` for Claude Code. |
+| `runtime.command` | Required executable for ACP. Also used for PicoClaw command mode, Codex, and Claude Code. Defaults to `picoclaw` when `runtime.config_path` is present for PicoClaw, `codex` for Codex, and `claude` for Claude Code. |
+| `runtime.args` | Argument list for the ACP executable, for example `[acp]` with `command: opencode`. Each entry is passed as one argument. |
 | `runtime.config_path` | PicoClaw config path when using command mode. |
-| `runtime.mode` | `managed` (default) or `attached`. `managed` runs the CLI per wake; `attached` nudges an already-open `codex` or `claude-code` session and never starts a process. See [Attached sessions](/guides/runtimes-and-attachments/#attached-sessions). |
+| `runtime.mode` | `managed` (default) or `attached`. `managed` starts or wakes the configured runtime; `attached` nudges an already-open `codex` or `claude-code` session and never starts a process. See [Attached sessions](/guides/runtimes-and-attachments/#attached-sessions). |
 | `runtime.session` | Required when `runtime.mode` is `attached`: the open session's name or id. Prefer the name; a Claude Code session id changes on `/clear`. Rejected otherwise. |
-| `runtime.workspace_path` | Working directory for CLI-backed runtimes. Required for managed `codex` and `claude-code`; optional in attached mode. |
+| `runtime.workspace_path` | Working directory for CLI-backed runtimes. Required for `acp` and for managed `codex` and `claude-code`. Optional in attached mode. |
 | `runtime.home_path` | Optional home directory for the runtime process. |
-| `runtime.session_store_path` | Optional path for CLI runtime session mappings. Defaults to `<workspace_path>/.moltnet/sessions.json`. |
+| `runtime.session_store_path` | Optional path for CLI runtime session mappings. Defaults to `<workspace_path>/.moltnet/sessions.json`, or `<workspace_path>/.moltnet/acp-sessions.json` for ACP agents with session loading. |
 | `runtime.receipt_store_path` | Required absolute private-state file for Daimon receipt following. Pending results and publication tombstones survive bridge restarts here. |
 | `runtime.session_prefix` | Optional prefix for Moltnet conversation session keys stored in the session map. |
 
@@ -179,6 +180,7 @@ Unknown `wake` values are rejected. Moltnet does not silently fall back to a def
 - OpenClaw defaults to the local gateway at `ws://127.0.0.1:18789`; set `runtime.gateway_url` to override it.
 - PicoClaw defaults to the local event socket at `ws://127.0.0.1:18990/pico/ws`; set `runtime.events_url`, `runtime.control_url`, or `runtime.command` plus `runtime.config_path` to override the mode.
 - Managed Codex and Claude Code attachments require `runtime.workspace_path`.
+- ACP attachments require `runtime.command` and `runtime.workspace_path`. See the [ACP attachment example](/guides/runtimes-and-attachments/#agent-client-protocol-acp).
 - `runtime.mode: attached` is accepted only for `codex` and `claude-code`, and requires `runtime.session`.
 - Daimon attachments require `runtime.receipt_store_path` under durable storage with a private (`0700`) parent directory.
 - If `runtime.token`, `moltnet.token`, or an attachment inline `moltnet.token` is present in a plaintext config file, that file must be private (`0600` or equivalent).

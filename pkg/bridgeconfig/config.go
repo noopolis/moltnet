@@ -23,6 +23,7 @@ const (
 	RuntimeDaimon     = "daimon"
 	RuntimeClaudeCode = "claude-code"
 	RuntimeCodex      = "codex"
+	RuntimeACP        = "acp"
 )
 
 type Config struct {
@@ -65,6 +66,7 @@ type RuntimeConfig struct {
 	Token            protocol.SecretString `json:"token,omitempty" yaml:"token,omitempty"`
 	TokenEnv         string                `json:"token_env,omitempty" yaml:"token_env,omitempty"`
 	Command          string                `json:"command,omitempty" yaml:"command,omitempty"`
+	Args             []string              `json:"args,omitempty" yaml:"args,omitempty"`
 	ConfigPath       string                `json:"config_path,omitempty" yaml:"config_path,omitempty"`
 	HomePath         string                `json:"home_path,omitempty" yaml:"home_path,omitempty"`
 	GatewayURL       string                `json:"gateway_url,omitempty" yaml:"gateway_url,omitempty"`
@@ -167,7 +169,7 @@ func (c Config) Validate() error {
 	}
 
 	switch c.Runtime.Kind {
-	case RuntimeOpenClaw, RuntimePicoClaw, RuntimePi, RuntimeDaimon, RuntimeClaudeCode, RuntimeCodex:
+	case RuntimeOpenClaw, RuntimePicoClaw, RuntimePi, RuntimeDaimon, RuntimeClaudeCode, RuntimeCodex, RuntimeACP:
 	default:
 		return fmt.Errorf("bridge config runtime.kind %q is unsupported", c.Runtime.Kind)
 	}
@@ -232,11 +234,20 @@ func validateRuntimeFieldCompatibility(runtime RuntimeConfig) error {
 	}
 
 	if strings.TrimSpace(runtime.Command) != "" {
-		if runtime.Kind != RuntimePicoClaw && runtime.Kind != RuntimeClaudeCode && runtime.Kind != RuntimeCodex {
-			return fmt.Errorf("bridge config runtime.command is only supported for picoclaw, claude-code, or codex")
+		if runtime.Kind != RuntimePicoClaw && runtime.Kind != RuntimeClaudeCode && runtime.Kind != RuntimeCodex && runtime.Kind != RuntimeACP {
+			return fmt.Errorf("bridge config runtime.command is only supported for picoclaw, claude-code, codex, or acp")
 		}
 		if runtime.Kind == RuntimePicoClaw && strings.TrimSpace(runtime.ConfigPath) == "" {
 			return fmt.Errorf("bridge config runtime.config_path is required when runtime.command is set")
+		}
+	}
+
+	if len(runtime.Args) > 0 && runtime.Kind != RuntimeACP {
+		return fmt.Errorf("bridge config runtime.args is only supported for acp")
+	}
+	for _, arg := range runtime.Args {
+		if strings.ContainsRune(arg, 0) {
+			return fmt.Errorf("bridge config runtime.args must not contain a NUL byte")
 		}
 	}
 
@@ -274,6 +285,14 @@ func validateRuntimeFieldCompatibility(runtime RuntimeConfig) error {
 
 func validateRuntimeSeam(runtime RuntimeConfig) error {
 	switch runtime.Kind {
+	case RuntimeACP:
+		if strings.TrimSpace(runtime.Command) == "" {
+			return fmt.Errorf("bridge config runtime.command is required for acp")
+		}
+		if strings.ContainsRune(runtime.Command, 0) {
+			return fmt.Errorf("bridge config runtime.command must not contain a NUL byte")
+		}
+		fallthrough
 	case RuntimeClaudeCode, RuntimeCodex:
 		if runtime.IsAttached() {
 			return nil

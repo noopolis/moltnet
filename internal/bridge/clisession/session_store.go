@@ -4,19 +4,23 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"syscall"
 	"time"
 )
 
-const sessionStoreVersion = "moltnet.cli-sessions.v1"
+const (
+	sessionStoreVersion  = "moltnet.cli-sessions.v1"
+	sessionStoreLockWait = 5 * time.Second
+	sessionStoreLockPoll = 10 * time.Millisecond
+)
 
 type SessionStore struct {
 	path string
-	mu   sync.Mutex
 }
 
 type sessionStoreFile struct {
@@ -43,9 +47,6 @@ func DefaultSessionStorePath(workspacePath string) string {
 }
 
 func (s *SessionStore) Get(key string) (SessionRecord, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	store, err := s.load()
 	if err != nil {
 		return SessionRecord{}, false, err
@@ -56,31 +57,36 @@ func (s *SessionStore) Get(key string) (SessionRecord, bool, error) {
 }
 
 func (s *SessionStore) Put(key string, runtimeSessionID string) (SessionRecord, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return SessionRecord{}, fmt.Errorf("session key is required")
+	}
+	runtimeSessionID = strings.TrimSpace(runtimeSessionID)
+	if runtimeSessionID == "" {
+		return SessionRecord{}, fmt.Errorf("runtime session id is required")
+	}
 
+	unlock, err := s.lock()
+	if err != nil {
+		return SessionRecord{}, err
+	}
+	defer unlock()
 	store, err := s.load()
 	if err != nil {
 		return SessionRecord{}, err
 	}
+	return s.put(store, key, runtimeSessionID)
+}
 
-	trimmedKey := strings.TrimSpace(key)
-	trimmedSessionID := strings.TrimSpace(runtimeSessionID)
-	if trimmedKey == "" {
-		return SessionRecord{}, fmt.Errorf("session key is required")
-	}
-	if trimmedSessionID == "" {
-		return SessionRecord{}, fmt.Errorf("runtime session id is required")
-	}
-
+func (s *SessionStore) put(store sessionStoreFile, key, runtimeSessionID string) (SessionRecord, error) {
 	now := time.Now().UTC()
-	record := store.Sessions[trimmedKey]
+	record := store.Sessions[key]
 	if record.CreatedAt.IsZero() {
 		record.CreatedAt = now
 	}
 	record.UpdatedAt = now
-	record.RuntimeSessionID = trimmedSessionID
-	store.Sessions[trimmedKey] = record
+	record.RuntimeSessionID = runtimeSessionID
+	store.Sessions[key] = record
 
 	if err := s.save(store); err != nil {
 		return SessionRecord{}, err
@@ -89,38 +95,89 @@ func (s *SessionStore) Put(key string, runtimeSessionID string) (SessionRecord, 
 }
 
 func (s *SessionStore) Delete(key string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return fmt.Errorf("session key is required")
+	}
+	if _, exists, err := s.Get(key); err != nil || !exists {
+		return err
+	}
 
+	unlock, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	store, err := s.load()
 	if err != nil {
 		return err
 	}
 
-	trimmedKey := strings.TrimSpace(key)
-	if trimmedKey == "" {
-		return fmt.Errorf("session key is required")
-	}
-	if _, ok := store.Sessions[trimmedKey]; !ok {
+	if _, ok := store.Sessions[key]; !ok {
 		return nil
 	}
-	delete(store.Sessions, trimmedKey)
-
+	delete(store.Sessions, key)
 	return s.save(store)
 }
 
 func (s *SessionStore) GetOrCreate(key string) (SessionRecord, bool, error) {
-	record, ok, err := s.Get(key)
-	if err != nil || ok {
-		return record, ok, err
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return SessionRecord{}, false, fmt.Errorf("session key is required")
+	}
+	if record, exists, err := s.Get(key); err != nil || exists {
+		return record, exists, err
+	}
+
+	unlock, err := s.lock()
+	if err != nil {
+		return SessionRecord{}, false, err
+	}
+	defer unlock()
+	store, err := s.load()
+	if err != nil {
+		return SessionRecord{}, false, err
+	}
+	if record, exists := store.Sessions[key]; exists {
+		return record, true, nil
 	}
 
 	sessionID, err := GenerateUUID()
 	if err != nil {
 		return SessionRecord{}, false, err
 	}
-	record, err = s.Put(key, sessionID)
+	record, err := s.put(store, key, sessionID)
 	return record, false, err
+}
+
+// lock serializes load-modify-save across runners and processes. Keep the
+// sibling lock file in place so every writer always locks the same inode.
+func (s *SessionStore) lock() (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return nil, fmt.Errorf("create CLI session store directory: %w", err)
+	}
+	path := s.path + ".lock"
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("lock CLI session store: %w", err)
+	}
+
+	deadline := time.Now().Add(sessionStoreLockWait)
+	for {
+		err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			return func() { _ = file.Close() }, nil
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EINTR) {
+			_ = file.Close()
+			return nil, fmt.Errorf("lock CLI session store: %w", err)
+		}
+		if time.Now().After(deadline) {
+			_ = file.Close()
+			return nil, fmt.Errorf("lock CLI session store: %s is held by another writer", path)
+		}
+		time.Sleep(sessionStoreLockPoll)
+	}
 }
 
 func (s *SessionStore) load() (sessionStoreFile, error) {
@@ -151,22 +208,39 @@ func (s *SessionStore) load() (sessionStoreFile, error) {
 }
 
 func (s *SessionStore) save(store sessionStoreFile) error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return fmt.Errorf("create CLI session store directory: %w", err)
-	}
-
-	bytes, err := json.MarshalIndent(store, "", "  ")
+	contents, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode CLI session store: %w", err)
 	}
-	bytes = append(bytes, '\n')
 
-	tmpPath := s.path + ".tmp"
-	if err := os.WriteFile(tmpPath, bytes, 0o600); err != nil {
+	directory := filepath.Dir(s.path)
+	temporary, err := os.CreateTemp(directory, ".cli-sessions-*")
+	if err != nil {
+		return fmt.Errorf("create CLI session store temporary file: %w", err)
+	}
+	tempPath := temporary.Name()
+	defer os.Remove(tempPath)
+	if _, err = temporary.Write(append(contents, '\n')); err == nil {
+		err = temporary.Sync()
+	}
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
 		return fmt.Errorf("write CLI session store: %w", err)
 	}
-	if err := os.Rename(tmpPath, s.path); err != nil {
+
+	// Get can read without locking because readers only see complete files.
+	if err := os.Rename(tempPath, s.path); err != nil {
 		return fmt.Errorf("replace CLI session store: %w", err)
+	}
+	dir, err := os.Open(directory)
+	if err != nil {
+		return fmt.Errorf("open CLI session store directory: %w", err)
+	}
+	defer dir.Close()
+	if err := dir.Sync(); err != nil {
+		return fmt.Errorf("sync CLI session store directory: %w", err)
 	}
 	return nil
 }

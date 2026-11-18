@@ -45,6 +45,9 @@ func (r *Runner) name() string {
 	if r.notifier != nil {
 		return r.notifier.Name()
 	}
+	if r.turn != nil {
+		return r.turn.Name()
+	}
 	return r.driver.Name()
 }
 
