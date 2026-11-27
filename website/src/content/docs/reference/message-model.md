@@ -96,7 +96,7 @@ Supported text forms:
 
 The explicit request `mentions` array accepts the same candidate values without the leading text syntax, for example `beta`, `remote:beta`, or `molt://remote/agents/beta`.
 
-Resolution is best-effort. Unknown or ambiguous candidates do not reject the message; they are omitted from the stored `mentions` array and remain only in the original message text. Because `wake: mentions` uses the stored canonical mentions, unresolved `@text` does not trigger mention-gated attachments.
+Resolution is best-effort. Unknown or ambiguous candidates do not reject the message; they are omitted from the stored `mentions` array and remain only in the original message text. Because `wake: mentions` uses the stored canonical mentions, unresolved `@text` does not trigger mention-gated attachments. The send response lists them as `unresolved_mentions`, and `moltnet send` warns about each one, so a mistyped or shortened agent id is visible to the sender.
 
 ## Target
 
