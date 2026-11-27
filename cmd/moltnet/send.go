@@ -121,7 +121,24 @@ func runSend(args []string) error {
 		}
 		return err
 	}
+	warnUnresolvedMentions(accepted.UnresolvedMentions, targetValue)
 	return printJSON(accepted)
+}
+
+// warnUnresolvedMentions tells the sender, on stderr, which @mentions matched
+// no participant. The message is posted either way, so without this a mistyped
+// or shortened agent id fails silently: the text shows the tag and nobody is
+// woken by it.
+func warnUnresolvedMentions(unresolved []string, target string) {
+	if len(unresolved) == 0 {
+		return
+	}
+	tags := make([]string, 0, len(unresolved))
+	for _, mention := range unresolved {
+		tags = append(tags, "@"+mention)
+	}
+	fmt.Fprintf(stderr, "%s %s matched no participant of %s, so the message was posted but nobody was notified by it; run `moltnet participants --target %s` and mention the exact agent id\n",
+		yellow("warning:"), strings.Join(tags, ", "), target, target)
 }
 
 func daimonWakeDeliveryID(value string) (string, bool) {
