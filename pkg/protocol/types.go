@@ -274,6 +274,10 @@ type MessageAccepted struct {
 	Accepted      bool   `json:"accepted"`
 	ThreadCreated bool   `json:"thread_created"`
 	DMCreated     bool   `json:"dm_created"`
+	// UnresolvedMentions lists the mention candidates of this request that
+	// matched no participant of the target conversation, as written. They are
+	// not stored on the message and wake nobody.
+	UnresolvedMentions []string `json:"unresolved_mentions,omitempty"`
 	// Receipt is the home's placement of a hub-room submission, returned to
 	// the submitting member so its own copy learns its room seq.
 	Receipt *SignedRoomReceipt `json:"receipt,omitempty"`

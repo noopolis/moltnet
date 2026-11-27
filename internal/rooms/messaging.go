@@ -80,7 +80,7 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		}
 	}
 
-	mentions, err := s.resolveMentions(ctx, request.Target, protocol.NormalizeMentions(request.Parts, request.Mentions))
+	mentions, unresolvedMentions, err := s.resolveMentions(ctx, request.Target, protocol.NormalizeMentions(request.Parts, request.Mentions))
 	if err != nil {
 		return protocol.MessageAccepted{}, err
 	}
@@ -149,6 +149,8 @@ func (s *Service) SendMessageContext(ctx context.Context, request protocol.SendM
 		Accepted:      true,
 		ThreadCreated: lifecycle.Thread != nil,
 		DMCreated:     lifecycle.DM != nil,
+
+		UnresolvedMentions: unresolvedMentions,
 	}, nil
 }
 
