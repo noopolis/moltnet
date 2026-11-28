@@ -716,6 +716,8 @@ Accepted response:
 
 If the caller retries with the same message `id`, Moltnet treats it as idempotent and returns the same stable `message_id` / `event_id` pair instead of creating a duplicate message.
 
+`unresolved_mentions` is present only when the request named mention candidates, in its text or its `mentions` array, that matched no participant of the target conversation. It lists them as written. The message is accepted anyway, those candidates are left out of the stored `mentions`, and nobody is woken by them. `moltnet send` prints a warning for each one.
+
 `thread_created` and `dm_created` are always present. They describe whether this specific request caused Moltnet to create the target thread or DM. On an idempotent retry, both fields are `false` because the retry does not create any new conversation state.
 
 If `server.direct_messages: false`, requests with `target.kind: "dm"` return `403`.

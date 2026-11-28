@@ -12,22 +12,23 @@ func (s *Service) resolveMentions(
 	ctx context.Context,
 	target protocol.Target,
 	candidates []string,
-) ([]string, error) {
+) (mentions []string, unresolved []string, err error) {
 	if len(candidates) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	members, err := s.mentionContextMembers(ctx, target)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	seen := make(map[string]struct{}, len(candidates))
-	mentions := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		resolved, err := s.resolveMentionCandidate(members, candidate)
 		if err != nil {
-			// Mentions are routing metadata; unresolved @text should not reject chat messages.
+			// Mentions are routing metadata; unresolved @text should not reject
+			// chat messages. The sender is told which ones matched nobody.
+			unresolved = append(unresolved, candidate)
 			continue
 		}
 		if resolved == "" {
@@ -41,10 +42,7 @@ func (s *Service) resolveMentions(
 		mentions = append(mentions, resolved)
 	}
 
-	if len(mentions) == 0 {
-		return nil, nil
-	}
-	return mentions, nil
+	return mentions, unresolved, nil
 }
 
 func (s *Service) mentionContextMembers(ctx context.Context, target protocol.Target) ([]string, error) {

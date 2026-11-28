@@ -198,3 +198,39 @@ func sendMentionTestMessage(
 	t.Fatalf("stored message %q not found in %#v", id, page.Messages)
 	return protocol.Message{}
 }
+
+func TestSendMessageReportsUnresolvedMentionsToSender(t *testing.T) {
+	t.Parallel()
+
+	service := newMentionTestService(nil)
+	if _, err := service.CreateRoom(protocol.CreateRoomRequest{
+		ID:      "research",
+		Members: []string{"scout-e3a00330"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	send := func(id string, text string) protocol.MessageAccepted {
+		t.Helper()
+		accepted, err := service.SendMessage(protocol.SendMessageRequest{
+			ID:     id,
+			Target: protocol.Target{Kind: protocol.TargetKindRoom, RoomID: "research"},
+			From:   protocol.Actor{Type: "agent", ID: "writer"},
+			Parts:  []protocol.Part{{Kind: protocol.PartKindText, Text: text}},
+		})
+		if err != nil {
+			t.Fatalf("SendMessage() error = %v", err)
+		}
+		return accepted
+	}
+
+	shortened := send("msg_shortened", "@scout and @scout-e3a00330, the answer is above.")
+	if want := []string{"scout"}; !slices.Equal(shortened.UnresolvedMentions, want) {
+		t.Fatalf("unresolved mentions %#v, want %#v", shortened.UnresolvedMentions, want)
+	}
+
+	exact := send("msg_exact", "@scout-e3a00330, the answer is above.")
+	if len(exact.UnresolvedMentions) != 0 {
+		t.Fatalf("an exact agent id must not be reported: %#v", exact.UnresolvedMentions)
+	}
+}
